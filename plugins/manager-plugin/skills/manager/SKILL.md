@@ -1,5 +1,5 @@
 ---
-name: orchestrate-living-plan
+name: manager
 description: Run a project's living plan to completion autonomously, one phase per PR. The main session is a thin orchestrator; each phase is implemented by a fresh implementer subagent and gated by a fresh, independent exact-SHA reviewer subagent, with fixes looped through the same implementer. Use when the owner asks to execute, continue or finish a living plan / roadmap phase by phase ("planı fazlara böl ve bitir", "continue the plan", "run the remaining phases").
 ---
 
