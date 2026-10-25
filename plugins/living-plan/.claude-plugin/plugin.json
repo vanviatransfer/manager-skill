@@ -1,0 +1,8 @@
+{
+  "name": "living-plan",
+  "version": "0.1.0",
+  "description": "Run a living plan to completion: one phase per PR, fresh implementer subagent, independent exact-SHA reviewer subagent, fix loop with brakes, batched owner decisions.",
+  "author": {
+    "name": "Murat Ayci"
+  }
+}

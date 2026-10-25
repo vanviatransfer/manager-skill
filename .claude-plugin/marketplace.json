@@ -1,0 +1,13 @@
+{
+  "name": "vanvia-plugins",
+  "owner": {
+    "name": "Murat Ayci"
+  },
+  "plugins": [
+    {
+      "name": "living-plan",
+      "source": "./plugins/living-plan",
+      "description": "Run a living plan to completion: one phase per PR, fresh implementer subagent, independent exact-SHA reviewer subagent, fix loop with brakes, batched owner decisions."
+    }
+  ]
+}
