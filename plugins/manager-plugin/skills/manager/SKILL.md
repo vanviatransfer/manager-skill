@@ -62,16 +62,20 @@ No subagent is dispatched, no file is modified and no phase starts until the run
 owner-approved model strategy. You never pick one silently, and you never escalate past it.
 
 A **run** is one owner request to execute the plan, until its final report. Compaction does not end
-it. A new session is a new run, unless the owner's message there explicitly resumes the
+it, and the owner's answers to the final decision batch continue it. A new session is a new run
+(even for "continue the plan"), unless the owner's message there explicitly resumes the
 interrupted run ("kaldığı yerden devam", "resume the interrupted run"). Each run gets an id when
-its strategy is approved, `R<YYYY-MM-DD-HHMM>`; every review-ledger comment of the run carries it.
+its strategy is approved, `R<YYYY-MM-DD-HHMM>`; it goes into every PR body of the run (`Run:`
+dispatch field) and every review-ledger comment.
 
 **Which strategy applies** (first match):
 1. A strategy the owner stated in this conversation for this run (after compaction: as carried in
    the summary, in the owner's words). Keep it as one quotable line so it survives compaction.
-2. On an explicit resume: the `run` record in the plan on the default branch, **only if its run id
-   equals the interrupted run's** (the id on that run's ledger comments). A record from another
-   run, or none yet because the run never landed a PR, doesn't count — ask.
+2. After a compaction that lost that line, or on an explicit resume: the `run` record in the plan
+   on the default branch, **only if its run id equals this run's**. This run's id comes only from
+   this session's own earlier PRs or, on a resume, from in-flight work — an open PR's body or
+   ledger, never an older landed PR. No such id, or a record with another id → this rule doesn't
+   apply.
 3. A `standing` strategy recorded in the plan on the default branch (owner policy for all runs).
 4. Otherwise ask — this gate is mandatory and separate from ordinary owner decisions.
 
@@ -139,6 +143,8 @@ Derive state from durable sources only — never from memory of an earlier conte
    - work on a designated branch from an earlier session that this session can't push to →
      report it; don't resume or duplicate it;
    - PRs merged but the phase not marked done → mark it done in the next PR;
+   - an open plan-only PR (`phase/plan-*`) → resume it like a phase if its Plan change is still
+     needed; otherwise report it rather than open a duplicate;
    - an open PR that matches no phase → say so; don't touch it.
 6. **Model strategy gate** (above). Everything before this point is read-only.
 
@@ -231,22 +237,24 @@ Land only a tree that was validated and reviewed. Immediately before landing:
    `gh` `gh repo view --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed` (on MCP,
    the rules and the merge call's own refusal).
 3. **Does the reviewed candidate contain the current default head?**
-   `git merge-base --is-ancestor origin/<default> <reviewed-sha>`. For a rebase merge method or a
-   linear-history rule, the commits above the default head must also be linear (`git rev-list
+   `git merge-base --is-ancestor origin/<default> <reviewed-sha>`. When the landing keeps the
+   branch's commits (rebase merge, fast-forward push) and the project requires linear history or
+   merges by rebase, the commits above the default head must also be linear (`git rev-list
    --merges origin/<default>..<reviewed-sha>` empty); a non-linear candidate there is blocked, not
-   integrated again.
+   integrated again. A squash landing needs no linear branch.
    - **Yes** → the landed tree equals the reviewed tree; the review stands. Land.
    - **No** (the default moved and the candidate doesn't include it) → don't land, whatever the
      file overlap: non-overlapping files don't prove the combination works. First pick the
-     integration method the project allows: merging the default into the branch, or — required
-     under a rebase merge method or linear-history rule — a rebase, only if the project allows
-     rebasing and force-pushing PR branches. The same implementer integrates (`Integration` in the
+     integration method the project allows: merging the default into the branch (fine for squash
+     and merge-commit landings), or — required when the landing keeps the branch's commits and
+     history must be linear — a rebase, only if the project allows rebasing and force-pushing PR
+     branches. The same implementer integrates (`Integration` in the
      brief, with that method), re-runs the full validation on the integrated tree, and the new
      candidate goes back to step 2 → a fresh review. Integration rounds count toward the
      fix-round limit.
-   - **No permitted integration** (e.g. linear history or rebase merges with no force-push
-     allowed, or a fast-forward-only default the session can't push) → decide this before
-     dispatching anything: block that landing, record why, continue independent work.
+   - **No permitted integration** (e.g. rebase merges or fast-forward landing with linear history
+     and no force-push allowed, or a fast-forward-only default the session can't push) → decide
+     this before dispatching anything: block that landing, record why, continue independent work.
 
 Land by the project's method, pinned to the reviewed SHA: `gh pr merge <n> --<squash|merge|rebase>
 --match-head-commit <reviewed-sha>` (MCP: `expectedHeadSha`; never omit the pin). A fast-forward-only
@@ -255,7 +263,8 @@ without force (refused unless it is a fast-forward; a refusal because the defaul
 race → back to 3, not a block). Then confirm MERGED, `git fetch`, and check `git diff --quiet
 <reviewed-sha> <merge-commit>`: a different tree means the default moved during the merge — report
 it to the owner as an incident at once, block the phase's dependents, and have a fresh reviewer
-validate the landed tree at the merge commit; never fix it silently. Non-blocking
+validate the landed tree at the merge commit; never fix it silently. A PASS there unblocks the
+dependents; anything else is an owner decision (a revert or fix is the owner's call). Non-blocking
 notes go to the next relevant phase's brief or the plan's notes; never a fix round of their own.
 
 A landing refused or blocked (branch protection, unexplained ref drift, a project rule) stops that
