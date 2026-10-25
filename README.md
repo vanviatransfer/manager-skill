@@ -1,6 +1,12 @@
 # manager-skill
 
-A Claude Code plugin that turns a session into a **manager** for a project's living plan.
+A Claude Code plugin with two skills:
+
+- **`living-plan`** — writes a project's living plan: goal, scope, binding decisions, phases sized
+  for one PR each (with acceptance criteria and validation), and open owner decisions.
+- **`manager`** — runs that plan to completion.
+
+## How `manager` works
 
 The main session becomes a thin orchestrator that runs the plan one phase per PR:
 
@@ -44,11 +50,20 @@ Add to the project's `.claude/settings.json`:
 
 ## Use
 
-Have a living plan in the repo (a markdown file with the goal, phases or remaining work, and open
-decisions), then ask:
+First, make a plan:
+
+> Use the living-plan skill to make a living plan for <what you want to build>.
+
+It reads the repo, asks you its questions in one batch, writes `docs/LIVING_PLAN.md` (or wherever
+your project keeps plans) and shows you a summary to approve. Then run it:
 
 > Use the manager skill to run the remaining phases of the living plan.
 
 The manager splits remaining work into phases if needed, runs them one by one, and stops only when
 the plan is done, when every remaining phase waits on your decisions (asked as one batch), or when
 something it can't fix blocks the run.
+
+## Credits
+
+The review and planning discipline draws on ideas from
+[obra/superpowers](https://github.com/obra/superpowers) (MIT).

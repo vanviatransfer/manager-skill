@@ -44,7 +44,9 @@ Derive everything from durable sources, never from what you remember:
    at step 3) or abandoned (say so and decide).
 4. From the plan: completed phases, the next incomplete phase, open owner decisions.
 
-If the remaining work isn't split into phases yet, split it first (see **Phases**), write the split
+If there is no living plan at all, create one with the `living-plan` skill and get the owner's
+approval first. If the plan exists but the remaining work isn't split into phases yet, split it
+(see **Phases**), write the split
 into the plan through the first phase's PR, and tell the owner the phase list in a few lines.
 Don't wait for approval of the split unless it changes scope or approved design.
 
