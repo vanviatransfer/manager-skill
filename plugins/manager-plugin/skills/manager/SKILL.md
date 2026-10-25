@@ -18,11 +18,11 @@ Talk to the owner in the owner's language.
 ## Ground rules
 
 - **Facts beat claims.** A subagent saying "done, tests pass, PR #12 at abc123" is a claim. PR
-  number, head SHA, base, changed files, CI and merge state come from `git` and `gh`, never from a
+  number, head SHA, base, changed files and merge state come from `git` and `gh`, never from a
   subagent's prose and never from memory. When the plan and the facts disagree, the facts win and
   the plan is updated.
 - **Project rules win.** Read the project's `CLAUDE.md` / `AGENTS.md` first. Its rules on branches,
-  validation, CI, merge method and secrets bind you and every brief you write. Pass them on as
+  validation, merge method and secrets bind you and every brief you write. Pass them on as
   paths, not pasted text.
 - **Execution is already authorized** by the owner asking for this skill. Don't ask "shall I
   continue?" inside that authorization. Ordinary implementation ambiguity is yours to settle;
@@ -31,6 +31,9 @@ Talk to the owner in the owner's language.
   Read subagent reports, then verify the few facts that matter with `gh`.
 - **Subagent settings.** Dispatch both roles with the Agent tool, `subagent_type: general-purpose`,
   `model: opus`, `effort: medium` unless the owner or project says otherwise.
+- **GitHub CI is not a gate.** Don't trigger, wait for or poll CI checks, and don't hold a merge for
+  green checks. The gate is the project's local validation plus the independent review. If branch
+  protection refuses the merge because of required checks, that's an environment issue: report it.
 - **One phase at a time.** Phases run sequentially on the shared checkout. No parallel phases unless
   the owner asks.
 
@@ -105,13 +108,13 @@ The re-reviewer first reviews the whole `base..head` diff independently; only af
 separate section, it checks the previous blockers, listed by title. It never gets the old review.
 
 ### Brakes
-- **Max 3 fix rounds per phase** (a project may set another number in its plan).
+- **Max 12 fix rounds per phase** (a project may set another number in its plan).
 - **Same blockers twice:** if a re-review reports essentially the same blockers as the round
   before, stop fixing this phase.
 - When a brake trips, ask whether the **approach** is wrong rather than the last attempt. Choose:
   (1) same approach, corrected locally with a sharper brief; (2) a materially different approach
   inside the approved design; (3) a design change — that's an owner decision.
-- An environment, permission or tooling failure (network, auth, CI runner, a tool that wasn't
+- An environment, permission or tooling failure (network, auth, disk, a tool that wasn't
   allowed) is **not** evidence against the approach. Fix the environment or report it; don't
   abandon a sound approach over it.
 

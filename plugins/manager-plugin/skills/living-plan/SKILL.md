@@ -10,7 +10,7 @@ building and **why**, the decisions that bind the work, and the remaining work a
 enough for one PR each. It is updated by every phase that lands, so it is always the current
 intent. The `manager` skill runs it; this skill writes it.
 
-The plan holds **intent**. Facts like SHAs, test results and CI state live in git and GitHub; the
+The plan holds **intent**. Facts like SHAs and test results live in git and GitHub; the
 plan only links to PRs.
 
 Talk to the owner in the owner's language. Write the plan in the language the project's docs use
@@ -73,5 +73,5 @@ These rules go into the plan itself so every implementer follows them:
 - New facts that change remaining phases → update those phases in the same PR, and note it in the
   change log.
 - A newly found owner decision → add it to the open decisions, mark the blocked phases.
-- Never copy SHAs, test output or CI results into the plan beyond a PR link; those are facts that
+- Never copy SHAs or test output into the plan beyond a PR link; those are facts that
   live in git and GitHub.

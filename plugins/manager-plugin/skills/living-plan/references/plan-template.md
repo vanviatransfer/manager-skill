@@ -6,7 +6,7 @@ Copy the shape, not the wording. Drop sections that would be empty; don't pad.
 # <Project> — Living Plan
 
 > Single source of intent for <project>. Every phase PR updates its own status line here.
-> Facts (SHAs, test results, CI) live in git/GitHub; this file only links PRs.
+> Facts (SHAs, test results) live in git/GitHub; this file only links PRs.
 
 ## Goal
 <One or two sentences: what we're building and why.>
@@ -22,7 +22,7 @@ Out (deliberately not doing now): <... and why, one line each>
 ## Constraints and project rules
 - Rules: see `<CLAUDE.md / AGENTS.md>` (binding for every phase).
 - Validation: `<commands every phase must pass>`
-- Merge: <method, e.g. squash via PR; CI policy if any>
+- Merge: <method, e.g. squash via PR>
 - <deadline / budget / compatibility / stack constraints>
 
 ## Binding decisions
@@ -32,7 +32,7 @@ Out (deliberately not doing now): <... and why, one line each>
 ## Phases
 
 Status values: `todo` · `in progress (PR #n)` · `done (PR #n)` · `blocked (Dn)`
-Fix-round limit per phase: 3
+Fix-round limit per phase: 12
 
 ### P1. <title>
 Status: todo
@@ -71,5 +71,5 @@ Raised: <date>
 - A phase PR updates only its own status line and links itself.
 - Facts that change later phases → update those phases in the same PR and add a change-log line.
 - A new owner decision → add it under Open owner decisions and mark blocked phases.
-- No SHAs, test output or CI results here beyond PR links.
+- No SHAs or test output here beyond PR links.
 ```

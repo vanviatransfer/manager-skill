@@ -27,7 +27,7 @@ Git:
 - Commit with clear messages; push with `git push -u origin <branch-name>`.
 - Open the PR with `gh pr create` against `<default>`, following the repo's PR template if any.
 - In the same PR, mark phase <id> done in the living plan (status line + PR link).
-- Follow the project's CI rules; don't trigger CI the project says is manual-only.
+- Don't trigger, wait for or poll GitHub CI. Local validation is the gate.
 - Never force-push over someone else's work, never touch other branches, never merge.
 
 Report (keep it short):
