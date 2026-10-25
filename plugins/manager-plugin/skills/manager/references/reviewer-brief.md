@@ -13,7 +13,7 @@ GitHub backend: <gh | GitHub MCP>
 Worktree dir: <temp path outside the repo>
 Rulings: <given to the implementer, verbatim | none>
 Plan records: <given to the implementer, verbatim | none | unknown (resumed)>
-Plan change: <exact text, plan-only PR only>
+Plan change: <exact text; plan-only PR only, else omit>
 Previous blockers: <titles, re-review only>
 ```
 
@@ -36,15 +36,19 @@ candidate may have edited them); the project rules; the full `git diff <base>...
 the surrounding code its correctness depends on. Don't read PR comments or reviews; don't rely on
 the PR description or commit messages.
 
-**Blockers** (anything that shouldn't merge as is; everything else is a note):
-- an acceptance criterion not met; bugs, edge cases or broken invariants in touched code and its
-  callers; security or data-safety issues; project-rule violations; risky parts left untested;
-  out-of-scope changes; plan updates that misstate reality;
-- an edit to this phase's own objective, scope, acceptance or validation not required by a Ruling;
+**Review for** the items below; a finding is a blocker if the change shouldn't merge as is,
+otherwise a note. Phase PR:
+- acceptance criteria; bugs, edge cases and broken invariants in touched code and its callers;
+  security and data safety; project rules; tests covering the risky parts; out-of-scope changes;
+  plan updates that misstate reality;
+- an edit to this phase's own objective, scope, acceptance or validation not required by a Ruling —
+  a blocker;
 - a change to plan decisions (Open or Decided), other phases' status lines or the model-strategy
-  record that doesn't match Plan records exactly (with `unknown (resumed)`: any such change);
-- plan-only PR: the diff isn't exactly the Plan change, touches anything else, or contradicts the
-  plan's goal, scope or binding decisions.
+  record that doesn't match Plan records exactly (with `unknown (resumed)`: any such change) — a
+  blocker.
+
+Plan-only PR, **instead** of the above: a blocker if the diff isn't exactly the Plan change, touches
+anything else, or contradicts the plan's goal, scope or binding decisions.
 
 **Validate independently:** `git worktree add --detach <worktree-dir> <candidate>`; run every
 validation command the plan and project require there (output to a file, read only what you need);

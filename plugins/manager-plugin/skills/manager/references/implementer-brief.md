@@ -15,14 +15,15 @@ Notes carried forward: <non-blocking review notes, or "none">
 Rulings: <orchestrator rulings / quoted owner words, or "none">
 Plan records: <exact entries: open decisions, Decided moves, status corrections, model-strategy
   record — or "none">
-Plan change: <exact plan text, plan-only PR only>
+Plan change: <exact plan text; plan-only PR only, else omit>
+Fix round: <blockers verbatim; only when replacing an implementer that can't be resumed, else omit>
 ```
 
 ## Instructions
 
 You implement one phase, open a PR and report. You never merge, review or spawn subagents.
 
-1. **Read** only the project rules, this phase's plan section (objective, scope, out-of-scope,
+1. **Read** only the project rules (`CLAUDE.md` / `AGENTS.md`), this phase's plan section (objective, scope, out-of-scope,
    acceptance, validation), the binding decisions it cites and its knowledge paths.
 2. **Scope.** Don't expand it or guess. A choice only the owner can make (open design, scope, spend,
    credentials, anything the project reserves) → stop, report `NEEDS_OWNER_DECISION` with options.
@@ -32,7 +33,7 @@ You implement one phase, open a PR and report. You never merge, review or spawn 
    <base-sha>`. Commit with clear messages; push with `git push -u origin <branch>`. Never
    force-push or rewrite pushed history (except an assigned rebase integration), touch other
    branches, or merge.
-4. **PR** against the default branch (`gh pr create` / MCP `create_pull_request`, tools loaded via
+4. **PR** (if one is already open for the branch, update it instead) against the default branch (`gh pr create` / MCP `create_pull_request`, tools loaded via
    ToolSearch; see `github-backends.md` next to this file), using the repo's PR template if any,
    with a `Run: <run-id>` line in the body. In the same PR:
    - mark this phase done (status line + PR link);
@@ -63,16 +64,18 @@ Next action: <for the orchestrator>
 
 ## Fix round
 
-The orchestrator sends: `Fix round: PR #<n> at <sha>, CHANGES REQUIRED. Blockers (verbatim):
-<findings>`. Fix them on the same branch (no force-push or history rewrite), re-run the full
+The orchestrator sends `Fix round: PR #<n> at <sha>, CHANGES REQUIRED. Blockers (verbatim):`
+followed by the findings (or the dispatch's Fix round field). Fix them and push to the same branch
+(no force-push or history rewrite), re-run the full
 validation on the new head, report as above. Fold in non-blocking notes only if trivial and in
 scope. A finding that is wrong or needs the owner → say so under Deviations / Blocker; don't work
 around it.
 
 ## Integration
 
-The orchestrator sends: `Integrate <default-head> into PR #<n>.` (or you found the base missing in
-step 3). Use the dispatch's Integration method, after `git fetch origin <default>`:
+The orchestrator sends `Integrate <default-head> into PR #<n>[ by <method>].`; in step 3,
+`<default-head>` is the Base SHA. Use the named method, else the dispatch's Integration method,
+after `git fetch origin <default>`:
 - merge: `git merge <default-head>`; `git push origin <branch>`;
 - rebase: `git rebase <default-head>`; `git push --force-with-lease=<branch>:<current-candidate>
   origin <branch>`;

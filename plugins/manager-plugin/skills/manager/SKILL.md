@@ -262,8 +262,8 @@ Land only a tree that was validated and reviewed. Immediately before landing:
      landings (and fast-forward landings that may keep merge commits); **rebase** for rebase-merge
      landings and fast-forward landings that must stay linear, and only if the project rules don't
      forbid force-pushing or rewriting PR branches (the push is lease-pinned to the current
-     candidate); else none. The same implementer integrates (`Integration` in the brief, with that
-     method), re-runs the full validation on the integrated tree, and the new candidate goes back
+     candidate); else none. The same implementer integrates (`Integration` in the brief; the
+     message names the method), re-runs the full validation on the integrated tree, and the new candidate goes back
      to step 2 → a fresh review. Integration rounds count toward the fix-round limit.
    - **No permitted integration** (e.g. rebase merges or a linear fast-forward landing where the
      project forbids force-pushes, or a fast-forward-only default the session can't push) → decide
@@ -286,8 +286,9 @@ A landing refused or blocked (branch protection, unexplained ref drift, a projec
 landing only: report it, mark the phase and its dependents blocked, continue independent work.
 
 ### 4b. CHANGES REQUIRED → fix, then a fresh review
-Send the blockers **verbatim** to the same implementer (SendMessage, the brief's one-line "Fix
-round" message); if it can't be resumed, dispatch a new one with the PR branch and the blockers.
+Send the blockers **verbatim** to the same implementer (SendMessage, the brief's short "Fix
+round" message); if it can't be resumed, dispatch a new one with the blockers in its `Fix round`
+field.
 Then step 2 → step 3 with a **new** reviewer, who reviews the whole `base...candidate` diff
 independently first and only afterwards, as a separate section, checks the previous blockers,
 which it receives by title only.
