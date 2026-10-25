@@ -42,10 +42,10 @@ questions at all.
   split.
 - **Order by dependency, not by taste.** If B needs A's code, B comes after A. If two parts must
   land together, they are one phase. Put risky unknowns early (a spike or proof phase is fine).
-- **Every phase gets** an objective, scope (and out-of-scope when it matters), `Depends on` (phase
-  ids, or `none` — the manager schedules by it and runs independent phases while others are
-  blocked), an observable acceptance criterion, and the exact validation commands. Green validation is not acceptance;
-  write both.
+- **Every phase gets** an objective, scope (and out-of-scope when it matters), `Depends on`
+  (phase ids, or `none`; the manager schedules by it and keeps running independent phases while
+  others are blocked), an observable acceptance criterion, and the exact validation commands.
+  Green validation is not acceptance; write both.
 - **Owner decisions.** Anything only the owner can decide becomes a numbered open decision with
   options and your recommendation, and the phases it blocks are marked. Don't bury a decision as a
   placeholder inside a phase.

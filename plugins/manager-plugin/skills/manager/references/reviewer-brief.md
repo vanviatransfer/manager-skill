@@ -30,14 +30,17 @@ the code itself. Don't spawn subagents.
 method: get_diff`) and say so. Use the GitHub backend read-only: no comments, reviews or merges.
 
 **What to read.** The plan's section for this phase (objective, scope, out-of-scope, acceptance,
-validation) and the binding decisions it cites; the project rules; the full `git diff
-<base>...<candidate>`; and whatever surrounding code the diff's correctness depends on. Don't read PR
-comments or reviews (they carry earlier verdicts), and don't rely on the PR description or commit
-messages for what the code does.
+validation) and the binding decisions it cites, **as at the base SHA** (`git show
+<base-sha>:<plan-path>`; the candidate's copy may have been edited); the project rules; the full
+`git diff <base>...<candidate>`; and whatever surrounding code the diff's correctness depends on.
+Don't read PR comments or reviews (they carry earlier verdicts), and don't rely on the PR
+description or commit messages for what the code does.
 
 **Review for:** each acceptance criterion; bugs, edge cases and broken invariants in the touched
 code and its callers; security and data safety; adherence to the project rules; whether tests
-exercise the risky parts; anything outside the phase's scope; plan updates that misstate reality. A
+exercise the risky parts; anything outside the phase's scope; plan updates that misstate reality.
+An edit in the diff to this phase's own objective, scope, acceptance or validation is a blocker
+unless it applies a ruling quoted in the PR's plan change log. A
 blocker is something that should not be merged as is; everything else is a note.
 
 **Validate independently.** `git worktree add --detach <worktree-dir> <candidate>`, run every

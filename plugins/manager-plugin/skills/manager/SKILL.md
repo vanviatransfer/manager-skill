@@ -38,7 +38,9 @@ because the next step depends on the result. End the turn only at a stop conditi
   validation, run independently by the reviewer, plus the review. If branch protection refuses a
   merge over required checks, that's an environment issue for that landing: report it.
 - **Sequential phases.** Phases run one at a time on the shared checkout. A blocked phase doesn't
-  stop the run; the scheduler moves to the next ready phase.
+  stop the run; the scheduler moves to the next ready phase. Exception: with a single designated
+  push branch, a phase that blocks after pushing unmerged work occupies the only branch, so no
+  later phase can start (never stack on or discard unreviewed work); stop and report it.
 
 ## Subagents
 
@@ -59,16 +61,21 @@ advisors or audits. Subagents must not spawn further subagents.
 
 Derive state from durable sources only — never from memory of an earlier context:
 
-1. Read the project rules and the living plan (ask once if the plan's location isn't obvious). From
-   the plan: phases with status and `Depends on`, binding decisions, open owner decisions, the
-   fix-round limit.
-2. Choose the GitHub backend; note whether the session has a designated push branch.
-3. `git fetch origin`; record the default branch head.
+1. Choose the GitHub backend; note whether the session has a designated push branch.
+2. `git fetch origin`; record the default branch head.
+3. Read the project rules and the living plan **as on the default branch** (`git show
+   origin/<default>:<path>`, not the working tree, which may hold an unmerged phase branch). Ask
+   once if the plan's location isn't obvious. From the plan: phases with status and `Depends on`,
+   binding decisions, open owner decisions, the fix-round limit.
 4. Reconcile in-flight work so nothing is done twice:
-   - open PRs (and their `review-ledger` comments, see step 3) → that phase resumes at step 2;
-   - a remote `phase/*` branch or the designated branch with unmerged changes
-     (`git diff --stat origin/<default>...origin/<branch>` non-empty) and no open PR → that phase
-     resumes from the branch (the implementer opens the PR), not from scratch;
+   - open PRs (and their `review-ledger` comments, see step 3) → that phase resumes at step 2
+     with a fresh review; a ledger PASS is never a reason to skip it;
+   - a remote `phase/*` branch or the designated branch with no open PR: if its head is the head
+     of a merged PR (`gh pr list --state merged --head <branch> --json number,headRefOid`), it is
+     landed work, not in-flight — at most a designated branch still to reconcile (step 5).
+     Otherwise, if it has changes against the default (`git diff --stat
+     origin/<default>...origin/<branch>`), that phase resumes from the branch (the implementer
+     opens the PR), not from scratch;
    - PRs merged but the phase not marked done → mark it done in the next PR;
    - an open PR that matches no phase → say so; don't touch it.
 5. Decisions answered by the owner in this conversation since they were raised → apply them.
@@ -101,21 +108,29 @@ id, plan path, base SHA, branch, backend, notes carried forward, one-line ruling
 
 ### 2. Verify the report and the candidate
 The report must have every field in the brief's report format; if any is missing or inconsistent,
-ask the same implementer once for exactly those fields. Then check the facts yourself:
+ask the same implementer once for exactly those fields. Then `git fetch origin <branch>` (bounded
+`--depth` if shallow) and check the facts yourself:
 - `gh pr view <n> --json number,state,headRefName,headRefOid,baseRefName,mergeable`;
 - the **candidate SHA** is GitHub's `headRefOid`, never the report's; if they differ, find out why
   (unpushed or unexpected commits) before review;
 - `git merge-base --is-ancestor <base-sha> <candidate>` holds, and the base ref is the default;
 - `git diff --name-only <base-sha>...<candidate>` stays inside the phase scope.
 
-`RESULT: BLOCKED` or `NEEDS_OWNER_DECISION` → record it (**Owner decisions**) and schedule the next
-ready phase. A fixable verification problem → send the implementer back once with the exact problem.
+After a branch update (4a), the base SHA becomes the default head the implementer merged in, once
+`git merge-base --is-ancestor` confirms it is in the candidate.
+
+`NEEDS_OWNER_DECISION` → record it (**Owner decisions**). `BLOCKED` (technical) → if it is an
+environment or tooling problem you can repair, repair once and resume the same implementer;
+otherwise mark the phase blocked with a one-line reason (kept for the final report and the plan's
+next PR). Either way, schedule the next ready phase. A fixable verification problem → send the
+implementer back once with the exact problem.
 
 ### 3. Independent review
 Before dispatch, note `git rev-parse HEAD` and `git status --short` of the shared checkout. Dispatch
 a **new** reviewer with: PR number, base SHA, candidate SHA, phase id and plan path (it reads
-objective, scope, acceptance and validation there itself), project-rule paths, backend, worktree
-location. Never send the implementer's report, the PR description's claims or earlier reviews.
+objective, scope, acceptance and validation from the plan at the base SHA itself, so the candidate
+cannot redefine its own acceptance), project-rule paths, backend, worktree location. Never send
+the implementer's report, the PR description's claims or earlier reviews.
 
 Accept the verdict only if all hold:
 - first line is `VERDICT: PASS`, `PASS WITH NOTES` or `CHANGES REQUIRED`;
@@ -132,7 +147,8 @@ this phase and move on to independent work.
 
 Post one compact **review-ledger** PR comment (`review-ledger round <k>: <verdict> at <sha>;
 blockers: <titles | none>`). It keeps round counts and history durable across sessions; it is
-history, not authorization.
+history, never authorization: landing needs a PASS for the current head that you received in this
+context.
 
 ### 4a. PASS / PASS WITH NOTES → land
 Immediately before landing:
@@ -181,7 +197,9 @@ When a phase needs something only the owner can decide:
 2. Mark the phase and its transitive dependents blocked; keep running every other ready phase.
 3. Ask the whole batch once, at the end, when no ready phase is left (or at a checkpoint the owner
    chose). If decisions or blocked statuses are still not in the plan at that point, first land one
-   plan-only bookkeeping PR through the normal review gate (a `sonnet` reviewer is enough).
+   plan-only bookkeeping PR: a minimal `sonnet` implementer dispatch, through the normal review
+   gate. If no branch is free for it (a designated branch holding a blocked phase's work), the
+   final report is the record instead; say so.
 
 ## Talking to the owner
 

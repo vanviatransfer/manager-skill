@@ -51,8 +51,11 @@ MCP results are facts from GitHub just like `gh` output; a subagent's prose is s
   new default head before the next implementer starts. Never stack a new phase on a merged PR's
   history unreconciled, and never reuse a merged PR: each phase opens a new one.
   1. Confirm the remote branch still points at the merged PR's head:
-     `git ls-remote origin <branch>` = reviewed SHA. Anything else is unexplained drift → stop
-     using the branch and report it; never overwrite commits you didn't land.
+     `git ls-remote origin <branch>` = reviewed SHA. If the ref is gone (the repo auto-deletes
+     merged head branches) and the PR is confirmed merged, recreate it with a plain push:
+     `git push origin origin/<default>:refs/heads/<branch>`, and skip steps 2–3. A ref present at
+     any other SHA is unexplained drift → stop using the branch and report it; never overwrite
+     commits you didn't land.
   2. If the project rules allow force-pushing this branch (or say nothing against it):
      `git fetch origin <default> && git checkout -B <branch> origin/<default>`, then
      `git push --force-with-lease=<branch>:<reviewed-sha> origin <branch>`. Always give the explicit
