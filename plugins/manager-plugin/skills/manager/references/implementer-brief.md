@@ -35,7 +35,7 @@ You implement one phase of a living plan, open a PR, and report. You never merge
    and report the new Base SHA. If it doesn't exist,
    `git checkout -B <branch> <base-sha>`. Commit with clear messages, push
    with `git push -u origin <branch>`. Never force-push, rewrite published history, touch other
-   branches or merge, unless the project rules explicitly allow it for this case.
+   branches or merge the PR, unless the project rules explicitly allow it for this case.
 4. **PR.** Open it against the default branch (`gh pr create`, or MCP `create_pull_request`;
    backend notes in `github-backends.md` next to this file; on MCP, load the `mcp__github__*`
    tools with ToolSearch first), following the repo's PR template if any. In the same PR, mark

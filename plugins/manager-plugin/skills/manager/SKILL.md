@@ -10,7 +10,9 @@ or review: every phase gets a fresh implementer subagent, every candidate SHA a 
 reviewer subagent. Their work stays in their context, so yours stays small across many phases.
 
 Stay in one continuous turn: dispatch subagents in the foreground (`run_in_background: false`),
-because the next step depends on the result. End the turn only at a stop condition.
+because the next step depends on the result. If the harness runs a dispatch in the background
+anyway, wait for its completion notification: a pending subagent is not a result and not a reason
+to end the turn. End the turn only at a stop condition.
 
 ## Ground rules
 
@@ -71,11 +73,14 @@ Derive state from durable sources only — never from memory of an earlier conte
    phase is ready (**Phases and scheduling**); a blocked phase's PR or branch stays parked and is
    listed in the final report, never re-dispatched or re-reviewed.
    - open PR → that phase resumes at step 2, checking the Git/PR facts only (there is no report),
-     then a fresh review; a ledger PASS is never a reason to skip it;
-   - a remote `phase/*` branch or the designated branch with no open PR: if its head is the head
-     of a merged PR (`gh pr list --state merged --head <branch> --json number,headRefOid`), it is
-     landed work — at most a designated branch still to reconcile (step 5). If its head is the
-     head of a PR closed unmerged, it was abandoned: report it, don't resume. Otherwise, if it has
+     with base SHA = `git merge-base origin/<default> <headRefOid>`, then a fresh review; a ledger
+     PASS is never a reason to skip it, and a ledger `blocked` entry with no later owner answer
+     keeps the phase parked;
+   - a remote `phase/*` branch or the designated branch with no open PR: look up closed PRs for
+     it (`gh pr list --state closed --head <branch> --json number,headRefOid,mergedAt`). Head =
+     a merged PR's head → landed work, at most a designated branch still to reconcile (step 5).
+     Head = a PR closed unmerged → abandoned: report it, don't resume it (a new attempt at that
+     phase uses a fresh branch name; on a designated branch, report it). Otherwise, if it has
      changes against the default (`git diff --stat origin/<default>...origin/<branch>`), that
      phase resumes from the branch (the implementer opens the PR), not from scratch;
    - work on a designated branch from an earlier session that this session can't push to →
@@ -89,10 +94,11 @@ Remaining work not split into phases → split it (**Phases**) and land the spli
 PR** before any phase starts, so every phase exists at its base SHA. Tell the owner the list in a
 few lines; wait for approval only if the split changes scope or approved design.
 
-**Plan-only PR** (the split, or end-of-run bookkeeping): a `sonnet` implementer gets the exact plan
-text to write as its `Plan change` field; a `sonnet` reviewer gets the same text and judges that the
-diff writes exactly that, touches nothing else, and doesn't contradict the approved goal, scope or
-binding decisions. Otherwise the normal loop applies.
+**Plan-only PR** (the split, or end-of-run bookkeeping): phase id `plan`, branch `phase/plan-<slug>`
+(or the designated branch). A `sonnet` implementer gets the exact plan text to write as its `Plan
+change` field — it replaces the usual status and decision edits; a `sonnet` reviewer gets the same
+text and judges that the diff writes exactly that, touches nothing else, and doesn't contradict the
+approved goal, scope or binding decisions. Otherwise the normal loop applies.
 
 ## Phases and scheduling
 
@@ -102,8 +108,8 @@ judgment, can be validated alone and need no code from each other. If two parts 
 they are one phase. Each phase carries an observable acceptance criterion **and** the validation
 commands; green validation alone is not acceptance.
 
-**Ready** = status `todo`, every `Depends on` phase is `done`, and no open decision blocks it. A
-phase that blocks (owner decision, tripped brake, environment failure for its landing) blocks its
+**Ready** = status `todo` or `in progress`, every `Depends on` phase is `done`, and no open
+decision blocks it. A phase that blocks (owner decision, tripped brake, environment failure for its landing) blocks its
 transitive dependents only. A phase without a `Depends on` line is treated as depending on the phase
 before it, unless independence is plain from scope; record that ruling in one line. Always pick the
 lowest-numbered ready phase.
@@ -158,7 +164,8 @@ this phase and move on to independent work.
 Post one compact **review-ledger** PR comment (`review-ledger round <k>: <verdict> at <sha>;
 blockers: <titles | none>`). It keeps round counts and history durable across sessions; it is
 history, never authorization: landing needs a PASS for the current head that you received in this
-context.
+context. When a phase with a PR blocks (owner decision, tripped brake), add one ledger line
+`review-ledger blocked: <Dn | reason>` so the block survives a context loss.
 
 ### 4a. PASS / PASS WITH NOTES → land
 Immediately before landing:

@@ -29,7 +29,7 @@ operations differ. Owner/repo come from `git remote get-url origin`.
 | PR facts | `gh pr view <n> --json number,state,headRefName,headRefOid,baseRefName,mergeable,files` | `pull_request_read` `method: get` → `state`, `merged`, `head.ref`, `head.sha`, `base.ref`, `mergeable`; files: `method: get_files` |
 | Create PR | `gh pr create --base <default> --head <branch> --title … --body …` | `create_pull_request` `base`, `head`, `title`, `body` |
 | Merge, pinned | `gh pr merge <n> --<method> --match-head-commit <sha>` | `merge_pull_request` `merge_method: <method>`, `expectedHeadSha: <sha>` |
-| Merged PR for a branch | `gh pr list --state merged --head <branch> --json number,headRefOid` | `list_pull_requests` `state: closed`, `head: <owner>:<branch>`, `fields: [number,merged,merged_at,head]` → keep `merged_at` set, compare `head.sha` |
+| Merged / closed PR for a branch | `gh pr list --state closed --head <branch> --json number,headRefOid,mergedAt` (`mergedAt` null = closed unmerged) | `list_pull_requests` `state: closed`, `head: <owner>:<branch>`, `fields: [number,merged,merged_at,head]` → keep `merged_at` set, compare `head.sha` |
 | Merged? | `gh pr view <n> --json state,mergeCommit` | `pull_request_read` `method: get` → `merged: true`, `merge_commit_sha` |
 | PR diff | `git diff <base-sha>...<head-sha>` (both) | same; `pull_request_read method: get_diff` only if the head can't be fetched |
 | Review-ledger comment | `gh pr comment <n> --body …` | `add_issue_comment` `issue_number: <n>`, `body` |
