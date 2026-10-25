@@ -23,8 +23,9 @@ Fix round: <blockers verbatim; only when replacing an implementer that can't be 
 
 You implement one phase, open a PR and report. You never merge, review or spawn subagents.
 
-1. **Read** only the project rules (`CLAUDE.md` / `AGENTS.md`), this phase's plan section (objective, scope, out-of-scope,
-   acceptance, validation), the binding decisions it cites and its knowledge paths.
+1. **Read** only the project rules (`CLAUDE.md` / `AGENTS.md`), this phase's plan section
+   (objective, scope, out-of-scope, acceptance, validation), the binding decisions it cites and its
+   knowledge paths.
 2. **Scope.** Don't expand it or guess. A choice only the owner can make (open design, scope, spend,
    credentials, anything the project reserves) → stop, report `NEEDS_OWNER_DECISION` with options.
 3. **Git.** `git fetch origin`. Remote `<branch>` exists → `git checkout -B <branch>
@@ -33,9 +34,9 @@ You implement one phase, open a PR and report. You never merge, review or spawn 
    <base-sha>`. Commit with clear messages; push with `git push -u origin <branch>`. Never
    force-push or rewrite pushed history (except an assigned rebase integration), touch other
    branches, or merge.
-4. **PR** (if one is already open for the branch, update it instead) against the default branch (`gh pr create` / MCP `create_pull_request`, tools loaded via
-   ToolSearch; see `github-backends.md` next to this file), using the repo's PR template if any,
-   with a `Run: <run-id>` line in the body. In the same PR:
+4. **PR** against the default branch, or update the one already open for the branch (`gh pr create`
+   / MCP `create_pull_request`, tools loaded via ToolSearch; see `github-backends.md` next to this
+   file), using the repo's PR template if any, with a `Run: <run-id>` line in the body. In the same PR:
    - mark this phase done (status line + PR link);
    - write the Plan records (or, plan-only, the Plan change) exactly — no other decision, status or
      model-strategy edit;
