@@ -24,7 +24,15 @@ Requirements: Claude Code, `git`, and an authenticated `gh` CLI for the project'
 
 ## Install
 
-Pick one.
+The easiest way: give Claude Code this repo's link and say "install this plugin in this repo".
+
+> **Note for Claude, when asked to install this plugin into a repo:** merge the JSON shown under
+> "What the per-repo install writes" into the repo's `.claude/settings.json` (create the file if
+> missing, keep every existing key), or run the two `--scope project` commands below if the
+> `claude` CLI is available. Commit it on its own branch, open a PR, and merge it following the
+> repo's rules. Tell the user the plugin loads in sessions started after the merge.
+
+Or do it yourself. Pick one.
 
 **For one repo (recommended; also works in cloud sessions).** In a terminal, inside the repo:
 
