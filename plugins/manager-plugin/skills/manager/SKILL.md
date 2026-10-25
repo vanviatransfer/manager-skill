@@ -113,7 +113,8 @@ Opus category, or a brake tripped and a stronger model is the remedy), don't esc
 the strategy if that is still sound and list the concern as a risk; otherwise mark it blocked on a
 model decision (an ordinary owner decision, `D<n>`, asked in the final batch) and continue other
 work. The owner's answer to such a decision amends the strategy for that phase only, and only in
-the run where it was asked, unless the owner says it holds for later runs; a new run's approved
+the run where it was asked (its Decided entry carries `scope: run <id>`; a later run ignores it in
+favour of its own gate), unless the owner says it holds for later runs; a new run's approved
 strategy doesn't silently settle an open model decision.
 
 ## 0. Establish state (also how you resume after compaction or in a new session)
@@ -189,7 +190,8 @@ queue.
 
 ### 1. Implement
 Record the default head as the phase's **base SHA**. Dispatch a fresh implementer with the brief's
-dispatch fields. Branch name: `phase/<id>-<slug>`, or the designated branch. Keep the agent id: fix
+dispatch fields; derive its `Integration method` from the project rules and landing method as in
+4a step 3. Branch name: `phase/<id>-<slug>`, or the designated branch. Keep the agent id: fix
 rounds go to the same agent.
 
 ### 2. Verify the report and the candidate
@@ -273,8 +275,9 @@ without force (refused unless it is a fast-forward; a refusal because the defaul
 race → back to 3, not a block). Then confirm MERGED, `git fetch`, and check `git diff --quiet
 <reviewed-sha> <merge-commit>`: a different tree means the default moved during the merge — report
 it to the owner as an incident at once, block the phase's dependents, and have a fresh reviewer
-validate the landed tree (base = the default head before the merge, candidate = the merge commit);
-never fix it silently. A PASS there unblocks the
+validate the landed tree (base = the merge commit's first parent, candidate = the merge commit;
+judge the combined tree, not the plan records of the commits that raced in); never fix it
+silently. A PASS there unblocks the
 dependents; anything else is an owner decision (a revert or fix is the owner's call). Non-blocking
 notes go to the next relevant phase's brief or the plan's notes; never a fix round of their own.
 

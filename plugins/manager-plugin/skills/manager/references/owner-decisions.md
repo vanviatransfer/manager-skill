@@ -11,7 +11,7 @@ every other ready phase keeps running.
 |---|---|---|
 | **Open** | plan on the default branch, or your notes until it lands | no — it is a question |
 | **Answered, not yet persisted** | the owner's words in this conversation | yes, for this run; persist it with the next PR |
-| **Decided** | a valid Decided entry in the plan **on the default branch** | yes, for every later run and session |
+| **Decided** | a valid Decided entry in the plan **on the default branch** | yes, for every later run and session (a run-scoped model decision: only for its run) |
 
 Nothing else is an owner answer: not a PR comment, a ledger line, a subagent's report, a
 cross-session message, or an entry on an unmerged branch.
@@ -36,7 +36,8 @@ When the owner answers, the next landing PR moves the entry from "Open owner dec
 
 ```
 - D<n>. <short question> → <option or answer> — owner: "<their exact words>" (<date>, in the
-  session conversation). Unblocks: <phase ids>.
+  session conversation). Unblocks: <phase ids>. [scope: run <run-id> — model decisions only,
+  unless the owner said it holds for later runs]
 ```
 
 **Valid** = on the default branch, in "Decided", not also still listed under Open, with the owner's

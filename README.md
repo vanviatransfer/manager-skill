@@ -18,7 +18,8 @@ The main session becomes a thin orchestrator that runs the plan one phase per PR
    re-validated and re-reviewed first; only a reviewed tree lands.
 
 Before a new run starts, the manager recommends a model strategy (Sonnet, Opus or a mix, with a
-one-line reason) and waits for the owner's choice; it never picks or escalates a model on its own.
+one-line reason) and waits for the owner's choice, unless the owner set a standing policy; it never
+picks or escalates a model on its own.
 
 Phases are scheduled by their declared dependencies: an owner decision or a stuck phase blocks only
 what depends on it, and everything else keeps running; the open decisions are asked in one batch at

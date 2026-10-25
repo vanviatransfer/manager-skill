@@ -77,7 +77,7 @@ verbatim from the reviewer:
 
 <findings>
 
-Push to the same branch (no force-push unless the project allows it), re-run the full validation
+Push to the same branch (no force-push or history rewrite), re-run the full validation
 on the new head, and report in the same format with the new Candidate SHA. Fold in non-blocking
 notes only if trivial and in scope. If a finding is wrong or needs an owner decision, say so under
 Deviations / Blocker instead of working around it.
