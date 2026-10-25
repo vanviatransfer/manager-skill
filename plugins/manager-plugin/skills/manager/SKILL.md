@@ -125,9 +125,10 @@ Derive state from durable sources only — never from memory of an earlier conte
    phase is ready (**Phases and scheduling**); a blocked phase's PR or branch stays parked and is
    listed in the final report, never re-dispatched or re-reviewed.
    - open PR → that phase resumes at loop step 2, checking the Git/PR facts only (there is no
-     report, and its Plan records are unknown: send the reviewer `unknown (resumed)`), with base SHA = `git merge-base origin/<default> <headRefOid>`, then a fresh review; a
-     ledger PASS is never a reason to skip it, and a ledger `blocked` entry keeps the phase parked
-     unless the decision behind it is now decided;
+     report, and its Plan records are unknown: send the reviewer `unknown (resumed)`), with base
+     SHA = `git merge-base origin/<default> <headRefOid>`, then a fresh review; a ledger PASS is
+     never a reason to skip it, and a ledger `blocked` entry keeps the phase parked unless the
+     decision behind it is now decided;
    - a remote `phase/*` branch or the designated branch with no open PR: look up closed PRs for
      it (`gh pr list --state closed --head <branch> --json number,headRefOid,mergedAt`). Head =
      a merged PR's head → landed work, at most a designated branch still to reconcile (loop step

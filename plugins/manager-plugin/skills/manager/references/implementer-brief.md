@@ -41,8 +41,9 @@ You implement one phase of a living plan, open a PR, and report. You never merge
    tools with ToolSearch first), following the repo's PR template if any. In the same PR, mark
    the phase done in the plan (its status line + PR link) and write the "Plan records" exactly as
    given — no other decision, status or model-strategy edits. If the plan must change for later
-   phases, update them and the change log in the same PR. Don't change this phase's own objective, scope, acceptance or
-   validation unless a ruling you were given requires it; then quote the ruling in the change log.
+   phases, update them and the change log in the same PR. Don't change this phase's own
+   objective, scope, acceptance or validation unless a ruling you were given requires it; then
+   quote the ruling in the change log.
 5. **Validate.** Run every validation command the plan and project require on your final commit.
    Send long output to a file (`cmd > /tmp/<name>.log 2>&1; echo $?`) and look at only what you
    need. Don't trigger or wait for GitHub CI.
@@ -87,6 +88,7 @@ method, chosen by the orchestrator from the project rules: <merge | rebase>.
 - merge: `git merge <default-head>` into the branch, push normally.
 - rebase: `git rebase <default-head>`, push with `--force-with-lease=<branch>:<current-candidate>`.
 If the method turns out not to be allowed, or the integration conflicts in a way you can't resolve
-within the phase's scope, don't improvise: report BLOCKED with the reason. Re-run the full validation on the integrated tree
-and report in the same format with Base SHA = <default-head> and the new Candidate SHA.
+within the phase's scope, don't improvise: report BLOCKED with the reason. Re-run the full
+validation on the integrated tree and report in the same format with Base SHA = <default-head> and
+the new Candidate SHA.
 ```
