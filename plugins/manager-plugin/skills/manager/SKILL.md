@@ -12,7 +12,8 @@ reviewer subagent. Their work stays in their context, so yours stays small acros
 Stay in one continuous turn: dispatch subagents in the foreground (`run_in_background: false`),
 because the next step depends on the result. If the harness runs a dispatch in the background
 anyway, wait for its completion notification: a pending subagent is not a result and not a reason
-to end the turn. End the turn only at the model-strategy gate or a stop condition.
+to end the turn. End the turn only for a question to the owner that blocks all work (the
+model-strategy gate, the plan's location, approval of a new plan) or at a stop condition.
 
 ## Ground rules
 
@@ -64,19 +65,22 @@ owner-approved model strategy. You never pick one silently, and you never escala
 A **run** is one owner request to execute the plan, until its final report. Compaction does not end
 it, and the owner's answers to the final decision batch continue it. A new session is a new run
 (even for "continue the plan"), unless the owner's message there explicitly resumes the
-interrupted run ("kaldığı yerden devam", "resume the interrupted run"). Each run gets an id when
-its strategy is approved, `R<YYYY-MM-DD-HHMM>`; it goes into every PR body of the run (`Run:`
-dispatch field) and every review-ledger comment.
+interrupted run ("kaldığı yerden devam", "resume the interrupted run"). Each run gets an id at the
+gate, `R<YYYY-MM-DD-HHMM>`, whichever rule settles its strategy; it goes into every PR body of the
+run (`Run:` dispatch field) and every review-ledger comment. Keep one line in your working notes,
+`Run <id>: model strategy <strategy> (owner: "<quote>" | standing)`, so it survives compaction.
 
 **Which strategy applies** (first match):
-1. A strategy the owner stated in this conversation for this run (after compaction: as carried in
-   the summary, in the owner's words). Keep it as one quotable line so it survives compaction.
-2. After a compaction that lost that line, or on an explicit resume: the `run` record in the plan
-   on the default branch, **only if its run id equals this run's**. This run's id comes only from
-   this session's own earlier PRs or, on a resume, from in-flight work — an open PR's body or
-   ledger, never an older landed PR. No such id, or a record with another id → this rule doesn't
-   apply.
-3. A `standing` strategy recorded in the plan on the default branch (owner policy for all runs).
+1. A strategy the owner gave in this conversation for this run (after compaction: that line, as
+   carried in the summary).
+2. **Continuing a run** (after a compaction that lost the line, or on an explicit resume): the
+   `run` record in the plan on the default branch, only if its id is this run's id. After
+   compaction the id is the one in the summary or on this session's own PRs. On a resume it is the
+   id on the open PRs that are not parked (no ledger `blocked` line), and only if they all carry the
+   same id; parked PRs and landed PRs never identify the run. If the id or a matching record can't
+   be established, **ask** — never fall back to a standing policy for a run already under way, since
+   the owner may have overridden it for this run.
+3. **A new run**: a `standing` strategy recorded in the plan on the default branch.
 4. Otherwise ask — this gate is mandatory and separate from ordinary owner decisions.
 
 **Asking.** After the read-only part of step 0 (no dispatch, no writes), assess complexity from the
@@ -98,9 +102,10 @@ when only part of the work needs it. Opus costs more per token; say so when you 
 **Applying.** The approved strategy fixes, per role (and per phase or condition for a mixed one),
 the `model` and the `effort` (`medium` unless the strategy says otherwise). It covers every dispatch
 of the run: phases, fix rounds, integrations, plan-only PRs, brake retries. Record it in the plan
-(**Plan records**, first PR of the run) as
-`Model strategy: <strategy> — scope: run <run-id> | standing — owner: "<quote>" (<date>)`,
-replacing the previous `run` line (a `standing` line stays until the owner changes it).
+(**Plan records**, first PR of the run; for every run, also one under a standing policy) as
+`Model strategy: <strategy> — scope: run <run-id> — owner: "<quote>" | standing (<date>)`,
+replacing the previous `run` line. A `standing` line (`scope: standing`) is written only when the
+owner says the choice is a policy for all runs, and stays until the owner changes it.
 
 **Not enough model.** If a phase needs stronger reasoning than the strategy allows (it is in an
 Opus category, or a brake tripped and a stronger model is the remedy), don't escalate. Run it under
@@ -158,7 +163,8 @@ few lines; wait for approval only if the split changes scope or approved design.
 field — it replaces the usual status and record edits; the reviewer gets the same text and judges
 that the diff writes exactly that, touches nothing else, and doesn't contradict the approved goal,
 scope or binding decisions. Models: the strategy's cheapest allowed choice. Otherwise the normal
-loop applies.
+loop applies. A resumed plan-only PR keeps none of its own decision or model records: write its
+Plan change again from the plan on the default branch and this conversation's owner answers only.
 
 ## Phases and scheduling
 
@@ -245,15 +251,15 @@ Land only a tree that was validated and reviewed. Immediately before landing:
    - **Yes** → the landed tree equals the reviewed tree; the review stands. Land.
    - **No** (the default moved and the candidate doesn't include it) → don't land, whatever the
      file overlap: non-overlapping files don't prove the combination works. First pick the
-     integration method the project allows: merging the default into the branch (fine for squash
-     and merge-commit landings), or — required when the landing keeps the branch's commits and
-     history must be linear — a rebase, only if the project allows rebasing and force-pushing PR
-     branches. The same implementer integrates (`Integration` in the
-     brief, with that method), re-runs the full validation on the integrated tree, and the new
-     candidate goes back to step 2 → a fresh review. Integration rounds count toward the
+     integration method: **merge** the default into the branch for squash and merge-commit
+     landings (and fast-forward landings that may keep merge commits); **rebase** for rebase-merge
+     landings and fast-forward landings that must stay linear, and only if the project rules don't
+     forbid force-pushing or rewriting PR branches (the push is lease-pinned to the current
+     candidate); else none. The same implementer integrates (`Integration` in the brief, with that
+     method), re-runs the full validation on the integrated tree, and the new candidate goes back to step 2 → a fresh review. Integration rounds count toward the
      fix-round limit.
-   - **No permitted integration** (e.g. rebase merges or fast-forward landing with linear history
-     and no force-push allowed, or a fast-forward-only default the session can't push) → decide
+   - **No permitted integration** (e.g. rebase merges or a linear fast-forward landing where the
+     project forbids force-pushes, or a fast-forward-only default the session can't push) → decide
      this before dispatching anything: block that landing, record why, continue independent work.
 
 Land by the project's method, pinned to the reviewed SHA: `gh pr merge <n> --<squash|merge|rebase>

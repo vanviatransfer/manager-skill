@@ -37,8 +37,8 @@ You implement one phase of a living plan, open a PR, and report. You never merge
    --is-ancestor <base-sha> HEAD`); if it doesn't, integrate as in "Integration" below, with the
    dispatch's method, and report the new Base SHA. If it doesn't exist, `git checkout -B <branch>
    <base-sha>`. Commit with clear messages, push with `git push -u origin <branch>`. Never
-   force-push, rewrite published history, touch other branches or merge the PR, unless the project
-   rules explicitly allow it for this case.
+   force-push or rewrite published history (except a rebase integration the orchestrator assigned),
+   touch other branches or merge the PR.
 4. **PR.** Open it against the default branch (`gh pr create`, or MCP `create_pull_request`;
    backend notes in `github-backends.md` next to this file; on MCP, load the `mcp__github__*`
    tools with ToolSearch first), following the repo's PR template if any. In the same PR, mark

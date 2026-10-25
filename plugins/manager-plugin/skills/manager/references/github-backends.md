@@ -61,7 +61,8 @@ MCP results are facts from GitHub just like `gh` output; a subagent's prose is s
      `git push origin origin/<default>:refs/heads/<branch>`, and skip steps 2–3. A ref present at
      any other SHA is unexplained drift → stop using the branch and report it; never overwrite
      commits you didn't land.
-  2. If the project rules allow force-pushing this branch (or say nothing against it):
+  2. If the project rules don't forbid force-pushing this branch (the same standard as a rebase
+     integration):
      `git fetch origin <default> && git checkout -B <branch> origin/<default>`, then
      `git push --force-with-lease=<branch>:<reviewed-sha> origin <branch>`. Always give the explicit
      expected SHA: a bare `--force-with-lease` after a `git fetch` checks against the just-fetched
