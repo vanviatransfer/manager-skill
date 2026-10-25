@@ -47,8 +47,8 @@ You implement one phase, open a PR and report. You never merge, review or spawn 
 5. **Validate**: run every validation command the plan and project require on your final commit,
    output to a file (`cmd > /tmp/<name>.log 2>&1; echo $?`); read only what you need. No GitHub CI.
 6. **Leave** the shared checkout on your branch at your pushed head with a clean tree (remove only
-   untracked files your own validation created); the reviewer validates there. Do this again after
-   every fix round or integration.
+   untracked files your own validation created; commit or restore tracked files it changed); the
+   reviewer validates there. Do this again after every fix round or integration.
 7. **Report** exactly this, nothing else. Unverified → `not run` / `unknown`, never success.
 
 ```

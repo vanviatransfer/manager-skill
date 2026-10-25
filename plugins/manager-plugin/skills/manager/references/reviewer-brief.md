@@ -63,6 +63,10 @@ works:
 3. otherwise `not run: <reason>` (e.g. HEAD ≠ candidate, dirty tree, command unavailable). Never
    move the checkout to make it work, and never imply a pass.
 
+**Validation-only resume:** if the orchestrator resumes you to run missing validation, keep the
+same Candidate SHA, redo the checks above, run only that validation, and re-report the full
+format.
+
 **Previous blockers:** only after your own review is complete, check each title separately.
 
 Answer exactly this, nothing else:
