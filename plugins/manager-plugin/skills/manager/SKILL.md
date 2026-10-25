@@ -288,8 +288,9 @@ landing only: report it, mark the phase and its dependents blocked, continue ind
 ### 4b. CHANGES REQUIRED → fix, then a fresh review
 Send the blockers **verbatim** to the same implementer (SendMessage, the brief's one-line "Fix
 round" message); if it can't be resumed, dispatch a new one with the PR branch and the blockers.
-Then step 2 → step 3 with a **new** reviewer, who reviews the whole `base...candidate` diff independently first and only afterwards, as
-a separate section, checks the previous blockers, which it receives by title only.
+Then step 2 → step 3 with a **new** reviewer, who reviews the whole `base...candidate` diff
+independently first and only afterwards, as a separate section, checks the previous blockers,
+which it receives by title only.
 
 ### Brakes
 - **Fix rounds:** at most 12 per phase (the plan or project may set another number; a project
