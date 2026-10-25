@@ -67,23 +67,32 @@ Derive state from durable sources only — never from memory of an earlier conte
    origin/<default>:<path>`, not the working tree, which may hold an unmerged phase branch). Ask
    once if the plan's location isn't obvious. From the plan: phases with status and `Depends on`,
    binding decisions, open owner decisions, the fix-round limit.
-4. Reconcile in-flight work so nothing is done twice:
-   - open PRs (and their `review-ledger` comments, see step 3) → that phase resumes at step 2
-     with a fresh review; a ledger PASS is never a reason to skip it;
+4. Reconcile in-flight work so nothing is done twice. Resume a phase's in-flight work only if the
+   phase is ready (**Phases and scheduling**); a blocked phase's PR or branch stays parked and is
+   listed in the final report, never re-dispatched or re-reviewed.
+   - open PR → that phase resumes at step 2, checking the Git/PR facts only (there is no report),
+     then a fresh review; a ledger PASS is never a reason to skip it;
    - a remote `phase/*` branch or the designated branch with no open PR: if its head is the head
      of a merged PR (`gh pr list --state merged --head <branch> --json number,headRefOid`), it is
-     landed work, not in-flight — at most a designated branch still to reconcile (step 5).
-     Otherwise, if it has changes against the default (`git diff --stat
-     origin/<default>...origin/<branch>`), that phase resumes from the branch (the implementer
-     opens the PR), not from scratch;
+     landed work — at most a designated branch still to reconcile (step 5). If its head is the
+     head of a PR closed unmerged, it was abandoned: report it, don't resume. Otherwise, if it has
+     changes against the default (`git diff --stat origin/<default>...origin/<branch>`), that
+     phase resumes from the branch (the implementer opens the PR), not from scratch;
+   - work on a designated branch from an earlier session that this session can't push to →
+     report it; don't resume or duplicate it;
    - PRs merged but the phase not marked done → mark it done in the next PR;
    - an open PR that matches no phase → say so; don't touch it.
 5. Decisions answered by the owner in this conversation since they were raised → apply them.
 
 No living plan → create one with the `living-plan` skill and get the owner's approval first.
-Remaining work not split into phases → split it (**Phases**), write the split into the plan through
-the first phase's PR, and tell the owner the list in a few lines; wait for approval only if the
-split changes scope or approved design.
+Remaining work not split into phases → split it (**Phases**) and land the split as a **plan-only
+PR** before any phase starts, so every phase exists at its base SHA. Tell the owner the list in a
+few lines; wait for approval only if the split changes scope or approved design.
+
+**Plan-only PR** (the split, or end-of-run bookkeeping): a `sonnet` implementer gets the exact plan
+text to write as its `Plan change` field; a `sonnet` reviewer gets the same text and judges that the
+diff writes exactly that, touches nothing else, and doesn't contradict the approved goal, scope or
+binding decisions. Otherwise the normal loop applies.
 
 ## Phases and scheduling
 
@@ -102,8 +111,8 @@ lowest-numbered ready phase.
 ## The loop, per phase
 
 ### 1. Implement
-Record the default head as the phase's **base SHA**. Dispatch a fresh implementer (fields: phase
-id, plan path, base SHA, branch, backend, notes carried forward, one-line rulings). Branch name:
+Record the default head as the phase's **base SHA**. Dispatch a fresh implementer with the
+brief's dispatch fields. Branch name:
 `phase/<id>-<slug>`, or the designated branch. Keep the agent id: fix rounds go to the same agent.
 
 ### 2. Verify the report and the candidate
@@ -129,8 +138,9 @@ implementer back once with the exact problem.
 Before dispatch, note `git rev-parse HEAD` and `git status --short` of the shared checkout. Dispatch
 a **new** reviewer with: PR number, base SHA, candidate SHA, phase id and plan path (it reads
 objective, scope, acceptance and validation from the plan at the base SHA itself, so the candidate
-cannot redefine its own acceptance), project-rule paths, backend, worktree location. Never send
-the implementer's report, the PR description's claims or earlier reviews.
+cannot redefine its own acceptance), project-rule paths, backend, worktree location, the rulings
+the implementer got (and the Plan change, for a plan-only PR). Never send the implementer's
+report, the PR description's claims or earlier reviews.
 
 Accept the verdict only if all hold:
 - first line is `VERDICT: PASS`, `PASS WITH NOTES` or `CHANGES REQUIRED`;
@@ -153,10 +163,11 @@ context.
 ### 4a. PASS / PASS WITH NOTES → land
 Immediately before landing:
 - `headRefOid` still equals the reviewed SHA; any other value → stale review → step 2.
-- Re-read the default head (`git ls-remote origin <default>`). If it moved since the base SHA and
-  the new commits touch files this PR touches — or the project requires up-to-date branches — the
-  implementer updates the branch by the project's method, and it goes back to step 2 with a fresh
-  review. Unrelated movement: land, and note it in one line.
+- `git fetch origin <default>`. If it moved since the base SHA, compare `git diff --name-only
+  <base-sha> origin/<default>` with the PR's files. Any overlap — or a project rule requiring
+  up-to-date branches — means the implementer updates the branch by the project's method, and it
+  goes back to step 2 with a fresh review. No overlap: land, and list "landed over unrelated base
+  movement, combined result not validated" as a risk in the final report.
 
 Merge by the project's method, pinned: `gh pr merge <n> --<squash|merge|rebase> --match-head-commit
 <reviewed-sha>` (MCP: `expectedHeadSha`; never omit the pin). If the project lands some other way,
@@ -197,9 +208,8 @@ When a phase needs something only the owner can decide:
 2. Mark the phase and its transitive dependents blocked; keep running every other ready phase.
 3. Ask the whole batch once, at the end, when no ready phase is left (or at a checkpoint the owner
    chose). If decisions or blocked statuses are still not in the plan at that point, first land one
-   plan-only bookkeeping PR: a minimal `sonnet` implementer dispatch, through the normal review
-   gate. If no branch is free for it (a designated branch holding a blocked phase's work), the
-   final report is the record instead; say so.
+   plan-only bookkeeping PR (see step 0). If no branch is free for it (a designated branch holding
+   a blocked phase's work), the final report is the record instead; say so.
 
 ## Talking to the owner
 

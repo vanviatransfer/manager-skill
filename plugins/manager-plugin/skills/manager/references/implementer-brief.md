@@ -11,6 +11,8 @@ Branch: <phase/<id>-<slug> | designated branch>
 GitHub backend: <gh | GitHub MCP>
 Notes carried forward: <non-blocking review notes for this phase, or "none">
 Rulings: <one-line orchestrator rulings or quoted owner words that apply, or "none">
+Owner decisions to record: <D entries from owner-decisions.md, or "none">
+Plan change: <exact plan text to write, for a plan-only PR; omit otherwise>
 ```
 
 Add an excerpt only when it is clearly better than a pointer. An undecided question is an owner
@@ -29,15 +31,16 @@ You implement one phase of a living plan, open a PR, and report. You never merge
    report `NEEDS_OWNER_DECISION` with the options. Don't guess, and don't expand scope.
 3. **Git.** `git fetch origin`. If `<branch>` exists on the remote, continue from its head
    (`git checkout -B <branch> origin/<branch>`); it must contain the base SHA (`git merge-base
-   --is-ancestor <base-sha> HEAD`), otherwise report `BLOCKED`. If it doesn't exist,
+   --is-ancestor <base-sha> HEAD`); if it doesn't, bring it up to date as in "Branch update" below
+   and report the new Base SHA. If it doesn't exist,
    `git checkout -B <branch> <base-sha>`. Commit with clear messages, push
    with `git push -u origin <branch>`. Never force-push, rewrite published history, touch other
    branches or merge, unless the project rules explicitly allow it for this case.
 4. **PR.** Open it against the default branch (`gh pr create`, or MCP `create_pull_request`;
    backend notes in `github-backends.md` next to this file; on MCP, load the `mcp__github__*`
    tools with ToolSearch first), following the repo's PR template if any. In the same PR, mark
-   the phase done in the plan (its status line + PR link) and add any owner decisions the
-   orchestrator gave you to record. If the plan must change for later phases, update them and the
+   the phase done in the plan (its status line + PR link) and add the decisions listed under
+   "Owner decisions to record". If the plan must change for later phases, update them and the
    change log in the same PR. Don't change this phase's own objective, scope, acceptance or
    validation unless a ruling you were given requires it; then quote the ruling in the change log.
 5. **Validate.** Run every validation command the plan and project require on your final commit.

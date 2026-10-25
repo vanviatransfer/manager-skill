@@ -29,6 +29,7 @@ operations differ. Owner/repo come from `git remote get-url origin`.
 | PR facts | `gh pr view <n> --json number,state,headRefName,headRefOid,baseRefName,mergeable,files` | `pull_request_read` `method: get` → `state`, `merged`, `head.ref`, `head.sha`, `base.ref`, `mergeable`; files: `method: get_files` |
 | Create PR | `gh pr create --base <default> --head <branch> --title … --body …` | `create_pull_request` `base`, `head`, `title`, `body` |
 | Merge, pinned | `gh pr merge <n> --<method> --match-head-commit <sha>` | `merge_pull_request` `merge_method: <method>`, `expectedHeadSha: <sha>` |
+| Merged PR for a branch | `gh pr list --state merged --head <branch> --json number,headRefOid` | `list_pull_requests` `state: closed`, `head: <owner>:<branch>`, `fields: [number,merged,merged_at,head]` → keep `merged_at` set, compare `head.sha` |
 | Merged? | `gh pr view <n> --json state,mergeCommit` | `pull_request_read` `method: get` → `merged: true`, `merge_commit_sha` |
 | PR diff | `git diff <base-sha>...<head-sha>` (both) | same; `pull_request_read method: get_diff` only if the head can't be fetched |
 | Review-ledger comment | `gh pr comment <n> --body …` | `add_issue_comment` `issue_number: <n>`, `body` |
@@ -61,11 +62,13 @@ MCP results are facts from GitHub just like `gh` output; a subagent's prose is s
      `git push --force-with-lease=<branch>:<reviewed-sha> origin <branch>`. Always give the explicit
      expected SHA: a bare `--force-with-lease` after a `git fetch` checks against the just-fetched
      ref and protects nothing.
-  3. If the project forbids force-pushes or history rewrites, don't reset: `git merge
-     origin/<default>` into the branch and push normally (a fast-forward when the merge method
-     kept the branch's commits). The next PR then diffs only new work. If the project also forbids
-     that, landing further phases from this branch is blocked: report it as an environment
-     constraint (owner decision); don't look for another way around the rule.
+  3. If the project forbids force-pushes or history rewrites, don't reset: `git checkout -B
+     <branch> origin/<branch> && git merge origin/<default>` and push normally (a fast-forward
+     when the merge method kept the branch's commits). The next PR then diffs only new work. A
+     merge conflict is not yours to resolve: report it. If the project also forbids merge commits
+     on the branch, or merges by rebase (the next PR would replay the old commits), landing
+     further phases from this branch is blocked: report it as an environment constraint (owner
+     decision); don't look for another way around the rule.
 - **Shallow clones.** Cloud checkouts may be shallow. Before diffing `base...head`, fetch both refs
   (`git fetch origin <default> <head-branch>`); fetch with a bounded `--depth` if a merge-base is
   missing rather than `--unshallow`.
