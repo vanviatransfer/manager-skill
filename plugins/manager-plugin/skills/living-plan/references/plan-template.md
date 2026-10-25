@@ -38,7 +38,7 @@ Fix-round limit per phase: 12
 Status: todo
 Objective: <one deliverable>
 Scope: <files / areas>. Out of scope: <if it matters>
-Depends on: <phase ids or "none">
+Depends on: <phase ids or "none" — required; the manager schedules by it>
 Acceptance: <observable result>
 Validation: <commands, or "standard">
 Notes: <decisions cited (B1, D2), risks, knowledge paths>
@@ -68,7 +68,7 @@ Raised: <date>
 - <date>: P4–P6 re-planned after <fact>; P5 superseded.
 
 ## How to keep this plan alive
-- A phase PR updates only its own status line and links itself.
+- A phase PR updates its own status line and links itself; other status lines only to correct facts.
 - Facts that change later phases → update those phases in the same PR and add a change-log line.
 - A new owner decision → add it under Open owner decisions and mark blocked phases.
 - No SHAs or test output here beyond PR links.
