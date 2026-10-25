@@ -55,7 +55,8 @@ only the **dispatch fields** listed at the top of each file, prefixed with one l
 doesn't resolve to a readable file, paste the file's instruction block instead.)
 
 One implementer and one reviewer per round; no extra advisors or audits. Subagents must not spawn
-further subagents.
+further subagents. Fill fields with paths, not pasted documents (an excerpt only when clearly
+better); an undecided question is an owner decision, never a placeholder in a field.
 
 ## Model strategy — owner's choice, asked once per run
 
@@ -285,9 +286,9 @@ A landing refused or blocked (branch protection, unexplained ref drift, a projec
 landing only: report it, mark the phase and its dependents blocked, continue independent work.
 
 ### 4b. CHANGES REQUIRED → fix, then a fresh review
-Send the blockers **verbatim** to the same implementer (SendMessage); if it can't be resumed,
-dispatch a new one with the PR branch and the blockers. Then step 2 → step 3 with a **new**
-reviewer, who reviews the whole `base...candidate` diff independently first and only afterwards, as
+Send the blockers **verbatim** to the same implementer (SendMessage, the brief's one-line "Fix
+round" message); if it can't be resumed, dispatch a new one with the PR branch and the blockers.
+Then step 2 → step 3 with a **new** reviewer, who reviews the whole `base...candidate` diff independently first and only afterwards, as
 a separate section, checks the previous blockers, which it receives by title only.
 
 ### Brakes
