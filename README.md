@@ -22,18 +22,31 @@ terminal and cloud sessions.
 
 Requirements: Claude Code, `git`, and an authenticated `gh` CLI for the project's GitHub repo.
 
-## Install for yourself
+## Install
 
-In Claude Code:
+Pick one.
+
+**For one repo (recommended; also works in cloud sessions).** In a terminal, inside the repo:
+
+```
+claude plugin marketplace add vanviatransfer/manager-skill --scope project
+claude plugin install manager-plugin@vanvia-manager --scope project
+```
+
+This writes the plugin into the repo's `.claude/settings.json`. Commit that file: every session
+on that repo then gets the plugin, including cloud sessions and teammates' machines.
+
+**For yourself, in every repo on this machine** (not seen by cloud sessions). In Claude Code:
 
 ```
 /plugin marketplace add vanviatransfer/manager-skill
 /plugin install manager-plugin@vanvia-manager
 ```
 
-## Enable for a project (also loads in cloud sessions)
+Update later with `claude plugin marketplace update vanvia-manager`.
 
-Add to the project's `.claude/settings.json`:
+<details>
+<summary>What the per-repo install writes to <code>.claude/settings.json</code></summary>
 
 ```json
 {
@@ -47,6 +60,10 @@ Add to the project's `.claude/settings.json`:
   }
 }
 ```
+
+If the file already exists, the commands merge these keys in.
+
+</details>
 
 ## Use
 
