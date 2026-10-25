@@ -35,6 +35,7 @@ operations differ. Owner/repo come from `git remote get-url origin`.
 | Landed tree = reviewed tree? | `git diff --quiet <reviewed-sha> <merge-commit>` (both) | same |
 | Merged? | `gh pr view <n> --json state,mergeCommit` | `pull_request_read` `method: get` → `merged: true`, `merge_commit_sha` |
 | PR diff | `git diff <base-sha>...<head-sha>` (both) | same; `pull_request_read method: get_diff` only if the head can't be fetched |
+| Allowed merge methods | `gh repo view --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed` | not mapped: use the project rules and the merge call's refusal |
 | Review-ledger comment | `gh pr comment <n> --body …` | `add_issue_comment` `issue_number: <n>`, `body` |
 | Read ledger | `gh pr view <n> --json comments` | `pull_request_read` `method: get_comments` |
 | Remote ref now | `git ls-remote origin <ref>` (both) | same |

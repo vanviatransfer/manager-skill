@@ -82,11 +82,11 @@ Deviations / Blocker instead of working around it.
 ## Integration (the default moved; the candidate doesn't contain it)
 
 ```
-The default branch moved to <default-head>, which PR #<n> doesn't contain. Integrate it by a method
-the project allows: merge `<default-head>` into the branch, or — only if the project allows rebase
-and force-push on PR branches — rebase onto it and push with
-`--force-with-lease=<branch>:<current-candidate>`. If the project requires linear history and
-allows no rebase, or the integration conflicts in a way you can't resolve within the phase's scope,
-don't improvise: report BLOCKED with the reason. Re-run the full validation on the integrated tree
+The default branch moved to <default-head>, which PR #<n> doesn't contain. Integrate it by this
+method, chosen by the orchestrator from the project rules: <merge | rebase>.
+- merge: `git merge <default-head>` into the branch, push normally.
+- rebase: `git rebase <default-head>`, push with `--force-with-lease=<branch>:<current-candidate>`.
+If the method turns out not to be allowed, or the integration conflicts in a way you can't resolve
+within the phase's scope, don't improvise: report BLOCKED with the reason. Re-run the full validation on the integrated tree
 and report in the same format with Base SHA = <default-head> and the new Candidate SHA.
 ```

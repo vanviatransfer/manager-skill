@@ -63,18 +63,21 @@ owner-approved model strategy. You never pick one silently, and you never escala
 
 A **run** is one owner request to execute the plan, until its final report. Compaction does not end
 it. A new session is a new run, unless the owner's message there explicitly resumes the
-interrupted run ("kaldığı yerden devam", "resume the interrupted run").
+interrupted run ("kaldığı yerden devam", "resume the interrupted run"). Each run gets an id when
+its strategy is approved, `R<YYYY-MM-DD-HHMM>`; every review-ledger comment of the run carries it.
 
 **Which strategy applies** (first match):
-1. A strategy the owner stated in this conversation for this run.
-2. A `standing` strategy recorded in the plan on the default branch (owner policy for all runs).
-3. After a compaction of this run, or on an explicit resume of an interrupted run: the `run`
-   strategy recorded in the plan for it (or carried in the compaction summary as the owner's
-   words). Keep the approved strategy as one quotable line so it survives compaction.
+1. A strategy the owner stated in this conversation for this run (after compaction: as carried in
+   the summary, in the owner's words). Keep it as one quotable line so it survives compaction.
+2. On an explicit resume: the `run` record in the plan on the default branch, **only if its run id
+   equals the interrupted run's** (the id on that run's ledger comments). A record from another
+   run, or none yet because the run never landed a PR, doesn't count — ask.
+3. A `standing` strategy recorded in the plan on the default branch (owner policy for all runs).
 4. Otherwise ask — this gate is mandatory and separate from ordinary owner decisions.
 
 **Asking.** After the read-only part of step 0 (no dispatch, no writes), assess complexity from the
-remaining phases' objectives and scope alone; don't read source. Recommend Sonnet, Opus or a mixed
+remaining phases' objectives and scope alone — or, with no plan yet, from the owner's request;
+don't read source. Recommend Sonnet, Opus or a mixed
 strategy, ask in Turkish, and end the turn:
 
 ```
@@ -91,14 +94,16 @@ when only part of the work needs it. Opus costs more per token; say so when you 
 **Applying.** The approved strategy fixes, per role (and per phase or condition for a mixed one),
 the `model` and the `effort` (`medium` unless the strategy says otherwise). It covers every dispatch
 of the run: phases, fix rounds, integrations, plan-only PRs, brake retries. Record it in the plan
-(**Plan records**) as
-`Model strategy: <strategy> — scope: run <date> | standing — owner: "<quote>" (<date>)`.
+(**Plan records**, first PR of the run) as
+`Model strategy: <strategy> — scope: run <run-id> | standing — owner: "<quote>" (<date>)`,
+replacing the previous `run` line (a `standing` line stays until the owner changes it).
 
 **Not enough model.** If a phase needs stronger reasoning than the strategy allows (it is in an
 Opus category, or a brake tripped and a stronger model is the remedy), don't escalate. Run it under
 the strategy if that is still sound and list the concern as a risk; otherwise mark it blocked on a
 model decision (an ordinary owner decision, `D<n>`, asked in the final batch) and continue other
-work.
+work. The owner's answer to such a decision amends the strategy for that phase only; a new run's
+approved strategy doesn't silently settle an open model decision.
 
 ## 0. Establish state (also how you resume after compaction or in a new session)
 
@@ -120,7 +125,7 @@ Derive state from durable sources only — never from memory of an earlier conte
    phase is ready (**Phases and scheduling**); a blocked phase's PR or branch stays parked and is
    listed in the final report, never re-dispatched or re-reviewed.
    - open PR → that phase resumes at loop step 2, checking the Git/PR facts only (there is no
-     report), with base SHA = `git merge-base origin/<default> <headRefOid>`, then a fresh review; a
+     report, and its Plan records are unknown: send the reviewer `unknown (resumed)`), with base SHA = `git merge-base origin/<default> <headRefOid>`, then a fresh review; a
      ledger PASS is never a reason to skip it, and a ledger `blocked` entry keeps the phase parked
      unless the decision behind it is now decided;
    - a remote `phase/*` branch or the designated branch with no open PR: look up closed PRs for
@@ -211,38 +216,45 @@ Anything else — no verdict, blocked reviewer, wrong SHA, internal contradictio
 never PASS. Dispatch one new reviewer; if that also fails, treat it as an environment failure for
 this phase and move on to independent work.
 
-Post one compact **review-ledger** PR comment (`review-ledger round <k>: <verdict> at <sha>;
-blockers: <titles | none>`). It keeps round counts and history durable across sessions; it is
+Post one compact **review-ledger** PR comment (`review-ledger <run-id> round <k>: <verdict> at
+<sha>; blockers: <titles | none>`). It keeps round counts and history durable across sessions; it is
 history, never authorization: landing needs a PASS for the current head that you received in this
 context. When a phase with a PR blocks (owner decision, tripped brake), add one ledger line
-`review-ledger blocked: <Dn | reason>` so the block survives a context loss.
+`review-ledger <run-id> blocked: <Dn | reason>` so the block survives a context loss.
 
 ### 4a. PASS / PASS WITH NOTES → land
 Land only a tree that was validated and reviewed. Immediately before landing:
 1. `git fetch origin <default> <branch>`; re-read the PR. `headRefOid` must equal the reviewed SHA;
    otherwise the review is stale → step 2.
-2. Check that the project's landing method is allowed and usable here (merge method, branch
-   protection, who may push the default).
+2. Check that the project's landing method is allowed and usable here: the project rules, and on
+   `gh` `gh repo view --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed` (on MCP,
+   the rules and the merge call's own refusal).
 3. **Does the reviewed candidate contain the current default head?**
-   `git merge-base --is-ancestor origin/<default> <reviewed-sha>`. For a rebase merge method, the
-   commits above the default head must also be linear (`git rev-list --merges
-   origin/<default>..<reviewed-sha>` empty).
+   `git merge-base --is-ancestor origin/<default> <reviewed-sha>`. For a rebase merge method or a
+   linear-history rule, the commits above the default head must also be linear (`git rev-list
+   --merges origin/<default>..<reviewed-sha>` empty); a non-linear candidate there is blocked, not
+   integrated again.
    - **Yes** → the landed tree equals the reviewed tree; the review stands. Land.
    - **No** (the default moved and the candidate doesn't include it) → don't land, whatever the
-     file overlap: non-overlapping files don't prove the combination works. The same implementer
-     integrates the current default head by a method the project allows (`Integration` in the
-     brief), re-runs the full validation on the integrated tree, and the new candidate goes back to
-     step 2 → a fresh review. Integration rounds count toward the fix-round limit.
-   - **No permitted integration** (e.g. linear history required and no rebase/force-push allowed,
-     or a fast-forward-only default the session can't push) → block that landing, record why,
-     continue independent work.
+     file overlap: non-overlapping files don't prove the combination works. First pick the
+     integration method the project allows: merging the default into the branch, or — required
+     under a rebase merge method or linear-history rule — a rebase, only if the project allows
+     rebasing and force-pushing PR branches. The same implementer integrates (`Integration` in the
+     brief, with that method), re-runs the full validation on the integrated tree, and the new
+     candidate goes back to step 2 → a fresh review. Integration rounds count toward the
+     fix-round limit.
+   - **No permitted integration** (e.g. linear history or rebase merges with no force-push
+     allowed, or a fast-forward-only default the session can't push) → decide this before
+     dispatching anything: block that landing, record why, continue independent work.
 
 Land by the project's method, pinned to the reviewed SHA: `gh pr merge <n> --<squash|merge|rebase>
 --match-head-commit <reviewed-sha>` (MCP: `expectedHeadSha`; never omit the pin). A fast-forward-only
 project lands by its own rule, typically `git push origin <reviewed-sha>:refs/heads/<default>`
-without force (refused unless it is a fast-forward). Then confirm MERGED, `git fetch`, and check
-`git diff --quiet <reviewed-sha> <merge-commit>`: a different tree means the default moved during
-the merge — report it to the owner as an incident at once; never fix it silently. Non-blocking
+without force (refused unless it is a fast-forward; a refusal because the default just moved is a
+race → back to 3, not a block). Then confirm MERGED, `git fetch`, and check `git diff --quiet
+<reviewed-sha> <merge-commit>`: a different tree means the default moved during the merge — report
+it to the owner as an incident at once, block the phase's dependents, and have a fresh reviewer
+validate the landed tree at the merge commit; never fix it silently. Non-blocking
 notes go to the next relevant phase's brief or the plan's notes; never a fix round of their own.
 
 A landing refused or blocked (branch protection, unexplained ref drift, a project rule) stops that

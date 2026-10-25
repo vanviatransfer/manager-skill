@@ -45,7 +45,8 @@ exercise the risky parts; anything outside the phase's scope; plan updates that 
 An edit in the diff to this phase's own objective, scope, acceptance or validation is a blocker
 unless it applies one of the Rulings above. Every change in the diff to the plan's decisions
 (Open or Decided), other phases' status lines or the model-strategy record must match the Plan
-records above exactly; any other such change is a blocker. For a plan-only PR, judge instead that
+records above exactly; any other such change is a blocker (with `unknown (resumed)`, every such
+change is a blocker: the records are re-sent with a later PR). For a plan-only PR, judge instead that
 the diff writes exactly the requested Plan change, touches nothing else, and doesn't contradict the
 plan's goal, scope or binding decisions. A blocker is something that should not be merged as is;
 everything else is a note.

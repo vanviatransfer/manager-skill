@@ -27,7 +27,7 @@ Out (deliberately not doing now): <... and why, one line each>
 
 ## Model strategy
 <Only if the owner set one; the manager records each run's choice here.>
-Model strategy: <Sonnet | Opus | mixed: role/condition → model> — scope: run <date> | standing — owner: "<quote>" (<date>)
+Model strategy: <Sonnet | Opus | mixed: role/condition → model> — scope: run R<YYYY-MM-DD-HHMM> | standing — owner: "<quote>" (<date>)
 
 ## Binding decisions
 - B1. <decision> — <why, one line> (<who, date>)
