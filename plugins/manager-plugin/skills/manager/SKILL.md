@@ -62,31 +62,32 @@ further subagents.
 No subagent is dispatched, no file is modified and no phase starts until the run has an
 owner-approved model strategy. You never pick one silently, and you never escalate past it.
 
-A **run** is one owner request to execute the plan, until its final report. Compaction does not end
-it, and the owner's answers to the final decision batch continue it. A new session is a new run
-(even for "continue the plan"), unless the owner's message there explicitly resumes the
-interrupted run ("kaldığı yerden devam", "resume the interrupted run"). Each run gets an id at the
-gate, `R<YYYY-MM-DD-HHMM>`, whichever rule settles its strategy; it goes into every PR body of the
-run (`Run:` dispatch field) and every review-ledger comment. Keep one line in your working notes,
-`Run <id>: model strategy <strategy> (owner: "<quote>" | standing)`, so it survives compaction.
+A **run** is one owner request to execute the plan, within one session, until its final report.
+Compaction does not end it, and the owner's answers to the final decision batch continue it. Each
+run gets an id at the gate, `R<YYYY-MM-DD-HHMM>`, whichever rule settles its strategy; it goes into
+every PR body the run opens (`Run:` dispatch field) and every review-ledger comment. Keep one line
+in your working notes, `Run <id>: model strategy <strategy> (owner: "<quote>" | standing)`, so it
+survives compaction.
+
+A new session is always a new run, even when it resumes interrupted work: git and PR state can't
+prove which run a session would be continuing (a run can be interrupted before leaving any trace,
+and PRs pass between runs), so a recorded `run` strategy is never applied by inference.
 
 **Which strategy applies** (first match):
-1. A strategy the owner gave in this conversation for this run (after compaction: that line, as
-   carried in the summary).
-2. **Continuing a run** (after a compaction that lost the line, or on an explicit resume): the
-   `run` record in the plan on the default branch, only if its id is this run's id. After
-   compaction the id is the one in the summary or on this session's own PRs. On a resume it is the
-   id on the open PRs that are not parked (no ledger `blocked` line), and only if they all carry the
-   same id; parked PRs and landed PRs never identify the run. If the id or a matching record can't
-   be established, **ask** — never fall back to a standing policy for a run already under way, since
-   the owner may have overridden it for this run.
-3. **A new run**: a `standing` strategy recorded in the plan on the default branch.
-4. Otherwise ask — this gate is mandatory and separate from ordinary owner decisions.
+1. A strategy the owner gave in this conversation for this run — including, on a resume, words
+   that adopt the recorded one ("aynı modelle devam") — and, after compaction, the working-notes
+   line as carried in the summary.
+2. After a compaction that lost that line: the plan's `run` record on the default branch, only if
+   its id equals this run's id as carried in the summary. Otherwise **ask** — never fall back to a
+   standing policy for a run already under way, since the owner may have overridden it.
+3. A new run: a `standing` strategy recorded in the plan on the default branch.
+4. Otherwise ask — this gate is mandatory and separate from ordinary owner decisions. When the
+   session resumes interrupted work and the plan holds a `run` record, recommend that recorded
+   strategy, so the owner can confirm it in one word.
 
 **Asking.** After the read-only part of step 0 (no dispatch, no writes), assess complexity from the
 remaining phases' objectives and scope alone — or, with no plan yet, from the owner's request;
-don't read source. Recommend Sonnet, Opus or a mixed
-strategy, ask in Turkish, and end the turn:
+don't read source. Recommend Sonnet, Opus or a mixed strategy, ask in Turkish, and end the turn:
 
 ```
 Bu çalışma için önerim: <Sonnet | Opus | Karma: <rol/koşul → model>>.
@@ -111,8 +112,9 @@ owner says the choice is a policy for all runs, and stays until the owner change
 Opus category, or a brake tripped and a stronger model is the remedy), don't escalate. Run it under
 the strategy if that is still sound and list the concern as a risk; otherwise mark it blocked on a
 model decision (an ordinary owner decision, `D<n>`, asked in the final batch) and continue other
-work. The owner's answer to such a decision amends the strategy for that phase only; a new run's
-approved strategy doesn't silently settle an open model decision.
+work. The owner's answer to such a decision amends the strategy for that phase only, and only in
+the run where it was asked, unless the owner says it holds for later runs; a new run's approved
+strategy doesn't silently settle an open model decision.
 
 ## 0. Establish state (also how you resume after compaction or in a new session)
 
@@ -153,7 +155,8 @@ Derive state from durable sources only — never from memory of an earlier conte
    - an open PR that matches no phase → say so; don't touch it.
 6. **Model strategy gate** (above). Everything before this point is read-only.
 
-No living plan → create one with the `living-plan` skill and get the owner's approval first.
+No living plan → the run can't start: hand over to the `living-plan` skill (owner-driven, with its
+own approval), then begin this skill again from step 0.
 Remaining work not split into phases → split it (**Phases**) and land the split as a **plan-only
 PR** before any phase starts, so every phase exists at its base SHA. Tell the owner the list in a
 few lines; wait for approval only if the split changes scope or approved design.
@@ -241,7 +244,8 @@ Land only a tree that was validated and reviewed. Immediately before landing:
    otherwise the review is stale → step 2.
 2. Check that the project's landing method is allowed and usable here: the project rules, and on
    `gh` `gh repo view --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed` (on MCP,
-   the rules and the merge call's own refusal).
+   the rules and the merge call's own refusal). Not allowed or not usable (e.g. a fast-forward-only
+   default this session can't push) → block that landing, record why, continue independent work.
 3. **Does the reviewed candidate contain the current default head?**
    `git merge-base --is-ancestor origin/<default> <reviewed-sha>`. When the landing keeps the
    branch's commits (rebase merge, fast-forward push) and the project requires linear history or
@@ -269,7 +273,8 @@ without force (refused unless it is a fast-forward; a refusal because the defaul
 race → back to 3, not a block). Then confirm MERGED, `git fetch`, and check `git diff --quiet
 <reviewed-sha> <merge-commit>`: a different tree means the default moved during the merge — report
 it to the owner as an incident at once, block the phase's dependents, and have a fresh reviewer
-validate the landed tree at the merge commit; never fix it silently. A PASS there unblocks the
+validate the landed tree (base = the default head before the merge, candidate = the merge commit);
+never fix it silently. A PASS there unblocks the
 dependents; anything else is an owner decision (a revert or fix is the owner's call). Non-blocking
 notes go to the next relevant phase's brief or the plan's notes; never a fix round of their own.
 
@@ -309,7 +314,8 @@ When a phase needs something only the owner can decide:
 2. Ask the whole batch once, at the end, when no ready phase is left (or at a checkpoint the owner
    chose). Only genuinely unresolved decisions go in it.
 3. When the owner answers, the answer counts at once: unblock the phases and continue. The answer
-   is **answered, not yet persisted** until a PR carrying its Decided entry lands.
+   is **answered, not yet persisted** until a PR carrying its Decided entry lands; keep it as one
+   working-notes line (`D<n> → <answer>: "<owner's words>"`) so it survives compaction.
 
 **Plan records.** New open decisions, Decided moves (owner's exact words, date), status
 corrections and the model-strategy record ride the next PR that lands, as the implementer's
@@ -326,7 +332,8 @@ it needs the owner now. Never withhold what an owner decision or safe execution 
 
 ## Stop conditions
 
-End the turn only at the model-strategy gate, or when no ready phase is left, and say which holds:
+End the turn only for a question that blocks all work (the model-strategy gate, the plan's
+location, a new plan's approval), or when no ready phase is left, and say which holds:
 - the plan is complete;
 - every remaining phase is blocked (owner decisions, tripped brakes, refused landings);
 - the environment is persistently broken after one repair attempt.
