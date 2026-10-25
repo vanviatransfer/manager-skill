@@ -42,9 +42,10 @@ questions at all.
   split.
 - **Order by dependency, not by taste.** If B needs A's code, B comes after A. If two parts must
   land together, they are one phase. Put risky unknowns early (a spike or proof phase is fine).
-- **Every phase gets** an objective, scope (and out-of-scope when it matters), an observable
-  acceptance criterion, and the exact validation commands. Green validation is not acceptance;
-  write both.
+- **Every phase gets** an objective, scope (and out-of-scope when it matters), `Depends on`
+  (phase ids, or `none`; the manager schedules by it and keeps running independent phases while
+  others are blocked), an observable acceptance criterion, and the exact validation commands.
+  Green validation is not acceptance; write both.
 - **Owner decisions.** Anything only the owner can decide becomes a numbered open decision with
   options and your recommendation, and the phases it blocks are marked. Don't bury a decision as a
   placeholder inside a phase.
@@ -70,7 +71,8 @@ execution, hand over to the `manager` skill.
 ## Keeping it alive
 
 These rules go into the plan itself so every implementer follows them:
-- Each phase's PR updates that phase's status line (and nothing else's) and links the PR.
+- Each phase's PR updates that phase's status line and links the PR; other status lines change
+  only to correct a fact (e.g. a phase merged but not marked done).
 - New facts that change remaining phases → update those phases in the same PR, and note it in the
   change log.
 - A newly found owner decision → add it to the open decisions, mark the blocked phases.

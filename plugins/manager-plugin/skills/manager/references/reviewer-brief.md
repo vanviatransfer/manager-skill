@@ -1,48 +1,74 @@
 # Reviewer brief
 
-The reviewer is always a **new** subagent. It gets the facts of the candidate, not the
-implementer's account of it and not earlier reviews.
+The reviewer is always a **new** subagent. It gets the facts of the candidate — never the
+implementer's report, the PR description's claims, or earlier reviews.
+
+## Dispatch fields (the orchestrator sends only these)
 
 ```
-You are an independent reviewer. Review PR #<n> of <repo> at exactly commit <head-sha>, against
-base <base-ref> (merge-base <base-sha> if known).
+Read and follow <this file's path>.
+Project: <repo path> (shared checkout — read-only for you), default branch <default>
+PR: #<n>, head branch <branch>
+Base SHA: <sha>   Candidate SHA: <sha>
+Living plan: <path>, phase <id>
+Project rules: <CLAUDE.md / AGENTS.md paths>
+GitHub backend: <gh | GitHub MCP>
+Worktree dir: <temp path outside the repo>
+Rulings: <the rulings given to the implementer, verbatim, or "none">
+Plan change: <exact plan text requested, for a plan-only PR; omit otherwise>
+Previous blockers (re-review only, titles): <B1 title; B2 title | omit on first review>
+```
 
-Phase: <id> "<title>" in <living-plan path>
-Acceptance criterion: <from the plan>
-Project rules: <CLAUDE.md / AGENTS.md paths> — check the change against them.
+## Instructions for the reviewer
 
-Hard rules for the shared checkout:
-- Do NOT run git checkout, switch, reset, rebase, stash, commit or push in <repo path>.
-  Other work depends on its HEAD.
-- Read code with `git fetch origin <base-ref> <head-branch>`, `git diff <base-sha>..<head-sha>`,
-  `git show <head-sha>:<path>`. If the head commit still isn't present (shallow clone), fetch with a
-  bounded `--depth`; as a last resort read the diff from GitHub (`gh pr diff <n>` / MCP
-  `pull_request_read method: get_diff`) and say so in the verdict.
-- GitHub backend for PR metadata: <gh | GitHub MCP>. Use it read-only: no comments, reviews or merges.
-- If you need to run tests or the code, create a disposable detached worktree OUTSIDE the repo
-  (`git worktree add --detach <temp-dir> <head-sha>`), use it, then remove it
-  (`git worktree remove --force <temp-dir>`).
-- Make no edits to the repo. Put any probe scripts in a temp directory.
+You are an independent reviewer of one commit. Your verdict is the only gate before merge, so judge
+the code itself. Don't spawn subagents.
 
-Review for: correctness against the acceptance criterion; bugs and edge cases; security and data
-safety; adherence to project rules; tests that actually exercise the risky parts; anything in the
-diff that is out of the phase's scope. Run the project's validation where it's cheap enough.
-Distinguish blocking from non-blocking; a blocker is something that should not be merged as is.
-<if re-review:>
-After your independent review is complete, as a separate final section, check whether these
-previously reported blockers are resolved: <titles only>.
-</if>
+**Shared checkout rules.** In the repo path, do NOT run `git checkout`, `switch`, `reset`,
+`rebase`, `stash`, `commit`, `push`, or edit files: other work depends on its HEAD. Allowed there:
+`git fetch origin <default> <branch>`, `git diff`, `git show <sha>:<path>`, `git log`,
+`git worktree add/remove`. If the candidate isn't present (shallow clone), fetch with a bounded
+`--depth`; only as a last resort read the diff from GitHub (`gh pr diff <n>` / MCP `pull_request_read
+method: get_diff`) and say so. Use the GitHub backend read-only: no comments, reviews or merges.
 
-Answer in exactly this shape:
+**What to read.** The plan's section for this phase (objective, scope, out-of-scope, acceptance,
+validation) and the binding decisions it cites, **as at the base SHA** (`git show
+<base-sha>:<plan-path>`; the candidate's copy may have been edited); the project rules; the full
+`git diff <base>...<candidate>`; and whatever surrounding code the diff's correctness depends on.
+Don't read PR comments or reviews (they carry earlier verdicts), and don't rely on the PR
+description or commit messages for what the code does.
+
+**Review for:** each acceptance criterion; bugs, edge cases and broken invariants in the touched
+code and its callers; security and data safety; adherence to the project rules; whether tests
+exercise the risky parts; anything outside the phase's scope; plan updates that misstate reality.
+An edit in the diff to this phase's own objective, scope, acceptance or validation is a blocker
+unless it applies one of the Rulings above. For a plan-only PR, judge instead that the diff writes
+exactly the requested Plan change, touches nothing else, and doesn't contradict the plan's goal,
+scope or binding decisions. A
+blocker is something that should not be merged as is; everything else is a note.
+
+**Validate independently.** `git worktree add --detach <worktree-dir> <candidate>`, run every
+validation command the plan and project require there (long output to a file; read only what you
+need), then `git worktree remove --force <worktree-dir>`. A required command you cannot run in this
+environment → say so explicitly; never imply it passed.
+
+**Previous blockers** (re-review only): only after your independent review is complete, check each
+listed title as a separate section.
+
+Answer in exactly this shape, nothing else:
+
+```
 VERDICT: PASS | PASS WITH NOTES | CHANGES REQUIRED
-Reviewed SHA: <full sha you reviewed>
+Reviewed SHA: <full candidate sha>
+Base SHA: <full base sha>
 Blockers:
   B1. <title> — <file:line> — <what is wrong, how to reproduce, what would fix it>
-  (or "none")
+  (or "none"; any blocker means CHANGES REQUIRED)
 Notes (non-blocking):
   N1. <title> — <file:line> — <detail>
   (or "none")
-Previous blockers: <resolved / still present, per title>   (re-review only)
-Validation run: <command → result>
-Checkout untouched: <output of `git rev-parse HEAD` and `git status --short` in <repo path>>
+Acceptance: <each criterion → met / not met>
+Validation: <command → pass/fail (exit code) at the candidate | not run: reason>
+Previous blockers: <title → resolved / still present>   (re-review only)
+Checkout untouched: <`git rev-parse HEAD` and `git status --short` of the repo path, after your work>
 ```

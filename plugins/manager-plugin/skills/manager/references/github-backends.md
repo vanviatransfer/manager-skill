@@ -29,8 +29,12 @@ operations differ. Owner/repo come from `git remote get-url origin`.
 | PR facts | `gh pr view <n> --json number,state,headRefName,headRefOid,baseRefName,mergeable,files` | `pull_request_read` `method: get` → `state`, `merged`, `head.ref`, `head.sha`, `base.ref`, `mergeable`; files: `method: get_files` |
 | Create PR | `gh pr create --base <default> --head <branch> --title … --body …` | `create_pull_request` `base`, `head`, `title`, `body` |
 | Merge, pinned | `gh pr merge <n> --<method> --match-head-commit <sha>` | `merge_pull_request` `merge_method: <method>`, `expectedHeadSha: <sha>` |
+| Merged / closed PR for a branch | `gh pr list --state closed --head <branch> --json number,headRefOid,mergedAt` (`mergedAt` null = closed unmerged) | `list_pull_requests` `state: closed`, `head: <owner>:<branch>`, `fields: [number,merged,merged_at,head]` → keep `merged_at` set, compare `head.sha` |
 | Merged? | `gh pr view <n> --json state,mergeCommit` | `pull_request_read` `method: get` → `merged: true`, `merge_commit_sha` |
-| PR diff | `git diff <base-sha>..<head-sha>` (both) | same; `pull_request_read method: get_diff` only if the head can't be fetched |
+| PR diff | `git diff <base-sha>...<head-sha>` (both) | same; `pull_request_read method: get_diff` only if the head can't be fetched |
+| Review-ledger comment | `gh pr comment <n> --body …` | `add_issue_comment` `issue_number: <n>`, `body` |
+| Read ledger | `gh pr view <n> --json comments` | `pull_request_read` `method: get_comments` |
+| Remote ref now | `git ls-remote origin <ref>` (both) | same |
 
 Field names map: `headRefOid` ⇔ `head.sha`, `headRefName` ⇔ `head.ref`, `baseRefName` ⇔ `base.ref`,
 `mergeCommit.oid` ⇔ `merge_commit_sha`, `state: MERGED` ⇔ `merged: true`.
@@ -43,13 +47,29 @@ MCP results are facts from GitHub just like `gh` output; a subagent's prose is s
 ## Cloud / remote session constraints
 
 - **Designated branch.** A cloud session is often given one development branch it may push to
-  (stated in its system prompt / instructions). If so, every phase uses that branch name instead of
-  a per-phase branch. Phases are sequential, so this works: after a phase's PR merges, restart the
-  branch from the fresh default branch (`git fetch origin <default> && git checkout -B <branch>
-  origin/<default>`, then `git push --force-with-lease -u origin <branch>` — safe because it holds
-  only merged history) before the next implementer starts. Never stack a new phase on a merged PR's
-  branch without that reset, and never reuse a merged PR: each phase opens a new one.
-- **Shallow clones.** Cloud checkouts may be shallow. Before diffing `base..head`, fetch both refs
+  (stated in its system prompt). If so, every phase uses that branch instead of `phase/<id>-<slug>`.
+  Phases are sequential, so this works, but after each merge the branch must be reconciled with the
+  new default head before the next implementer starts. Never stack a new phase on a merged PR's
+  history unreconciled, and never reuse a merged PR: each phase opens a new one.
+  1. Confirm the remote branch still points at the merged PR's head:
+     `git ls-remote origin <branch>` = reviewed SHA. If the ref is gone (the repo auto-deletes
+     merged head branches) and the PR is confirmed merged, recreate it with a plain push:
+     `git push origin origin/<default>:refs/heads/<branch>`, and skip steps 2–3. A ref present at
+     any other SHA is unexplained drift → stop using the branch and report it; never overwrite
+     commits you didn't land.
+  2. If the project rules allow force-pushing this branch (or say nothing against it):
+     `git fetch origin <default> && git checkout -B <branch> origin/<default>`, then
+     `git push --force-with-lease=<branch>:<reviewed-sha> origin <branch>`. Always give the explicit
+     expected SHA: a bare `--force-with-lease` after a `git fetch` checks against the just-fetched
+     ref and protects nothing.
+  3. If the project forbids force-pushes or history rewrites, don't reset: `git checkout -B
+     <branch> origin/<branch> && git merge origin/<default>` and push normally (a fast-forward
+     when the merge method kept the branch's commits). The next PR then diffs only new work. A
+     merge conflict is not yours to resolve: report it. If the project also forbids merge commits
+     on the branch, or merges by rebase (the next PR would replay the old commits), landing
+     further phases from this branch is blocked: report it as an environment constraint (owner
+     decision); don't look for another way around the rule.
+- **Shallow clones.** Cloud checkouts may be shallow. Before diffing `base...head`, fetch both refs
   (`git fetch origin <default> <head-branch>`); fetch with a bounded `--depth` if a merge-base is
   missing rather than `--unshallow`.
 - **Subagents** inherit the same tools. Tell them which backend to use and, for MCP, that the tools

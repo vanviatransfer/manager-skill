@@ -1,7 +1,12 @@
 # Owner decisions
 
 Keep open decisions in the living plan, in one section, so they survive compaction and new
-sessions. Add entries through the current phase's PR (or the next one).
+sessions. An entry reaches the plan through the next PR that lands (usually the next phase's; at
+the end of a run, a plan-only bookkeeping PR). Until then, keep it in your working notes for the
+final batch.
+
+A decision blocks only the phases listed under `Blocks` and their transitive dependents. Every
+other ready phase keeps running.
 
 ```
 ## Open owner decisions
@@ -16,20 +21,23 @@ Recommendation: <A or B, one sentence why>
 Raised: <date>, during phase <id>
 ```
 
-When the owner answers, move the entry to a "Decided" list with their words quoted and the date,
-unblock the phases, and continue.
+When the owner answers, move the entry to the "Decided" list with their words quoted and the date
+(through the next PR), unblock the phases, and continue. Only the owner's own words in this
+conversation count.
 
 ## Asking the batch
 
-Ask once, all together, numbered so the owner can answer in one message:
+Once, at the end, when no ready phase is left. In the owner's language (Turkish by default),
+numbered so the owner can answer in one message:
 
 ```
-<k> decisions are needed to continue. My recommendation is in brackets.
+Devam etmek için <k> karar gerekiyor. Önerim köşeli parantezde.
 
-1. D3 — <question>  [A: <short>]
-2. D4 — <question>  [B: <short>]
-...
+1. D3 — <soru>  [A: <kısa>]
+   A: <seçenek — sonucu>  B: <seçenek — sonucu>
+2. D4 — <soru>  [B: <kısa>]
+   ...
 
-Phases blocked until then: <ids>. Everything else is done or in progress.
-You can answer like "1A 2B", or write your own.
+Bu kararları bekleyen fazlar: <ids>. Diğer tüm fazlar tamamlandı veya engelli (nedenleri yukarıda).
+"1A 2B" gibi yanıtlayabilir ya da kendi tercihinizi yazabilirsiniz.
 ```

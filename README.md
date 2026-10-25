@@ -15,8 +15,13 @@ The main session becomes a thin orchestrator that runs the plan one phase per PR
 3. on CHANGES REQUIRED, the same implementer fixes and a new reviewer re-reviews;
 4. on PASS, the manager merges, pinned to the reviewed commit, and moves to the next phase.
 
-Fix rounds have brakes, owner decisions are collected and asked in one batch, and state lives in
-the living plan, `git` and GitHub, so a run survives compaction and can be resumed by a new session.
+Phases are scheduled by their declared dependencies: an owner decision or a stuck phase blocks only
+what depends on it, and everything else keeps running; the open decisions are asked in one batch at
+the end. Every subagent report and verdict is checked against `git`/GitHub facts (PR head, ancestry,
+changed files, reviewed SHA) before anything lands. Subagents default to Sonnet and escalate to Opus
+for hard or critical phases. Fix rounds have brakes, and state lives in the living plan, `git` and
+GitHub (plus one review-ledger comment per review), so a run survives compaction and can be resumed
+by a new session without redoing work.
 Everything runs in one turn with subagents, so it works the same in the Claude desktop app, the
 terminal and cloud sessions.
 
@@ -25,7 +30,8 @@ authenticated `gh` CLI (typical locally) or the GitHub MCP tools (typical in Cla
 sessions, where `gh` is often present but not logged in). The manager checks `gh auth status` at
 start and falls back to MCP automatically; merges stay pinned to the reviewed SHA on both
 (`--match-head-commit` / `expectedHeadSha`). In a cloud session limited to one designated push
-branch, every phase reuses that branch and resets it to the default head after each merge.
+branch, every phase reuses that branch and reconciles it with the default head after each merge
+(a lease-pinned reset, or a merge when the project forbids force-pushes).
 
 ## Install
 
