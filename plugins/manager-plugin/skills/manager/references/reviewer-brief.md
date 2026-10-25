@@ -15,6 +15,7 @@ Project rules: <CLAUDE.md / AGENTS.md paths>
 GitHub backend: <gh | GitHub MCP>
 Worktree dir: <temp path outside the repo>
 Rulings: <the rulings given to the implementer, verbatim, or "none">
+Plan records: <the Plan records given to the implementer, verbatim, or "none">
 Plan change: <exact plan text requested, for a plan-only PR; omit otherwise>
 Previous blockers (re-review only, titles): <B1 title; B2 title | omit on first review>
 ```
@@ -42,10 +43,12 @@ description or commit messages for what the code does.
 code and its callers; security and data safety; adherence to the project rules; whether tests
 exercise the risky parts; anything outside the phase's scope; plan updates that misstate reality.
 An edit in the diff to this phase's own objective, scope, acceptance or validation is a blocker
-unless it applies one of the Rulings above. For a plan-only PR, judge instead that the diff writes
-exactly the requested Plan change, touches nothing else, and doesn't contradict the plan's goal,
-scope or binding decisions. A
-blocker is something that should not be merged as is; everything else is a note.
+unless it applies one of the Rulings above. Every change in the diff to the plan's decisions
+(Open or Decided), other phases' status lines or the model-strategy record must match the Plan
+records above exactly; any other such change is a blocker. For a plan-only PR, judge instead that
+the diff writes exactly the requested Plan change, touches nothing else, and doesn't contradict the
+plan's goal, scope or binding decisions. A blocker is something that should not be merged as is;
+everything else is a note.
 
 **Validate independently.** `git worktree add --detach <worktree-dir> <candidate>`, run every
 validation command the plan and project require there (long output to a file; read only what you

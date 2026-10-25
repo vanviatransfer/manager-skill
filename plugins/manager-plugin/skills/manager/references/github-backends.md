@@ -30,6 +30,9 @@ operations differ. Owner/repo come from `git remote get-url origin`.
 | Create PR | `gh pr create --base <default> --head <branch> --title … --body …` | `create_pull_request` `base`, `head`, `title`, `body` |
 | Merge, pinned | `gh pr merge <n> --<method> --match-head-commit <sha>` | `merge_pull_request` `merge_method: <method>`, `expectedHeadSha: <sha>` |
 | Merged / closed PR for a branch | `gh pr list --state closed --head <branch> --json number,headRefOid,mergedAt` (`mergedAt` null = closed unmerged) | `list_pull_requests` `state: closed`, `head: <owner>:<branch>`, `fields: [number,merged,merged_at,head]` → keep `merged_at` set, compare `head.sha` |
+| Candidate contains default? | `git merge-base --is-ancestor origin/<default> <sha>` (both) | same |
+| Fast-forward-only landing | `git push origin <sha>:refs/heads/<default>` (no force; refused unless a fast-forward) — only where the project lands this way and the session may push the default | same |
+| Landed tree = reviewed tree? | `git diff --quiet <reviewed-sha> <merge-commit>` (both) | same |
 | Merged? | `gh pr view <n> --json state,mergeCommit` | `pull_request_read` `method: get` → `merged: true`, `merge_commit_sha` |
 | PR diff | `git diff <base-sha>...<head-sha>` (both) | same; `pull_request_read method: get_diff` only if the head can't be fetched |
 | Review-ledger comment | `gh pr comment <n> --body …` | `add_issue_comment` `issue_number: <n>`, `body` |
