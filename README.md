@@ -13,13 +13,20 @@ The main session becomes a thin orchestrator that runs the plan one phase per PR
 1. a fresh **implementer** subagent implements the phase and opens a PR;
 2. a fresh, independent **reviewer** subagent reviews that PR at its exact head SHA;
 3. on CHANGES REQUIRED, the same implementer fixes and a new reviewer re-reviews;
-4. on PASS, the manager merges, pinned to the reviewed commit, and moves to the next phase.
+4. on PASS, the manager merges, pinned to the reviewed commit, and moves to the next phase. If the
+   default branch moved and the candidate doesn't contain it, the candidate is integrated,
+   re-validated and re-reviewed first; only a reviewed tree lands.
+
+Before a new run starts, the manager recommends a model strategy (Sonnet, Opus or a mix, with a
+one-line reason) and waits for the owner's choice, unless the owner set a standing policy; it never
+picks or escalates a model on its own.
 
 Phases are scheduled by their declared dependencies: an owner decision or a stuck phase blocks only
 what depends on it, and everything else keeps running; the open decisions are asked in one batch at
 the end. Every subagent report and verdict is checked against `git`/GitHub facts (PR head, ancestry,
-changed files, reviewed SHA) before anything lands. Subagents default to Sonnet and escalate to Opus
-for hard or critical phases. Fix rounds have brakes, and state lives in the living plan, `git` and
+changed files, reviewed SHA) before anything lands. Owner answers are recorded in the plan with
+their exact words and unblock dependent phases, so they are never asked twice. Fix rounds have
+brakes, and state lives in the living plan, `git` and
 GitHub (plus one review-ledger comment per review), so a run survives compaction and can be resumed
 by a new session without redoing work.
 Everything runs in one turn with subagents, so it works the same in the Claude desktop app, the

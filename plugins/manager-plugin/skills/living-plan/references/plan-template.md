@@ -25,6 +25,11 @@ Out (deliberately not doing now): <... and why, one line each>
 - Merge: <method, e.g. squash via PR>
 - <deadline / budget / compatibility / stack constraints>
 
+## Model strategy
+<Written by the manager: the latest run's line, plus a standing line only if the owner set a policy.>
+Model strategy: <Sonnet | Opus | mixed: role/condition → model> — scope: run R<YYYY-MM-DD-HHMM> — owner: "<quote>" | standing (<date>)
+Model strategy: <...> — scope: standing — owner: "<quote>" (<date>)
+
 ## Binding decisions
 - B1. <decision> — <why, one line> (<who, date>)
 - B2. ...
@@ -58,7 +63,7 @@ Recommendation: <A/B and why>
 Raised: <date>
 
 ## Decided
-- D0. <question> → <answer, owner's words quoted> (<date>)
+- D0. <question> → <answer> — owner: "<exact words>" (<date>, in the session conversation). Unblocks: P<n>.
 
 ## Notes carried forward
 - <non-blocking review notes worth folding into a later phase, with the phase id>
@@ -70,6 +75,8 @@ Raised: <date>
 ## How to keep this plan alive
 - A phase PR updates its own status line and links itself; other status lines only to correct facts.
 - Facts that change later phases → update those phases in the same PR and add a change-log line.
-- A new owner decision → add it under Open owner decisions and mark blocked phases.
+- A new owner decision → add it under Open owner decisions and mark blocked phases; an answer moves
+  it to Decided (owner's exact words, date) and unblocks them. Decision and model-strategy records
+  change only through the manager's Plan records.
 - No SHAs or test output here beyond PR links.
 ```
