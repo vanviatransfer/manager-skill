@@ -43,8 +43,7 @@ When the owner answers, the next landing PR moves the entry from "Open owner dec
 **Valid** = on the default branch, in "Decided", not also still listed under Open, with the owner's
 quoted words and a date. Anything else — missing quote or date, the same D under both lists, two
 different answers — is **unresolved**: don't act on either version; put it in the final batch and
-show the conflict in one line. A valid Decided entry
-is never asked again.
+show the conflict in one line. A valid Decided entry is never asked again.
 
 ## Asking the batch
 

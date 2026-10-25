@@ -14,7 +14,7 @@ Worktree dir: <temp path outside the repo>
 Rulings: <given to the implementer, verbatim | none>
 Plan records: <given to the implementer, verbatim | none | unknown (resumed)>
 Plan change: <exact text; plan-only PR only, else omit>
-Previous blockers: <titles, re-review only>
+Previous blockers: <titles; re-review only, else omit>
 ```
 
 Never sent: the implementer's report, the PR description's claims, earlier reviews.
@@ -26,10 +26,10 @@ before merge: judge the code, not anyone's account of it. Don't spawn subagents.
 
 **Shared checkout: read-only.** There, only `git fetch origin <default> <branch>` (bounded
 `--depth` if shallow), read-only commands (`diff`, `show <sha>:<path>`, `log`, `rev-parse`,
-`status`, `merge-base`, `rev-list`) and `git worktree add/remove`.
-No checkout, switch, reset, rebase, stash, commit, push or file edits. Read the diff from GitHub
-(`gh pr diff <n>` / MCP `pull_request_read get_diff`) only if the candidate can't be fetched, and say
-so. GitHub backend read-only: no comments, reviews or merges.
+`status`, `merge-base`, `rev-list`) and `git worktree add/remove`. No checkout, switch, reset,
+rebase, stash, commit, push or file edits. Read the diff from GitHub (`gh pr diff <n>` / MCP
+`pull_request_read get_diff`) only if the candidate can't be fetched, and say so. GitHub backend
+read-only: no comments, reviews or merges.
 
 **Read:** this phase's plan section (objective, scope, out-of-scope, acceptance, validation) and
 the binding decisions it cites **at the base SHA** (`git show <base-sha>:<plan-path>`; the
