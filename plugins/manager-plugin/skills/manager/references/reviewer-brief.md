@@ -54,8 +54,10 @@ anything else, or contradicts the plan's goal, scope or binding decisions.
 **Validate independently** — run every validation command the plan and project require at the
 candidate (output to a file outside the repo, read only what you need), in the first place that
 works:
-1. the shared checkout, if `git rev-parse HEAD` = Candidate SHA and `git status --short` is empty;
-   check both again afterwards, and report any file the run changed;
+1. the shared checkout, if `git rev-parse HEAD` = Candidate SHA and `git status --short` is empty.
+   Afterwards check both again. List new untracked files your run created (in `Checkout
+   untouched`; you may delete only those). If the run modified a tracked file, the result is
+   invalid: report `not run: validation changed <files>` and leave them for the orchestrator;
 2. if a Worktree dir was given: `git worktree add --detach <worktree-dir> <candidate>`, then
    `git worktree remove --force <worktree-dir>`;
 3. otherwise `not run: <reason>` (e.g. HEAD ≠ candidate, dirty tree, command unavailable). Never
@@ -78,5 +80,6 @@ Notes (non-blocking):
 Acceptance: <criterion → met / not met>
 Validation: <command → pass/fail (exit code) at the candidate | not run: reason>
 Previous blockers: <title → resolved / still present>   (re-review only)
-Checkout untouched: <`git rev-parse HEAD` and `git status --short` of the repo path, after your work>
+Checkout untouched: <`git rev-parse HEAD` and `git status --short` of the repo path, after your work;
+  untracked files your validation created, if any>
 ```
