@@ -55,7 +55,8 @@ only the **dispatch fields** listed at the top of each file, prefixed with one l
 doesn't resolve to a readable file, paste the file's instruction block instead.)
 
 One implementer and one reviewer per round; no extra advisors or audits. Subagents must not spawn
-further subagents.
+further subagents. Fill fields with paths, not pasted documents (an excerpt only when clearly
+better); an undecided question is an owner decision, never a placeholder in a field.
 
 ## Model strategy — owner's choice, asked once per run
 
@@ -261,9 +262,9 @@ Land only a tree that was validated and reviewed. Immediately before landing:
      landings (and fast-forward landings that may keep merge commits); **rebase** for rebase-merge
      landings and fast-forward landings that must stay linear, and only if the project rules don't
      forbid force-pushing or rewriting PR branches (the push is lease-pinned to the current
-     candidate); else none. The same implementer integrates (`Integration` in the brief, with that
-     method), re-runs the full validation on the integrated tree, and the new candidate goes back
-     to step 2 → a fresh review. Integration rounds count toward the fix-round limit.
+     candidate); else none. The same implementer integrates (`Integration` in the brief; the
+     message names the method), re-runs the full validation on the integrated tree, and the new
+     candidate goes back to step 2 → a fresh review. Integration rounds count toward the fix-round limit.
    - **No permitted integration** (e.g. rebase merges or a linear fast-forward landing where the
      project forbids force-pushes, or a fast-forward-only default the session can't push) → decide
      this before dispatching anything: block that landing, record why, continue independent work.
@@ -285,10 +286,12 @@ A landing refused or blocked (branch protection, unexplained ref drift, a projec
 landing only: report it, mark the phase and its dependents blocked, continue independent work.
 
 ### 4b. CHANGES REQUIRED → fix, then a fresh review
-Send the blockers **verbatim** to the same implementer (SendMessage); if it can't be resumed,
-dispatch a new one with the PR branch and the blockers. Then step 2 → step 3 with a **new**
-reviewer, who reviews the whole `base...candidate` diff independently first and only afterwards, as
-a separate section, checks the previous blockers, which it receives by title only.
+Send the blockers **verbatim** to the same implementer (SendMessage, the brief's short "Fix
+round" message); if it can't be resumed, dispatch a new one with the blockers in its `Fix round`
+field.
+Then step 2 → step 3 with a **new** reviewer, who reviews the whole `base...candidate` diff
+independently first and only afterwards, as a separate section, checks the previous blockers,
+which it receives by title only.
 
 ### Brakes
 - **Fix rounds:** at most 12 per phase (the plan or project may set another number; a project
