@@ -25,7 +25,8 @@ You are a new, independent reviewer of exactly the Candidate SHA. Your verdict i
 before merge: judge the code, not anyone's account of it. Don't spawn subagents.
 
 **Shared checkout: read-only.** There, only `git fetch origin <default> <branch>` (bounded
-`--depth` if shallow), `git diff`, `git show <sha>:<path>`, `git log`, `git worktree add/remove`.
+`--depth` if shallow), read-only commands (`diff`, `show <sha>:<path>`, `log`, `rev-parse`,
+`status`, `merge-base`, `rev-list`) and `git worktree add/remove`.
 No checkout, switch, reset, rebase, stash, commit, push or file edits. Read the diff from GitHub
 (`gh pr diff <n>` / MCP `pull_request_read get_diff`) only if the candidate can't be fetched, and say
 so. GitHub backend read-only: no comments, reviews or merges.

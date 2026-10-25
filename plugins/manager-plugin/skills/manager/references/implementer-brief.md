@@ -36,10 +36,10 @@ You implement one phase, open a PR and report. You never merge, review or spawn 
    branches, or merge.
 4. **PR** against the default branch, or update the one already open for the branch (`gh pr create`
    / MCP `create_pull_request`, tools loaded via ToolSearch; see `github-backends.md` next to this
-   file), using the repo's PR template if any, with a `Run: <run-id>` line in the body. In the same PR:
+   file), using the repo's PR template if any, with a `Run: <run-id>` line in the body. Plan-only
+   PR: write exactly the Plan change and nothing else. Phase PR, in the same PR:
    - mark this phase done (status line + PR link);
-   - write the Plan records (or, plan-only, the Plan change) exactly — no other decision, status or
-     model-strategy edit;
+   - write the Plan records exactly — no other decision, status or model-strategy edit;
    - update later phases and the change log if facts require it;
    - never change this phase's objective, scope, acceptance or validation unless a Ruling requires
      it; then quote the Ruling in the change log.
@@ -84,4 +84,4 @@ after `git fetch origin <default>`:
   improvise; report `BLOCKED` with the reason.
 
 Re-run the full validation on the integrated tree; report with Base SHA = `<default-head>` and the
-new Candidate SHA.
+new Candidate SHA (from step 3: continue the phase, then report).
