@@ -251,8 +251,8 @@ remove anything on a tree that was dirty before the review.
 A PASS or PASS WITH NOTES whose required validation is `not run` is not landable yet: fix the cause
 (usually the checkout state), redo the pre-dispatch check, note the before values again, and resume
 the **same** reviewer (SendMessage) with the candidate unchanged, to run only the missing
-validation and re-report the full verdict. If it can't be resumed, dispatch a new reviewer as usual. If the validation still
-can't run, block that landing and record it as an unresolved risk.
+validation and re-report the full verdict. If it can't be resumed, dispatch a new reviewer as
+usual. If the validation still can't run, block that landing and record it as an unresolved risk.
 
 Anything else — no verdict, blocked reviewer, wrong SHA, internal contradiction — is **no review**,
 never PASS. Redo the pre-dispatch check and dispatch one new reviewer; if that also fails, treat
