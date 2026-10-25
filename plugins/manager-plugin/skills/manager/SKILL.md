@@ -260,8 +260,8 @@ Land only a tree that was validated and reviewed. Immediately before landing:
      landings and fast-forward landings that must stay linear, and only if the project rules don't
      forbid force-pushing or rewriting PR branches (the push is lease-pinned to the current
      candidate); else none. The same implementer integrates (`Integration` in the brief, with that
-     method), re-runs the full validation on the integrated tree, and the new candidate goes back to step 2 → a fresh review. Integration rounds count toward the
-     fix-round limit.
+     method), re-runs the full validation on the integrated tree, and the new candidate goes back
+     to step 2 → a fresh review. Integration rounds count toward the fix-round limit.
    - **No permitted integration** (e.g. rebase merges or a linear fast-forward landing where the
      project forbids force-pushes, or a fast-forward-only default the session can't push) → decide
      this before dispatching anything: block that landing, record why, continue independent work.
