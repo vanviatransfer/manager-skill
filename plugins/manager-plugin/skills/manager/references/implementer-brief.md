@@ -7,7 +7,7 @@ Read and follow <this file's path>.
 Project: <repo path>, default branch <default>
 Living plan: <path>, phase <id>
 Run: <run-id>
-Base SHA: <default head at dispatch>
+Base SHA: <default head at dispatch; for a replacement implementer, the phase's current base>
 Branch: <phase/<id>-<slug> | designated branch>
 GitHub backend: <gh | GitHub MCP>
 Integration method: <merge | rebase | none allowed>
@@ -16,7 +16,8 @@ Rulings: <orchestrator rulings / quoted owner words, or "none">
 Plan records: <exact entries: open decisions, Decided moves, status corrections, model-strategy
   record — or "none">
 Plan change: <exact plan text; plan-only PR only, else omit>
-Fix round: <blockers verbatim; only when replacing an implementer that can't be resumed, else omit>
+Fix round: <PR #<n> at <sha>; blockers verbatim — only when replacing an implementer that can't
+  be resumed, else omit>
 ```
 
 ## Instructions
@@ -65,12 +66,16 @@ Next action: <for the orchestrator>
 
 ## Fix round
 
-The orchestrator sends `Fix round: PR #<n> at <sha>, CHANGES REQUIRED. Blockers (verbatim):`
-followed by the findings (or the dispatch's Fix round field). Fix them and push to the same branch
-(no force-push or history rewrite), re-run the full
-validation on the new head, report as above. Fold in non-blocking notes only if trivial and in
-scope. A finding that is wrong or needs the owner → say so under Deviations / Blocker; don't work
-around it.
+The orchestrator sends this message (a replacement implementer gets the same content in its
+`Fix round` field):
+
+    Fix round: PR #<n> at <sha>, CHANGES REQUIRED. Blockers (verbatim):
+    <findings>
+
+Fix them and push to the same branch (no force-push or history rewrite), re-run the full
+validation on the new head, and report as above with the new Candidate SHA. Fold in non-blocking
+notes only if trivial and in scope. A finding that is wrong or needs the owner → say so under
+Deviations / Blocker; don't work around it.
 
 ## Integration
 
