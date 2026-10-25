@@ -1,6 +1,6 @@
 {
   "name": "manager-plugin",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "living-plan: write a phased living plan. manager: run it to completion, one phase per PR, with fresh implementer and independent exact-SHA reviewer subagents, a braked fix loop and batched owner decisions.",
   "author": {
     "name": "Murat Ayci"

@@ -215,25 +215,48 @@ next PR). Either way, schedule the next ready phase. A fixable verification prob
 implementer back once with the exact problem.
 
 ### 3. Independent review
-Before dispatch, note `git rev-parse HEAD` and `git status --short` of the shared checkout. Dispatch
-a **new** reviewer with: PR number, base SHA, candidate SHA, phase id and plan path (it reads
-objective, scope, acceptance and validation from the plan at the base SHA itself, so the candidate
-cannot redefine its own acceptance), project-rule paths, backend, worktree location, and the
-rulings and plan records the implementer got (and the Plan change, for a plan-only PR). Never send
-the implementer's report, the PR description's claims or earlier reviews.
+Before dispatch, the shared checkout should be on the candidate with a clean tree (`git rev-parse
+HEAD` = candidate, `git status --short` empty), so the reviewer can validate there. If it isn't:
+1. a live implementer → ask it once to leave the checkout so; still not so → 2 or 3;
+2. no implementer (resumed PR, can't be resumed) or step 1 failed, and the tree is clean →
+   `git switch --detach <candidate>` yourself, only if the project rules allow switching the
+   shared checkout;
+3. otherwise (dirty tree — never discard anyone's changes — or the move is forbidden) → give the
+   reviewer a worktree if the project allows one; else don't dispatch: block that landing and
+   record why as an unresolved risk.
+
+Note both values. Dispatch a **new** reviewer with: PR number, base SHA, candidate SHA, phase id and
+plan path (it reads objective, scope, acceptance and validation from the plan at the base SHA
+itself, so the candidate cannot redefine its own acceptance), project-rule paths, backend, a
+worktree location only if the project allows worktrees, and the rulings and plan records the
+implementer got (and the Plan change, for a plan-only PR). Never send the implementer's report, the
+PR description's claims or earlier reviews.
 
 Accept the verdict only if all hold:
 - first line is `VERDICT: PASS`, `PASS WITH NOTES` or `CHANGES REQUIRED`;
 - `Reviewed SHA` and `Base SHA` equal what you sent;
-- a PASS lists `Blockers: none`, and `Validation` shows the project's required commands run at the
-  candidate with their results (or names a command the environment cannot run — then it's an
-  unresolved risk in the final report, never silently dropped);
-- `Checkout untouched` is confirmed and your before/after `git rev-parse HEAD` / `git status --short`
-  match.
+- a PASS or PASS WITH NOTES lists `Blockers: none`, and `Validation` shows the project's required
+  commands run at the candidate with their results;
+- `Checkout untouched` is confirmed: HEAD equals the noted value and `git status --short
+  --untracked-files=no` equals the noted tracked state (empty when the tree was clean). New
+  untracked files are acceptable only if the reviewer listed them as created by its validation;
+  remove those after the review.
+
+Clean-tree route only: if the reviewer reports tracked files changed by its validation, the result
+is invalid (`not run`). Restore them from the repo root with `git restore --staged --worktree :/`
+— safe only because the tree was clean at HEAD = candidate before the review — then retry the
+validation once, in a worktree if the project allows one, else block as below. Never restore or
+remove anything on a tree that was dirty before the review.
+
+A PASS or PASS WITH NOTES whose required validation is `not run` is not landable yet: fix the cause
+(usually the checkout state), redo the pre-dispatch check, note the before values again, and resume
+the **same** reviewer (SendMessage) with the candidate unchanged, to run only the missing
+validation and re-report the full verdict. If it can't be resumed, dispatch a new reviewer as
+usual. If the validation still can't run, block that landing and record it as an unresolved risk.
 
 Anything else — no verdict, blocked reviewer, wrong SHA, internal contradiction — is **no review**,
-never PASS. Dispatch one new reviewer; if that also fails, treat it as an environment failure for
-this phase and move on to independent work.
+never PASS. Redo the pre-dispatch check and dispatch one new reviewer; if that also fails, treat
+it as an environment failure for this phase and move on to independent work.
 
 Post one compact **review-ledger** PR comment (`review-ledger <run-id> round <k>: <verdict> at
 <sha>; blockers: <titles | none>`). It keeps round counts and history durable across sessions; it is
