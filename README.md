@@ -16,11 +16,16 @@ The main session becomes a thin orchestrator that runs the plan one phase per PR
 4. on PASS, the manager merges, pinned to the reviewed commit, and moves to the next phase.
 
 Fix rounds have brakes, owner decisions are collected and asked in one batch, and state lives in
-the living plan, `git` and `gh`, so a run survives compaction and can be resumed by a new session.
+the living plan, `git` and GitHub, so a run survives compaction and can be resumed by a new session.
 Everything runs in one turn with subagents, so it works the same in the Claude desktop app, the
 terminal and cloud sessions.
 
-Requirements: Claude Code, `git`, and an authenticated `gh` CLI for the project's GitHub repo.
+Requirements: Claude Code, `git`, and GitHub access for the project's repo through either an
+authenticated `gh` CLI (typical locally) or the GitHub MCP tools (typical in Claude Code cloud
+sessions, where `gh` is often present but not logged in). The manager checks `gh auth status` at
+start and falls back to MCP automatically; merges stay pinned to the reviewed SHA on both
+(`--match-head-commit` / `expectedHeadSha`). In a cloud session limited to one designated push
+branch, every phase reuses that branch and resets it to the default head after each merge.
 
 ## Install
 

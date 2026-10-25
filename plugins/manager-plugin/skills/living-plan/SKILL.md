@@ -22,7 +22,8 @@ Ground yourself first, cheaply:
 - Read the project rules (`CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING`), the README, and any existing
   plan, roadmap, spec or issue the owner points at.
 - Look at the code's shape: stack, layout, how it's tested and validated, how PRs are merged.
-- `git log --oneline -20` and `gh pr list` for what's happening now.
+- `git log --oneline -20` and the open PRs for what's happening now (`gh pr list` when `gh` is
+  authenticated, otherwise the GitHub MCP `list_pull_requests` tool, as in a cloud session).
 
 Then ask the owner what you couldn't find — **in one batch**, numbered, with your best guess for
 each so they can just confirm. Typical gaps: the goal in one sentence, what "done" looks like, hard

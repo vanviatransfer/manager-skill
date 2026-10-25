@@ -18,7 +18,8 @@ Talk to the owner in the owner's language.
 ## Ground rules
 
 - **Facts beat claims.** A subagent saying "done, tests pass, PR #12 at abc123" is a claim. PR
-  number, head SHA, base, changed files and merge state come from `git` and `gh`, never from a
+  number, head SHA, base, changed files and merge state come from `git` and the GitHub backend
+  (`gh` or the GitHub MCP tools, see **GitHub backend**), never from a
   subagent's prose and never from memory. When the plan and the facts disagree, the facts win and
   the plan is updated.
 - **Project rules win.** Read the project's `CLAUDE.md` / `AGENTS.md` first. Its rules on branches,
@@ -28,12 +29,17 @@ Talk to the owner in the owner's language.
   continue?" inside that authorization. Ordinary implementation ambiguity is yours to settle;
   record the ruling in one line.
 - **Keep your context lean.** Don't read diffs, logs or source yourself unless a decision needs it.
-  Read subagent reports, then verify the few facts that matter with `gh`.
+  Read subagent reports, then verify the few facts that matter through the GitHub backend.
 - **Subagent settings.** Dispatch both roles with the Agent tool, `subagent_type: general-purpose`,
   `model: opus`, `effort: medium` unless the owner or project says otherwise.
 - **GitHub CI is not a gate.** Don't trigger, wait for or poll CI checks, and don't hold a merge for
   green checks. The gate is the project's local validation plus the independent review. If branch
   protection refuses the merge because of required checks, that's an environment issue: report it.
+- **GitHub backend.** GitHub API operations (list, view, create, merge PRs) go through `gh` when
+  it is authenticated (usually local), otherwise through the GitHub MCP tools (usually a cloud
+  session). Choose in step 0 with `references/github-backends.md`, which also maps every `gh`
+  command below to its MCP equivalent. Commands below are written in `gh` form; on the MCP backend
+  use the mapped call. Plain `git` is the same on both.
 - **One phase at a time.** Phases run sequentially on the shared checkout. No parallel phases unless
   the owner asks.
 
@@ -42,10 +48,12 @@ Talk to the owner in the owner's language.
 Derive everything from durable sources, never from what you remember:
 
 1. Locate the living plan (ask once if it isn't obvious) and the project rules.
-2. `git fetch origin` and read the default branch's head SHA.
-3. `gh pr list --state open` — an open PR from an earlier run is either a phase in review (continue
+2. Choose the GitHub backend (`references/github-backends.md`) and note it in one line. Note
+   also whether the session has a designated push branch (cloud sessions often do).
+3. `git fetch origin` and read the default branch's head SHA.
+4. Open PRs (`gh pr list --state open` / MCP `list_pull_requests`) — an open PR from an earlier run is either a phase in review (continue
    at step 3) or abandoned (say so and decide).
-4. From the plan: completed phases, the next incomplete phase, open owner decisions.
+5. From the plan: completed phases, the next incomplete phase, open owner decisions.
 
 If there is no living plan at all, create one with the `living-plan` skill and get the owner's
 approval first. If the plan exists but the remaining work isn't split into phases yet, split it
@@ -68,13 +76,14 @@ A phase is the smallest unit worth one branch, one PR and one independent review
 ## The loop, per phase
 
 ### 1. Implement
-Dispatch a fresh implementer with `references/implementer-brief.md`. Keep its agent id: fixes go
-back to the same implementer.
+Dispatch a fresh implementer with `references/implementer-brief.md`, telling it the backend and
+the branch to use. Keep its agent id: fixes go back to the same implementer.
 
 ### 2. Verify the candidate
 From the report, take the PR number, then check it yourself:
-`gh pr view <n> --json number,state,headRefName,headRefOid,baseRefName,mergeable,files`.
-The SHA you send to review is `headRefOid` from `gh`, not the one in the report. If the PR doesn't
+`gh pr view <n> --json number,state,headRefName,headRefOid,baseRefName,mergeable,files`
+(MCP: `pull_request_read` `get` + `get_files`).
+The SHA you send to review is `headRefOid` / `head.sha` from GitHub, not the one in the report. If the PR doesn't
 exist, the base is wrong, or files are far outside the phase scope, send the implementer back once
 with the specific problem.
 
@@ -94,9 +103,12 @@ defects. That is no review. Dispatch a new reviewer; never merge on it.
 ### 4a. PASS / PASS WITH NOTES → merge
 Re-read `headRefOid`. It must still equal the reviewed SHA; if it moved, the review is stale →
 back to step 3. Merge with the project's merge method, pinned to the reviewed commit:
-`gh pr merge <n> --<squash|merge|rebase> --match-head-commit <reviewed-sha>`. If the project fast-
+`gh pr merge <n> --<squash|merge|rebase> --match-head-commit <reviewed-sha>` (MCP:
+`merge_pull_request` with `merge_method` and `expectedHeadSha: <reviewed-sha>`; never omit the
+pin). If the project fast-
 forwards the default branch instead, do exactly what its rules say and confirm the result.
-Then confirm `gh pr view <n> --json state,mergeCommit` shows MERGED, and `git fetch`.
+Then confirm the PR shows MERGED (`gh pr view <n> --json state,mergeCommit` / MCP `get` →
+`merged: true`, `merge_commit_sha`), and `git fetch`.
 Non-blocking notes: add them to the next relevant phase's brief or the plan's notes; don't open a
 fix round for them.
 
@@ -121,7 +133,8 @@ separate section, it checks the previous blockers, listed by title. It never get
 ### 5. Close the phase
 The implementer marks the phase done in the living plan inside the same PR, so the merge records
 it. After the merge, write one line to the owner (phase, PR, merged SHA, rounds, notable notes) and
-start the next phase from a fresh `git fetch`.
+start the next phase from a fresh `git fetch`. With a designated push branch, reset it to the new
+default head first (`references/github-backends.md`, "Designated branch").
 
 ## Owner decisions — collect, don't stall
 

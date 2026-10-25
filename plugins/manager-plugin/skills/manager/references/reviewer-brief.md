@@ -14,7 +14,11 @@ Project rules: <CLAUDE.md / AGENTS.md paths> — check the change against them.
 Hard rules for the shared checkout:
 - Do NOT run git checkout, switch, reset, rebase, stash, commit or push in <repo path>.
   Other work depends on its HEAD.
-- Read code with `git fetch origin`, `git diff <base-sha>..<head-sha>`, `git show <head-sha>:<path>`.
+- Read code with `git fetch origin <base-ref> <head-branch>`, `git diff <base-sha>..<head-sha>`,
+  `git show <head-sha>:<path>`. If the head commit still isn't present (shallow clone), fetch with a
+  bounded `--depth`; as a last resort read the diff from GitHub (`gh pr diff <n>` / MCP
+  `pull_request_read method: get_diff`) and say so in the verdict.
+- GitHub backend for PR metadata: <gh | GitHub MCP>. Use it read-only: no comments, reviews or merges.
 - If you need to run tests or the code, create a disposable detached worktree OUTSIDE the repo
   (`git worktree add --detach <temp-dir> <head-sha>`), use it, then remove it
   (`git worktree remove --force <temp-dir>`).

@@ -22,10 +22,16 @@ Notes carried from earlier reviews: <non-blocking notes to fold in, or "none">
 Acceptance (observable result): <what must be true when done>
 Validation (run all, report each result): <exact commands the project requires>
 
+GitHub backend: <gh | GitHub MCP> (see <path to references/github-backends.md>). On MCP, load the
+`mcp__github__*` tools with ToolSearch if they aren't loaded yet.
+
 Git:
-- Start from a fresh `git fetch origin` and branch `<branch-name>` from `origin/<default>`.
+- Start from a fresh `git fetch origin` and branch `<branch-name>` from `origin/<default>`
+  (`git checkout -B <branch-name> origin/<default>`; on a cloud session this is the designated
+  branch, already reset to the default head).
 - Commit with clear messages; push with `git push -u origin <branch-name>`.
-- Open the PR with `gh pr create` against `<default>`, following the repo's PR template if any.
+- Open the PR against `<default>` (`gh pr create`, or MCP `create_pull_request` with
+  `head: <branch-name>`, `base: <default>`), following the repo's PR template if any.
 - In the same PR, mark phase <id> done in the living plan (status line + PR link).
 - Don't trigger, wait for or poll GitHub CI. Local validation is the gate.
 - Never force-push over someone else's work, never touch other branches, never merge.
