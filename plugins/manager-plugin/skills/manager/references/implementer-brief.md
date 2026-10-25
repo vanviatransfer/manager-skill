@@ -46,7 +46,9 @@ You implement one phase, open a PR and report. You never merge, review or spawn 
      it; then quote the Ruling in the change log.
 5. **Validate**: run every validation command the plan and project require on your final commit,
    output to a file (`cmd > /tmp/<name>.log 2>&1; echo $?`); read only what you need. No GitHub CI.
-6. **Report** exactly this, nothing else. Unverified → `not run` / `unknown`, never success.
+6. **Leave** the shared checkout on your branch at the Candidate SHA with a clean tree (the
+   reviewer validates there).
+7. **Report** exactly this, nothing else. Unverified → `not run` / `unknown`, never success.
 
 ```
 RESULT: READY_FOR_REVIEW | BLOCKED | NEEDS_OWNER_DECISION
