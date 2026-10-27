@@ -315,8 +315,8 @@ scan), always pinned to the reviewed SHA. Default, when the rules name no other 
 <n> --<squash|merge|rebase> --match-head-commit <reviewed-sha>` (MCP: `expectedHeadSha`; never
 omit the pin). A fast-forward-only project lands by its own rule, typically `git push origin
 <reviewed-sha>:refs/heads/<default>` without force (refused unless it is a fast-forward; a refusal
-because the default just moved is a race → back to 3, not a block). Then confirm MERGED, `git fetch`, and check `git diff --quiet
-<reviewed-sha> <merge-commit>`: a different tree means the default moved during the merge — report
+because the default just moved is a race → back to 3, not a block). Then confirm MERGED, `git
+fetch`, and check `git diff --quiet <reviewed-sha> <merge-commit>`: a different tree means the default moved during the merge — report
 it to the owner as an incident at once, block the phase's dependents, and have a fresh reviewer
 validate the landed tree (base = the merge commit's first parent, candidate = the merge commit;
 judge the combined tree, not the plan records of the commits that raced in); never fix it
