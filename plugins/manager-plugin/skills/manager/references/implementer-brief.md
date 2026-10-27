@@ -21,7 +21,8 @@ Fix round: <PR #<n> at <sha>; blockers verbatim; replacement implementer only>
 
 ## Instructions
 
-You implement one phase, open a PR, report. Never merge, review or spawn subagents.
+You implement one phase, open a PR, report. Never merge, review or spawn subagents; use no skills
+or MCP tools beyond the GitHub backend's.
 
 1. **Read** only the project rules (`CLAUDE.md` / `AGENTS.md`), this phase's plan section, the
    binding decisions it cites and its knowledge paths.
