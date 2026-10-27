@@ -62,7 +62,10 @@ doesn't resolve to a readable file, paste the file's instruction block instead.)
 
 One implementer and one reviewer per round; no extra advisors or audits. Subagents must not spawn
 further subagents. Fill fields with paths, not pasted documents (an excerpt only when clearly
-better); an undecided question is an owner decision, never a placeholder in a field.
+better); an undecided question is an owner decision, never a placeholder in a field. The dispatch
+fields are the block at the top of each brief file: after a compaction re-read that block, never
+rebuild it from the transcript. Keep the project-specific Rulings you add to every dispatch as one
+working-notes line.
 
 ## Model strategy — owner's choice, asked once per run
 
@@ -128,7 +131,9 @@ strategy doesn't silently settle an open model decision.
 
 Derive state from durable sources only — never from memory of an earlier context:
 
-1. Choose the GitHub backend; note whether the session has a designated push branch.
+1. Choose the GitHub backend; note whether the session has a designated push branch. Note the
+   plugin version (`version` in `${CLAUDE_SKILL_DIR}/../../.claude-plugin/plugin.json`, if it
+   resolves) for the final report: a stale cached copy then shows up.
 2. `git fetch origin`; record the default branch head.
 3. Read the project rules and the living plan **as on the default branch** (`git show
    origin/<default>:<path>`, not the working tree, which may hold an unmerged phase branch). Ask
@@ -305,12 +310,13 @@ Land only a tree that was validated and reviewed. Immediately before landing:
      project forbids force-pushes, or a fast-forward-only default the session can't push) → decide
      this before dispatching anything: block that landing, record why, continue independent work.
 
-Land by the project's method, pinned to the reviewed SHA: `gh pr merge <n> --<squash|merge|rebase>
---match-head-commit <reviewed-sha>` (MCP: `expectedHeadSha`; never omit the pin). A fast-forward-only
-project lands by its own rule, typically `git push origin <reviewed-sha>:refs/heads/<default>`
-without force (refused unless it is a fast-forward; a refusal because the default just moved is a
-race → back to 3, not a block). Then confirm MERGED, `git fetch`, and check `git diff --quiet
-<reviewed-sha> <merge-commit>`: a different tree means the default moved during the merge — report
+Land as the project's rules prescribe, after any pre-landing check they require (e.g. a secret
+scan), always pinned to the reviewed SHA. Default, when the rules name no other way: `gh pr merge
+<n> --<squash|merge|rebase> --match-head-commit <reviewed-sha>` (MCP: `expectedHeadSha`; never
+omit the pin). A fast-forward-only project lands by its own rule, typically `git push origin
+<reviewed-sha>:refs/heads/<default>` without force (refused unless it is a fast-forward; a refusal
+because the default just moved is a race → back to 3, not a block). Then confirm MERGED, `git
+fetch`, and check `git diff --quiet <reviewed-sha> <merge-commit>`: a different tree means the default moved during the merge — report
 it to the owner as an incident at once, block the phase's dependents, and have a fresh reviewer
 validate the landed tree (base = the merge commit's first parent, candidate = the merge commit;
 judge the combined tree, not the plan records of the commits that raced in); never fix it
@@ -380,8 +386,8 @@ location, a new plan's approval), or when no ready phase is left, and say which 
 - the environment is persistently broken after one repair attempt.
 
 Final report, compact: phases landed (PR, merged SHA); phases blocked and why; the model strategy
-used and any model concerns; one line on repo-enabled plugins, MCP servers or skills found in step
-0 (names, "disable for this repo if unneeded") and any `general-purpose` fallback dispatch;
-unresolved risks (including validation the reviewer could not run);
+used and any model concerns; the plugin version; one line on repo-enabled plugins, MCP servers or
+skills found in step 0 (names, "disable for this repo if unneeded") and any `general-purpose`
+fallback dispatch; unresolved risks (including validation the reviewer could not run);
 decisions answered but not yet persisted, if any; non-blocking notes carried forward; the default
 branch's final head SHA; then the numbered batch of unresolved owner decisions.
