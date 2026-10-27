@@ -40,12 +40,14 @@ commit messages.
 **Review for** (blocker = shouldn't merge as is; else a note). Phase PR: acceptance criteria; bugs,
 edge cases, broken invariants in touched code and its callers; security and data safety; project
 rules; tests covering the risky parts; out-of-scope changes; plan updates that misstate reality.
-Always blockers: an edit to this phase's own objective, scope, acceptance or validation not
-required by a Ruling; a change to plan decisions (Open or Decided), other phases' status lines or
-the model-strategy record that doesn't match Plan records exactly (`unknown (resumed)`: any such
+Always blockers: an edit to this phase's own objective, scope, acceptance or validation not required
+by a Ruling; a change to plan decisions (Open or Decided), other phases' status lines or the
+model-strategy record that doesn't match Plan records exactly (`unknown (resumed)`: any such
 change). Plan-only PR, **instead**: blocker if the diff isn't exactly the Plan change (a
-specification: the draft doesn't realize it, or adds scope, decisions or acceptance beyond it),
-touches anything else, or contradicts the plan's goal, scope or binding decisions.
+specification: the draft doesn't realize it, adds scope, decisions or acceptance beyond it, lacks a
+phase's objective, scope, `Depends on`, acceptance or validation, or the specification holds content
+with no source in the plan or the owner's words), touches anything else, or contradicts the plan's
+goal, scope or binding decisions.
 
 **Validate independently:** run every validation command the plan and project require at the
 candidate, once each (SKILL.md's retry after an invalid run excepted); output to a file outside

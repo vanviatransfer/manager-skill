@@ -58,17 +58,15 @@ GitHub MCP server has another name), use `general-purpose` for every later dispa
 in this run and note it once for the final report. If `general-purpose` fails the same way, that
 is an environment failure (stop condition). The role instructions live in the brief files; you
 send only the **dispatch fields** listed at the top of each file, prefixed with one line:
-`Read and follow ${CLAUDE_SKILL_DIR}/references/<implementer|reviewer>-brief.md.` (If that path
-doesn't resolve to a readable file, paste the file's instruction block instead.)
+`Read and follow <the role's resolved brief path>.` (If a subagent can't read that path, paste the
+file's instruction block instead.)
 
 One implementer and one reviewer per round; no extra advisors or audits. Subagents must not spawn
 further subagents. Fill fields with paths, not pasted documents (an excerpt only when clearly
-better); an undecided question is an owner decision, never a placeholder in a field. Resolve the
-two brief paths once in step 0, check that both files exist, and use those absolute paths in every
-dispatch. The dispatch
-fields are the block at the top of each brief file: after a compaction re-read that block, never
-rebuild it from the transcript. Keep the project-specific Rulings you add to every dispatch as one
-working-notes line.
+better); an undecided question is an owner decision, never a placeholder in a field. Use the brief
+paths resolved in step 0 in every dispatch. The dispatch fields are the block at the top of each
+brief file: after a compaction re-read that block, never rebuild it from the transcript. Keep the
+project-specific Rulings you add to every dispatch as one working-notes line.
 
 ## Model strategy — owner's choice, asked once per run
 
@@ -141,7 +139,10 @@ Derive state from durable sources only — never from memory of an earlier conte
    plugin version (`version` in `${CLAUDE_SKILL_DIR}/../../.claude-plugin/plugin.json`, if it
    resolves) for the final report: a stale cached copy then shows up. If the environment exposes
    the account's usage values (a usage command or tool), note the weekly percentage here and give
-   the change in the final report; otherwise skip this.
+   the change in the final report; otherwise skip this. Resolve the two brief files once,
+   `${CLAUDE_SKILL_DIR}/references/implementer-brief.md` and `reviewer-brief.md`, and check that
+   both exist: a missing one means an incomplete plugin copy (environment failure: report it). Use
+   these absolute paths in every dispatch.
 2. `git fetch origin`; record the default branch head.
 3. Read the project rules and the living plan **as on the default branch** (`git show
    origin/<default>:<path>`, not the working tree, which may hold an unmerged phase branch). Ask
@@ -191,15 +192,17 @@ few lines; wait for approval only if the split changes scope or approved design.
 field — it replaces the usual status and record edits; the reviewer gets the same text and judges
 that the diff writes exactly that, touches nothing else, and doesn't contradict the approved goal,
 scope or binding decisions. For a large split, where writing the text yourself would mean reading
-the plan and docs, the `Plan change` may instead be a specification file outside the repo: per
-new phase its id, title, objective, scope, `Depends on`, acceptance intent, validation and the
-binding decisions it cites, taken only from the plan and the owner's words. The implementer drafts
-the plan edit from it; the reviewer gets the same file and judges that the draft realizes it, adds
-no scope, decision or acceptance beyond it, gives every phase an objective, scope, `Depends on`,
-acceptance and validation, and touches nothing else. You verify only facts (changed files are the
-plan). Models: the strategy's cheapest allowed choice. Otherwise the normal
-loop applies. A resumed plan-only PR keeps none of its own decision or model records: write its
-Plan change again from the plan on the default branch and this conversation's owner answers only.
+the plan and docs, the `Plan change` may instead be a specification file outside the repo: per new
+phase its id, title, objective, scope, `Depends on`, acceptance intent, validation and the binding
+decisions it cites, taken only from the plan and the owner's words. The implementer drafts the plan
+edit from it; the reviewer gets the same file and judges that the draft realizes it, adds no scope,
+decision or acceptance beyond it, gives every phase an objective, scope, `Depends on`, acceptance
+and validation, has nothing in the specification without a source in the plan or the owner's words,
+and touches nothing else. You verify only facts (changed files are the plan). A resumed plan-only PR
+gets a fresh specification file. Models: the strategy's cheapest allowed choice. Otherwise the
+normal loop applies. A resumed plan-only PR keeps none of its own decision or model records: write
+its Plan change again from the plan on the default branch and this conversation's owner answers
+only.
 
 ## Phases and scheduling
 
