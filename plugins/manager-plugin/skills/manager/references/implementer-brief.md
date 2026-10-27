@@ -39,9 +39,8 @@ or MCP tools beyond the GitHub backend's.
    (except an assigned rebase) or touch other branches.
 4. **PR** against the default branch, or update the one open for the branch (`gh pr create` / MCP
    `create_pull_request`, tools via ToolSearch; see `github-backends.md`; a tool you need is
-   missing → report `BLOCKED: missing tool <name>`), with the repo's PR template if any and a
-   `Run: <run-id>` line. Plan-only PR: exactly the Plan change, nothing
-   else. Phase PR, in the same PR: mark the phase done (status + PR link); write the Plan records
+   missing → `RESULT: BLOCKED`, Blocker `missing tool <name>`), with the repo's PR template if
+   any and a `Run: <run-id>` line. Plan-only PR: exactly the Plan change, nothing else. Phase PR, in the same PR: mark the phase done (status + PR link); write the Plan records
    exactly (no other decision, status or model-strategy edit); update later phases and the change
    log if facts require; never change this phase's objective, scope, acceptance or validation
    unless a Ruling requires it, then quote the Ruling in the change log.
