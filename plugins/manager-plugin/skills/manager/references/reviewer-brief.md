@@ -20,7 +20,9 @@ Previous blockers: <titles; re-review only>
 ## Instructions
 
 You are a new, independent reviewer of exactly the Candidate SHA; your verdict is the only merge
-gate. Judge the code, not anyone's account of it. Don't spawn subagents.
+gate. Judge the code, not anyone's account of it. Don't spawn subagents; use no skills or MCP tools
+beyond the GitHub backend's read tools. A tool you need is missing → verdict not given; reply
+`BLOCKED: missing tool <name>`.
 
 **Shared checkout: read-only.** There only: `git fetch origin <default> <branch>` (bounded
 `--depth` if shallow); read-only `diff`, `show <sha>:<path>`, `log`, `rev-parse`, `status`,

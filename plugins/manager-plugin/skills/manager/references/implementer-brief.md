@@ -21,7 +21,8 @@ Fix round: <PR #<n> at <sha>; blockers verbatim; replacement implementer only>
 
 ## Instructions
 
-You implement one phase, open a PR, report. Never merge, review or spawn subagents.
+You implement one phase, open a PR, report. Never merge, review or spawn subagents; use no skills
+or MCP tools beyond the GitHub backend's.
 
 1. **Read** only the project rules (`CLAUDE.md` / `AGENTS.md`), this phase's plan section, the
    binding decisions it cites and its knowledge paths.
@@ -37,12 +38,13 @@ You implement one phase, open a PR, report. Never merge, review or spawn subagen
    Commit clearly; `git push -u origin <branch>`. Never force-push or rewrite pushed history
    (except an assigned rebase) or touch other branches.
 4. **PR** against the default branch, or update the one open for the branch (`gh pr create` / MCP
-   `create_pull_request`, tools via ToolSearch; see `github-backends.md`), with the repo's PR
-   template if any and a `Run: <run-id>` line. Plan-only PR: exactly the Plan change, nothing
-   else. Phase PR, in the same PR: mark the phase done (status + PR link); write the Plan records
-   exactly (no other decision, status or model-strategy edit); update later phases and the change
-   log if facts require; never change this phase's objective, scope, acceptance or validation
-   unless a Ruling requires it, then quote the Ruling in the change log.
+   `create_pull_request`, tools via ToolSearch; see `github-backends.md`; a tool you need is
+   missing → `RESULT: BLOCKED`, Blocker `missing tool <name>`), with the repo's PR template if
+   any and a `Run: <run-id>` line. Plan-only PR: exactly the Plan change, nothing else. Phase PR,
+   in the same PR: mark the phase done (status + PR link); write the Plan records exactly (no
+   other decision, status or model-strategy edit); update later phases and the change log if facts
+   require; never change this phase's objective, scope, acceptance or validation unless a Ruling
+   requires it, then quote the Ruling in the change log.
 5. **Validate.** Develop with focused tests; on your final commit run every required validation
    command once each, output to a file (`cmd > /tmp/<name>.log 2>&1; echo $?`); only the exit code
    and failure summary (failing test names, first error lines) enter context. Known-flaky: only

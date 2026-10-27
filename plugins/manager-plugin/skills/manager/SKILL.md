@@ -48,9 +48,15 @@ model-strategy gate, the plan's location, approval of a new plan) or at a stop c
 
 ## Subagents
 
-Dispatch with the Agent tool, `subagent_type: general-purpose`, and the `model` / `effort` that the
-approved **model strategy** gives the role. The role instructions live in the brief files; you send
-only the **dispatch fields** listed at the top of each file, prefixed with one line:
+Dispatch with the Agent tool and the `model` / `effort` that the approved **model strategy** gives
+the role. Use `subagent_type: manager-plugin:implementer` / `manager-plugin:reviewer`, the plugin's
+tool-restricted subagents. Their allowlists narrow the tools available to them (the reviewer gets
+no Edit/Write or GitHub MCP write tools; staying read-only still comes from its brief). Plan-only
+PRs use the same two. If a role's type isn't available, or it reports a missing tool (e.g. the
+GitHub MCP server has another name), use `general-purpose` for every later dispatch of that role
+in this run and note it once for the final report. If `general-purpose` fails the same way, that
+is an environment failure (stop condition). The role instructions live in the brief files; you
+send only the **dispatch fields** listed at the top of each file, prefixed with one line:
 `Read and follow ${CLAUDE_SKILL_DIR}/references/<implementer|reviewer>-brief.md.` (If that path
 doesn't resolve to a readable file, paste the file's instruction block instead.)
 
@@ -129,6 +135,10 @@ Derive state from durable sources only — never from memory of an earlier conte
    once if the plan's location isn't obvious. From the plan: phases with status and `Depends on`,
    binding decisions, open and decided owner decisions, the model strategy record, the fix-round
    limit.
+   Overhead check (read-only): list what the repo itself enables — `enabledPlugins` in
+   `.claude/settings.json` / `settings.local.json`, servers in `.mcp.json`, skills under
+   `.claude/skills` — other than this plugin. Never change them. They load into the main session
+   and into any `general-purpose` fallback; user-level settings aren't covered.
 4. **Reconcile decisions** (`references/owner-decisions.md`): a decision is decided only if the
    plan on the default branch has a valid Decided entry or the owner answered it in this
    conversation. Phases blocked only by decided decisions become ready; correct their status lines
@@ -370,6 +380,8 @@ location, a new plan's approval), or when no ready phase is left, and say which 
 - the environment is persistently broken after one repair attempt.
 
 Final report, compact: phases landed (PR, merged SHA); phases blocked and why; the model strategy
-used and any model concerns; unresolved risks (including validation the reviewer could not run);
+used and any model concerns; one line on repo-enabled plugins, MCP servers or skills found in step
+0 (names, "disable for this repo if unneeded") and any `general-purpose` fallback dispatch;
+unresolved risks (including validation the reviewer could not run);
 decisions answered but not yet persisted, if any; non-blocking notes carried forward; the default
 branch's final head SHA; then the numbered batch of unresolved owner decisions.

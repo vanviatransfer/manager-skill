@@ -77,5 +77,7 @@ MCP results are facts from GitHub just like `gh` output; a subagent's prose is s
 - **Shallow clones.** Cloud checkouts may be shallow. Before diffing `base...head`, fetch both refs
   (`git fetch origin <default> <head-branch>`); fetch with a bounded `--depth` if a merge-base is
   missing rather than `--unshallow`.
-- **Subagents** inherit the same tools. Tell them which backend to use and, for MCP, that the tools
-  may need loading via ToolSearch first.
+- **Subagents:** the plugin's `implementer` / `reviewer` agents list only the tools they need,
+  including specific `mcp__github__*` tools (a reviewer gets read tools only); a `general-purpose`
+  fallback inherits everything. Tell them which backend to use and, for MCP, that the tools may
+  need loading via ToolSearch first.
