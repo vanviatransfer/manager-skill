@@ -52,8 +52,10 @@ Plan-only PR, **instead** of the above: a blocker if the diff isn't exactly the 
 anything else, or contradicts the plan's goal, scope or binding decisions.
 
 **Validate independently** — run every validation command the plan and project require at the
-candidate (output to a file outside the repo, read only what you need), in the first place that
-works:
+candidate, once each, in the first place that works. Output goes to a file outside the repo; bring
+into context only the exit code and the failure summary, never the whole log. A failure on the
+project's documented known-flaky list is recorded as known flaky and not chased, unless the diff
+touches the code it covers; any other failure is real.
 1. the shared checkout, if `git rev-parse HEAD` = Candidate SHA and `git status --short` is empty.
    Afterwards check both again. List new untracked files your run created (in `Checkout
    untouched`; you may delete only those). If the run modified a tracked file, the result is
