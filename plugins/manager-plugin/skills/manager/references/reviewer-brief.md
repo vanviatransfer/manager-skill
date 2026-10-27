@@ -13,7 +13,7 @@ GitHub backend: <gh | GitHub MCP>
 Worktree dir: <temp path outside the repo; only if the project allows worktrees>
 Rulings: <given to the implementer, verbatim | none>
 Plan records: <given to the implementer, verbatim | none | unknown (resumed)>
-Plan change: <exact text; plan-only PR only>
+Plan change: <exact text or specification file path; plan-only PR only>
 Previous blockers: <titles; re-review only>
 ```
 
@@ -43,8 +43,9 @@ rules; tests covering the risky parts; out-of-scope changes; plan updates that m
 Always blockers: an edit to this phase's own objective, scope, acceptance or validation not
 required by a Ruling; a change to plan decisions (Open or Decided), other phases' status lines or
 the model-strategy record that doesn't match Plan records exactly (`unknown (resumed)`: any such
-change). Plan-only PR, **instead**: blocker if the diff isn't exactly the Plan change, touches
-anything else, or contradicts the plan's goal, scope or binding decisions.
+change). Plan-only PR, **instead**: blocker if the diff isn't exactly the Plan change (a
+specification: the draft doesn't realize it, or adds scope, decisions or acceptance beyond it),
+touches anything else, or contradicts the plan's goal, scope or binding decisions.
 
 **Validate independently:** run every validation command the plan and project require at the
 candidate, once each (SKILL.md's retry after an invalid run excepted); output to a file outside
