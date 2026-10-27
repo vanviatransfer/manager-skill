@@ -12,7 +12,8 @@ reviewer subagent. Their work stays in their context, so yours stays small acros
 Stay in one continuous turn: dispatch subagents in the foreground (`run_in_background: false`),
 because the next step depends on the result. If the harness runs a dispatch in the background
 anyway, wait for its completion notification: a pending subagent is not a result and not a reason
-to end the turn. End the turn only for a question to the owner that blocks all work (the
+to end the turn, and an interim notice (e.g. it is waiting on its own background work) is not its
+report. End the turn only for a question to the owner that blocks all work (the
 model-strategy gate, the plan's location, approval of a new plan) or at a stop condition.
 
 ## Ground rules
@@ -57,15 +58,15 @@ GitHub MCP server has another name), use `general-purpose` for every later dispa
 in this run and note it once for the final report. If `general-purpose` fails the same way, that
 is an environment failure (stop condition). The role instructions live in the brief files; you
 send only the **dispatch fields** listed at the top of each file, prefixed with one line:
-`Read and follow ${CLAUDE_SKILL_DIR}/references/<implementer|reviewer>-brief.md.` (If that path
-doesn't resolve to a readable file, paste the file's instruction block instead.)
+`Read and follow <the role's resolved brief path>.` (If a subagent can't read that path, paste the
+file's instruction block instead.)
 
 One implementer and one reviewer per round; no extra advisors or audits. Subagents must not spawn
 further subagents. Fill fields with paths, not pasted documents (an excerpt only when clearly
-better); an undecided question is an owner decision, never a placeholder in a field. The dispatch
-fields are the block at the top of each brief file: after a compaction re-read that block, never
-rebuild it from the transcript. Keep the project-specific Rulings you add to every dispatch as one
-working-notes line.
+better); an undecided question is an owner decision, never a placeholder in a field. Use the brief
+paths resolved in step 0 in every dispatch. The dispatch fields are the block at the top of each
+brief file: after a compaction re-read that block, never rebuild it from the transcript. Keep the
+project-specific Rulings you add to every dispatch as one working-notes line.
 
 ## Model strategy — owner's choice, asked once per run
 
@@ -125,7 +126,10 @@ model decision (an ordinary owner decision, `D<n>`, asked in the final batch) an
 work. The owner's answer to such a decision amends the strategy for that phase only, and only in
 the run where it was asked (its Decided entry carries `scope: run <id>`; a later run ignores it in
 favour of its own gate), unless the owner says it holds for later runs; a new run's approved
-strategy doesn't silently settle an open model decision.
+strategy doesn't silently settle an open model decision. A mixed strategy's condition that the plan
+and the owner's words don't settle for a phase (e.g. "Opus if it handles CSP input") is such a
+model decision too: block that phase on it, pick neither model, ask in the final batch, and keep
+running the other phases.
 
 ## 0. Establish state (also how you resume after compaction or in a new session)
 
@@ -133,7 +137,12 @@ Derive state from durable sources only — never from memory of an earlier conte
 
 1. Choose the GitHub backend; note whether the session has a designated push branch. Note the
    plugin version (`version` in `${CLAUDE_SKILL_DIR}/../../.claude-plugin/plugin.json`, if it
-   resolves) for the final report: a stale cached copy then shows up.
+   resolves) for the final report: a stale cached copy then shows up. If the environment exposes
+   the account's usage values (a usage command or tool), note the weekly percentage here and give
+   the change in the final report; otherwise skip this. Resolve the two brief files once,
+   `${CLAUDE_SKILL_DIR}/references/implementer-brief.md` and `reviewer-brief.md`, and check that
+   both exist: a missing one means an incomplete plugin copy (environment failure: report it). Use
+   these absolute paths in every dispatch.
 2. `git fetch origin`; record the default branch head.
 3. Read the project rules and the living plan **as on the default branch** (`git show
    origin/<default>:<path>`, not the working tree, which may hold an unmerged phase branch). Ask
@@ -182,9 +191,18 @@ few lines; wait for approval only if the split changes scope or approved design.
 (or the designated branch). The implementer gets the exact plan text to write as its `Plan change`
 field — it replaces the usual status and record edits; the reviewer gets the same text and judges
 that the diff writes exactly that, touches nothing else, and doesn't contradict the approved goal,
-scope or binding decisions. Models: the strategy's cheapest allowed choice. Otherwise the normal
-loop applies. A resumed plan-only PR keeps none of its own decision or model records: write its
-Plan change again from the plan on the default branch and this conversation's owner answers only.
+scope or binding decisions. For a large split, where writing the text yourself would mean reading
+the plan and docs, the `Plan change` may instead be a specification file outside the repo: per new
+phase its id, title, objective, scope, `Depends on`, acceptance intent, validation and the binding
+decisions it cites, taken only from the plan and the owner's words. The implementer drafts the plan
+edit from it; the reviewer gets the same file and judges that the draft realizes it, adds no scope,
+decision or acceptance beyond it, gives every phase an objective, scope, `Depends on`, acceptance
+and validation, has nothing in the specification without a source in the plan or the owner's words,
+and touches nothing else. You verify only facts (changed files are the plan). A resumed plan-only PR
+gets a fresh specification file. Models: the strategy's cheapest allowed choice. Otherwise the
+normal loop applies. A resumed plan-only PR keeps none of its own decision or model records: write
+its Plan change again from the plan on the default branch and this conversation's owner answers
+only.
 
 ## Phases and scheduling
 
@@ -312,17 +330,17 @@ Land only a tree that was validated and reviewed. Immediately before landing:
 
 Land as the project's rules prescribe, after any pre-landing check they require (e.g. a secret
 scan), always pinned to the reviewed SHA. Default, when the rules name no other way: `gh pr merge
-<n> --<squash|merge|rebase> --match-head-commit <reviewed-sha>` (MCP: `expectedHeadSha`; never
-omit the pin). A fast-forward-only project lands by its own rule, typically `git push origin
+<n> --<squash|merge|rebase> --match-head-commit <reviewed-sha>` (MCP: `expectedHeadSha`; never omit
+the pin). A fast-forward-only project lands by its own rule, typically `git push origin
 <reviewed-sha>:refs/heads/<default>` without force (refused unless it is a fast-forward; a refusal
 because the default just moved is a race → back to 3, not a block). Then confirm MERGED, `git
-fetch`, and check `git diff --quiet <reviewed-sha> <merge-commit>`: a different tree means the default moved during the merge — report
-it to the owner as an incident at once, block the phase's dependents, and have a fresh reviewer
-validate the landed tree (base = the merge commit's first parent, candidate = the merge commit;
-judge the combined tree, not the plan records of the commits that raced in); never fix it
-silently. A PASS there unblocks the
-dependents; anything else is an owner decision (a revert or fix is the owner's call). Non-blocking
-notes go to the next relevant phase's brief or the plan's notes; never a fix round of their own.
+fetch`, and check `git diff --quiet <reviewed-sha> <merge-commit>`: a different tree means the
+default moved during the merge — report it to the owner as an incident at once, block the phase's
+dependents, and have a fresh reviewer validate the landed tree (base = the merge commit's first
+parent, candidate = the merge commit; judge the combined tree, not the plan records of the commits
+that raced in); never fix it silently. A PASS there unblocks the dependents; anything else is an
+owner decision (a revert or fix is the owner's call). Non-blocking notes go to the next relevant
+phase's brief or the plan's notes; never a fix round of their own.
 
 A landing refused or blocked (branch protection, unexplained ref drift, a project rule) stops that
 landing only: report it, mark the phase and its dependents blocked, continue independent work.
@@ -386,8 +404,9 @@ location, a new plan's approval), or when no ready phase is left, and say which 
 - the environment is persistently broken after one repair attempt.
 
 Final report, compact: phases landed (PR, merged SHA); phases blocked and why; the model strategy
-used and any model concerns; the plugin version; one line on repo-enabled plugins, MCP servers or
-skills found in step 0 (names, "disable for this repo if unneeded") and any `general-purpose`
-fallback dispatch; unresolved risks (including validation the reviewer could not run);
-decisions answered but not yet persisted, if any; non-blocking notes carried forward; the default
-branch's final head SHA; then the numbered batch of unresolved owner decisions.
+used and any model concerns; the plugin version and usage change (if readable); one line on
+repo-enabled plugins, MCP servers or skills found in step 0 (names, "disable for this repo if
+unneeded") and any `general-purpose` fallback dispatch; unresolved risks (including validation the
+reviewer could not run); decisions answered but not yet persisted, if any; non-blocking notes
+carried forward; the default branch's final head SHA; then the numbered batch of unresolved owner
+decisions.
