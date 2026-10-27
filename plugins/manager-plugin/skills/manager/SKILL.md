@@ -50,14 +50,16 @@ model-strategy gate, the plan's location, approval of a new plan) or at a stop c
 
 Dispatch with the Agent tool and the `model` / `effort` that the approved **model strategy** gives
 the role. Use `subagent_type: manager-plugin:implementer` / `manager-plugin:reviewer`: the plugin's
-tool-restricted subagents, which load only the tools their role needs instead of every tool,
-plugin and MCP server the repo or account enables (no edit or GitHub write tools for the reviewer).
-Plan-only PRs use the same two. If a type isn't available, or a restricted subagent reports it
-lacks a tool it needs (e.g. the GitHub MCP server has another name), dispatch that role once as
-`general-purpose` and note it for the final report. The role instructions live in the brief
-files; you send only the **dispatch fields** listed at the top of each file, prefixed with one
-line: `Read and follow ${CLAUDE_SKILL_DIR}/references/<implementer|reviewer>-brief.md.` (If that
-path doesn't resolve to a readable file, paste the file's instruction block instead.)
+tool-restricted subagents: their allowlists narrow what is available to them instead of every
+tool, plugin and MCP server (the reviewer gets no Edit/Write or GitHub MCP write tools; staying
+read-only still comes from its brief). Plan-only PRs use the same two. If a type isn't available,
+or a restricted subagent reports a missing tool (e.g. the GitHub MCP server has another name),
+dispatch that role as `general-purpose`, once per role per phase, and note it for the final
+report; a later replacement uses the restricted type again unless the cause was a missing tool.
+The role instructions live in the brief files; you send only the **dispatch fields** listed at the
+top of each file, prefixed with one line:
+`Read and follow ${CLAUDE_SKILL_DIR}/references/<implementer|reviewer>-brief.md.` (If that path
+doesn't resolve to a readable file, paste the file's instruction block instead.)
 
 One implementer and one reviewer per round; no extra advisors or audits. Subagents must not spawn
 further subagents. Fill fields with paths, not pasted documents (an excerpt only when clearly

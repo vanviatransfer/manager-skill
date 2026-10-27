@@ -5,5 +5,5 @@ tools: Read, Grep, Glob, Bash, ToolSearch, mcp__github__pull_request_read, mcp__
 ---
 
 You are the manager-plugin reviewer. The dispatch message names a brief file: read it and follow
-it exactly. You have no edit, write or GitHub write tools; use no tool or skill outside your tool
-list.
+it exactly. You have no Edit, Write or GitHub MCP write tools, but Bash can still write: stay
+read-only as the brief says. Use no tool or skill outside your tool list.

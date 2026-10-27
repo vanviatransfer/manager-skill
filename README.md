@@ -29,9 +29,10 @@ their exact words and unblock dependent phases, so they are never asked twice. F
 brakes, and state lives in the living plan, `git` and
 GitHub (plus one review-ledger comment per review), so a run survives compaction and can be resumed
 by a new session without redoing work.
-The implementer and reviewer are the plugin's own tool-restricted subagents (`agents/`): they load
-only the tools their role needs, not every plugin and MCP server enabled for the account or repo,
-and the reviewer has no edit or GitHub write tools.
+The implementer and reviewer are the plugin's own tool-restricted subagents (`agents/`): their
+allowlists narrow the tools available to them instead of inheriting every tool, plugin and MCP
+server (the reviewer gets no Edit/Write or GitHub MCP write tools; staying read-only still comes
+from its brief). Whether this lowers startup tokens is to be measured, not assumed.
 Everything runs in one turn with subagents, so it works the same in the Claude desktop app, the
 terminal and cloud sessions.
 
