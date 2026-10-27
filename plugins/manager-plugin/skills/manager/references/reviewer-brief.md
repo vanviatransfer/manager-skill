@@ -52,10 +52,15 @@ Plan-only PR, **instead** of the above: a blocker if the diff isn't exactly the 
 anything else, or contradicts the plan's goal, scope or binding decisions.
 
 **Validate independently** — run every validation command the plan and project require at the
-candidate, once each, in the first place that works. Output goes to a file outside the repo; bring
-into context only the exit code and the failure summary, never the whole log. A failure on the
-project's documented known-flaky list is recorded as known flaky and not chased, unless the diff
-touches the code it covers; any other failure is real.
+candidate, once each (SKILL.md's retry after an invalid run excepted). Output goes to a file outside
+the repo; bring into context only the exit code and the failure summary, never the whole log.
+
+Known-flaky list: the project's documented list **at the base SHA** (an entry added or changed by
+the diff doesn't count). A failed command is acceptable only if every failing test in its summary
+is on that list; record those as known flaky and don't chase them. One unlisted failure, or a
+listed test whose covered code the diff touches, is a real failure.
+
+Run it in the first place that works:
 1. the shared checkout, if `git rev-parse HEAD` = Candidate SHA and `git status --short` is empty.
    Afterwards check both again. List new untracked files your run created (in `Checkout
    untouched`; you may delete only those). If the run modified a tracked file, the result is
@@ -84,7 +89,7 @@ Notes (non-blocking):
   N1. <title> — <file:line> — <detail>
   (or "none")
 Acceptance: <criterion → met / not met>
-Validation: <command → pass/fail (exit code) at the candidate | not run: reason>
+Validation: <command → pass/fail (exit code) at the candidate | fail, known flaky: <test names> | not run: reason>
 Previous blockers: <title → resolved / still present>   (re-review only)
 Checkout untouched: <`git rev-parse HEAD` and `git status --short` of the repo path, after your work;
   untracked files your validation created, if any>
