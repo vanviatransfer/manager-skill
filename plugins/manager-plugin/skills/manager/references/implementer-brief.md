@@ -29,6 +29,10 @@ You implement one phase, open a PR and report. You never merge, review or spawn 
    knowledge paths.
 2. **Scope.** Don't expand it or guess. A choice only the owner can make (open design, scope, spend,
    credentials, anything the project reserves) → stop, report `NEEDS_OWNER_DECISION` with options.
+   **Write the least that meets the acceptance criteria:** reuse existing code, the standard
+   library or a native platform feature before writing new code; add no abstraction, option or
+   scaffolding the plan doesn't need. Acceptance, project rules and the plan's required tests,
+   validation, error handling and security always win; never cut them for brevity.
 3. **Git.** `git fetch origin`. Remote `<branch>` exists → `git checkout -B <branch>
    origin/<branch>`; if it lacks the base SHA (`git merge-base --is-ancestor <base-sha> HEAD`),
    follow **Integration** and report the new Base SHA. Otherwise `git checkout -B <branch>
@@ -44,8 +48,15 @@ You implement one phase, open a PR and report. You never merge, review or spawn 
    - update later phases and the change log if facts require it;
    - never change this phase's objective, scope, acceptance or validation unless a Ruling requires
      it; then quote the Ruling in the change log.
-5. **Validate**: run every validation command the plan and project require on your final commit,
-   output to a file (`cmd > /tmp/<name>.log 2>&1; echo $?`); read only what you need. No GitHub CI.
+5. **Validate.** While developing, run only focused tests. On your final commit run every
+   validation command the plan and project require, once each. Send output to a file
+   (`cmd > /tmp/<name>.log 2>&1; echo $?`) and bring into context only the exit code and the
+   failure summary (failing test names, first error lines); never print the whole log. Known-flaky
+   failures: only tests on the project's documented list count (never edit it to cover your own
+   failures); run such a command once more at most, record those tests under Validation as known
+   flaky and don't chase them. An unlisted failure, or a listed test whose covered code your diff
+   touches, is real: fix it. Rerun the full set only after a change that could affect it (fix
+   rounds and integration always rerun it). No GitHub CI.
 6. **Leave** the shared checkout on your branch at your pushed head with a clean tree (remove only
    untracked files your own validation created; commit or restore tracked files it changed); the
    reviewer validates there. Do this again after every fix round or integration.
