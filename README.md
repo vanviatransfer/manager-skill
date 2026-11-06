@@ -113,12 +113,12 @@ something it can't fix blocks the run.
 Before a long run, two settings help (the manager reminds you if they're missing, since it can't
 change them itself):
 
-- `/autocompact 600k`: compact the main session at 600k tokens. On a model with a 1M-token window
-  this compacts earlier than the default, so late turns carry less context; on a 200k-token model
-  the window caps it and it changes nothing. It is saved per model in your user settings.
+- `/autocompact 600k`: sets the main session's auto-compact window to 600k tokens, saved per model
+  in your user settings. Claude Code caps it at the model's context window; on a large-window model
+  it can make compaction happen earlier than the model's default window, if that is larger.
 - Keep the built-in `cc-plugin-you-should-know` off (`/plugin disable
-  cc-plugin-you-should-know@builtin`): while on, it rereads the conversation in extra requests to
-  the same model, and its notes wait for a human at the prompt.
+  cc-plugin-you-should-know@builtin`): while on, it rereads the conversation from time to time in a
+  separate request to the same model and shows notes above the prompt for you to answer.
 
 ## Credits
 
