@@ -110,6 +110,16 @@ The manager splits remaining work into phases if needed, runs them one by one, a
 the plan is done, when every remaining phase waits on your decisions (asked as one batch), or when
 something it can't fix blocks the run.
 
+Before a long run, two settings help (the manager reminds you if they're missing, since it can't
+change them itself):
+
+- `/autocompact 600k`: compact the main session at 600k tokens. On a model with a 1M-token window
+  this compacts earlier than the default, so late turns carry less context; on a 200k-token model
+  the window caps it and it changes nothing. It is saved per model in your user settings.
+- Keep the built-in `cc-plugin-you-should-know` off (`/plugin disable
+  cc-plugin-you-should-know@builtin`): while on, it rereads the conversation in extra requests to
+  the same model, and its notes wait for a human at the prompt.
+
 ## Credits
 
 The review and planning discipline draws on ideas from
