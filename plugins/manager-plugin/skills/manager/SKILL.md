@@ -103,8 +103,12 @@ don't read source. Recommend Sonnet, Opus or a mixed strategy, ask in Turkish, a
 ```
 Bu çalışma için önerim: <Sonnet | Opus | Karma: <rol/koşul → model>>.
 Gerekçe: <tek cümle: doğruluk riski, karmaşıklık, tahmini token tüketimi ve maliyet>.
+[Başlamadan önce önerim: `/autocompact 600k` çalıştırın; cc-plugin-you-should-know'ı kapatın]
 Model tercihiniz hangisi?
 ```
+
+The bracketed line only when the session check in step 0 found something, with only the items it
+found.
 
 Guide for the recommendation: Sonnet for bounded code, docs, tests and ordinary reviews; Opus for
 architecture, numerical or financial correctness, concurrency, security-critical code or hard
@@ -153,6 +157,16 @@ Derive state from durable sources only — never from memory of an earlier conte
    `.claude/settings.json` / `settings.local.json`, servers in `.mcp.json`, skills under
    `.claude/skills` — other than this plugin. Never change them. They load into the main session
    and into any `general-purpose` fallback; user-level settings aren't covered.
+   Session check (read-only; never edit settings yourself): (a) the auto-compact window, from
+   `CLAUDE_CODE_AUTO_COMPACT_WINDOW` and the `autoCompactWindow` keys (top level or under
+   `modelSettings`) in `~/.claude/settings.json` and the project's settings. If none is set,
+   recommend that the owner run `/autocompact 600k` if they haven't already (you can't run a
+   built-in command, and a `--autocompact` flag isn't visible to you); a different value set there
+   is the owner's choice: leave it. (b) Whether `cc-plugin-you-should-know@builtin` is enabled
+   (`true`) in an `enabledPlugins` of those files: its side checks are extra requests to the same
+   model and its notes wait for a human at the prompt, so recommend disabling it for the run. Put
+   these recommendations in the model-strategy question when you ask it, otherwise in the final
+   report.
 4. **Reconcile decisions** (`references/owner-decisions.md`): a decision is decided only if the
    plan on the default branch has a valid Decided entry or the owner answered it in this
    conversation. Phases blocked only by decided decisions become ready; correct their status lines
@@ -404,9 +418,9 @@ location, a new plan's approval), or when no ready phase is left, and say which 
 - the environment is persistently broken after one repair attempt.
 
 Final report, compact: phases landed (PR, merged SHA); phases blocked and why; the model strategy
-used and any model concerns; the plugin version and usage change (if readable); one line on
-repo-enabled plugins, MCP servers or skills found in step 0 (names, "disable for this repo if
-unneeded") and any `general-purpose` fallback dispatch; unresolved risks (including validation the
-reviewer could not run); decisions answered but not yet persisted, if any; non-blocking notes
-carried forward; the default branch's final head SHA; then the numbered batch of unresolved owner
-decisions.
+used and any model concerns; the plugin version and usage change (if readable); session-check
+recommendations not already given at the gate; one line on repo-enabled plugins, MCP servers or
+skills found in step 0 (names, "disable for this repo if unneeded") and any `general-purpose`
+fallback dispatch; unresolved risks (including validation the reviewer could not run); decisions
+answered but not yet persisted, if any; non-blocking notes carried forward; the default branch's
+final head SHA; then the numbered batch of unresolved owner decisions.

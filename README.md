@@ -110,6 +110,16 @@ The manager splits remaining work into phases if needed, runs them one by one, a
 the plan is done, when every remaining phase waits on your decisions (asked as one batch), or when
 something it can't fix blocks the run.
 
+Before a long run, two settings help (the manager reminds you if they're missing, since it can't
+change them itself):
+
+- `/autocompact 600k`: sets the main session's auto-compact window to 600k tokens, saved per model
+  in your user settings. Claude Code caps it at the model's context window; on a large-window model
+  it can make compaction happen earlier than the model's default window, if that is larger.
+- Keep the built-in `cc-plugin-you-should-know` off (`/plugin disable
+  cc-plugin-you-should-know@builtin`): while on, it rereads the conversation from time to time in a
+  separate request to the same model and shows notes above the prompt for you to answer.
+
 ## Credits
 
 The review and planning discipline draws on ideas from
