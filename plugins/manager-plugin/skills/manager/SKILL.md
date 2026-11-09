@@ -425,14 +425,15 @@ it needs the owner now. Never withhold what an owner decision or safe execution 
 ## Run record
 
 So that runs can be compared and the skill improved from evidence (`manager-retro` skill), keep a
-compact record of each run in this plugin's data directory, which persists across plugin updates and
-is shared by all projects on this machine: `${CLAUDE_PLUGIN_DATA}/runs/<YYYY-MM-DD>-<repo>-<run-id>.md`.
-Use the absolute path exactly as it appears in this text, never a shell variable (the Bash tool
-doesn't have it). Create `runs/` if it is missing. Skip the record only if the path above still shows
-a literal `${CLAUDE_PLUGIN_DATA}` (a copied skill) or isn't writable (e.g. a cloud session), and say
-so in the final report. Never write it into a repository. On resume, find the file by run id and
-append only phases it doesn't list yet. Append one line per landed or blocked phase as it happens,
-so an interrupted run still leaves its data, and the summary at the end:
+compact record of each run in the owner's home directory, shared by all projects on this machine and
+outside every repository: `~/.claude/manager-runs/<YYYY-MM-DD>-<repo>-<run-id>.md`, where `<repo>`
+is the bare repository name (no owner, no slash). Resolve `~` once (`echo ~` in Bash) and use the
+absolute path; create the directory if it is missing. If it can't be written, skip the record and
+say so in the final report; in a cloud session it may not persist after the session. On resume,
+find the file by run id. Append one line per phase outcome (landed or blocked) as it happens, so an
+interrupted run still leaves its data, and never repeat a phase-and-outcome already listed (a phase
+blocked and later landed gets both lines). Keep one `summary:` line at the end, replacing it when the
+run continues:
 
 ```
 # <repo> <run-id> · plugin <version> · model strategy: <strategy>
@@ -442,8 +443,9 @@ summary: phases landed <n>, blocked <n>; tokens impl <n>, review <n>; compaction
 ```
 
 Blocker classes are short generic tags (e.g. `locking`, `pii`, `validation-gap`, `plan-record`),
-never names of products, vendors, customers or code. Record numbers and tags only: no secrets, code,
-file contents or the owner's words.
+never names of products, vendors, customers or code. Apart from the repository name and the model
+strategy in the header, record numbers and tags only: no secrets, code, file contents or the
+owner's words.
 
 ## Stop conditions
 
