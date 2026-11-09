@@ -2,6 +2,14 @@
 
 ## Done
 
+### 3. Self-improving loop (plugin 0.6.0)
+
+- Run records in the plugin's local data directory (numbers and generic tags only), a proposed
+  binding decision when a blocker class recurs in a run, and the `manager-retro` skill that turns
+  measured patterns into at most three owner-chosen, independently reviewed changes.
+- Expected effect (to be measured by the records themselves): fewer repeated fix rounds per project,
+  and skill changes backed by numbers rather than single-run impressions.
+
 ### 1. `/autocompact 600000` before a run (plugin 0.5.2)
 
 - Findings (Claude Code docs, model-config / settings / CLI reference): `/autocompact <tokens|auto>`

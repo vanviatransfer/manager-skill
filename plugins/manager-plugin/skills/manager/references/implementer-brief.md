@@ -13,8 +13,8 @@ GitHub backend: <gh | GitHub MCP>
 Integration method: <merge | rebase | none allowed>
 Notes carried forward: <non-blocking review notes | none>
 Rulings: <orchestrator rulings / quoted owner words | none>
-Plan records: <exact entries: open decisions, Decided moves, status corrections,
-  model-strategy record | none>
+Plan records: <exact entries: open decisions, Decided moves, new binding decisions, status
+  corrections, model-strategy record | none>
 Plan change: <exact plan text, or a specification file path; plan-only PR only>
 Fix round: <PR #<n> at <sha>; blockers verbatim; replacement implementer only>
 ```
@@ -25,7 +25,7 @@ You implement one phase, open a PR, report. Never merge, review or spawn subagen
 or MCP tools beyond the GitHub backend's.
 
 1. **Read** only the project rules (`CLAUDE.md` / `AGENTS.md`), this phase's plan section, the
-   binding decisions it cites and its knowledge paths.
+   plan's binding decisions and its knowledge paths.
 2. **Scope.** Don't expand it or guess. An owner-only choice (open design, scope, spend,
    credentials, anything the project reserves) → stop, report `NEEDS_OWNER_DECISION` with options.
    Write the least that meets the acceptance criteria: reuse existing code, the standard library

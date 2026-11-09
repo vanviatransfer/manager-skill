@@ -13,12 +13,13 @@ A Claude Code plugin with three skills:
 
 Each manager run appends a compact record (per phase: risk, models, rounds, tokens, verdicts,
 blocker classes, skipped validation) to the plugin's data directory,
-`~/.claude/plugins/data/<id>/runs/`. It is local to your machine, shared by all your projects, kept across plugin updates and
-removed when you uninstall the plugin; it holds numbers and tags only, never code. Cloud sessions
-don't keep it. Two things learn from it:
+`~/.claude/plugins/data/<id>/runs/`. It is local to your machine, shared by all your projects, kept
+across plugin updates and removed when you uninstall the plugin; it holds numbers and tags only,
+never code. It may not persist in cloud sessions. Two things learn from it:
 
 - **Within a project:** when reviewers find the same class of defect in two phases, the manager
-  proposes a project rule that would prevent it, as an owner decision.
+  proposes a rule that would prevent it, as an owner decision; once you decide, it becomes a binding
+  decision in the plan that later phases follow.
 - **Across projects:** run `manager-retro` in a session on this repository (on the same machine):
   "Use the manager-retro skill". It measures the records, proposes changes, and opens a reviewed PR
   only for the ones you pick. It never weakens the review, owner-authority or Git-safety rules, and

@@ -390,10 +390,11 @@ owner one line (phase, PR, merged SHA). With a designated branch, reconcile it f
 record**). Then schedule the next ready phase.
 
 **Recurring blocker class.** When reviewers report the same class of defect (e.g. lock ordering,
-personal data exposed to the client) in two phases of a run, propose a project rule that would
-prevent it as an owner decision: the exact rule text and where it goes (the project rules file or
-the plan's binding decisions). Once decided it lands through the next PR, so later implementers read
-it before writing code.
+personal data exposed to the client) in two phases of a run, propose a rule that would prevent it,
+as an ordinary owner decision (`D<n>`, asked in the batch, blocking no phase) with the exact rule
+text. You only propose it. Once decided, it lands as a new binding decision (`B<n>`) through the next
+PR's `Plan records`; implementers and reviewers read all of the plan's binding decisions, so later
+phases apply it. Moving it into the project rules file is the owner's call.
 
 ## Owner decisions — block dependents only
 
@@ -408,12 +409,12 @@ When a phase needs something only the owner can decide:
    is **answered, not yet persisted** until a PR carrying its Decided entry lands; keep it as one
    working-notes line (`D<n> → <answer>: "<owner's words>"`) so it survives compaction.
 
-**Plan records.** New open decisions, Decided moves (owner's exact words, date), status
-corrections and the model-strategy record ride the next PR that lands, as the implementer's
-`Plan records` field, written by you verbatim; the reviewer gets the same field and blocks any plan
-record in the diff that doesn't match it. Before the final report, if anything is still unpersisted,
-land one plan-only bookkeeping PR. If no branch is free for it (a designated branch holding a
-blocked phase's work), the final report is the record instead; say so.
+**Plan records.** New open decisions, Decided moves (owner's exact words, date), new binding
+decisions from them, status corrections and the model-strategy record ride the next PR that lands,
+as the implementer's `Plan records` field, written by you verbatim; the reviewer gets the same field
+and blocks any plan record in the diff that doesn't match it. Before the final report, if anything
+is still unpersisted, land one plan-only bookkeeping PR. If no branch is free for it (a designated
+branch holding a blocked phase's work), the final report is the record instead; say so.
 
 ## Talking to the owner
 
@@ -426,20 +427,23 @@ it needs the owner now. Never withhold what an owner decision or safe execution 
 So that runs can be compared and the skill improved from evidence (`manager-retro` skill), keep a
 compact record of each run in this plugin's data directory, which persists across plugin updates and
 is shared by all projects on this machine: `${CLAUDE_PLUGIN_DATA}/runs/<YYYY-MM-DD>-<repo>-<run-id>.md`.
-If that path doesn't resolve to a writable directory (e.g. a cloud session or a copied skill), skip
-it and say so once in the final report. Never write it into a repository. Append one line per landed
-or blocked phase as it happens, so an interrupted run still leaves its data, and the summary at the
-end:
+Use the absolute path exactly as it appears in this text, never a shell variable (the Bash tool
+doesn't have it). Create `runs/` if it is missing. Skip the record only if the path above still shows
+a literal `${CLAUDE_PLUGIN_DATA}` (a copied skill) or isn't writable (e.g. a cloud session), and say
+so in the final report. Never write it into a repository. On resume, find the file by run id and
+append only phases it doesn't list yet. Append one line per landed or blocked phase as it happens,
+so an interrupted run still leaves its data, and the summary at the end:
 
 ```
 # <repo> <run-id> · plugin <version> · model strategy: <strategy>
 phase | risk | model impl/rev | rounds | impl tokens | review tokens per round | verdicts | blocker classes | skipped (when:) | fallback
-<one line per phase; tokens from the Agent tool's usage output, a resumed agent's delta>
+<one line per phase; tokens from the Agent tool's usage output (a resumed agent's delta), else unknown>
 summary: phases landed <n>, blocked <n>; tokens impl <n>, review <n>; compactions <n>; owner questions <n>; usage change <n | unknown>
 ```
 
-Blocker classes are short tags (e.g. `locking`, `pii`, `validation-gap`, `plan-record`), not code or
-quotes. Record numbers and tags only: no secrets, code, file contents or the owner's words.
+Blocker classes are short generic tags (e.g. `locking`, `pii`, `validation-gap`, `plan-record`),
+never names of products, vendors, customers or code. Record numbers and tags only: no secrets, code,
+file contents or the owner's words.
 
 ## Stop conditions
 
@@ -450,9 +454,10 @@ location, a new plan's approval), or when no ready phase is left, and say which 
 - the environment is persistently broken after one repair attempt.
 
 Final report, compact: phases landed (PR, merged SHA); phases blocked and why; the model strategy
-used and any model concerns; the plugin version and usage change (if readable); session-check
-recommendations not already given at the gate; one line on repo-enabled plugins, MCP servers or
-skills found in step 0 (names, "disable for this repo if unneeded") and any `general-purpose`
-fallback dispatch; unresolved risks (including validation the reviewer could not run); decisions
-answered but not yet persisted, if any; non-blocking notes carried forward; the default branch's
-final head SHA; then the numbered batch of unresolved owner decisions.
+used and any model concerns; the plugin version and usage change (if readable); the run record path,
+or why it was skipped; session-check recommendations not already given at the gate; one line on
+repo-enabled plugins, MCP servers or skills found in step 0 (names, "disable for this repo if
+unneeded") and any `general-purpose` fallback dispatch; unresolved risks (including validation the
+reviewer could not run); decisions answered but not yet persisted, if any; non-blocking notes
+carried forward; the default branch's final head SHA; then the numbered batch of unresolved owner
+decisions.
