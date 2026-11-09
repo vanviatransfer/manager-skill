@@ -386,7 +386,14 @@ as a separate section, checks the previous blockers, which it receives by title 
 ### 5. Close the phase
 The implementer's PR marks the phase done in the plan, so the merge records it. Optionally tell the
 owner one line (phase, PR, merged SHA). With a designated branch, reconcile it for the next phase
-(`references/github-backends.md`, "Designated branch"). Then schedule the next ready phase.
+(`references/github-backends.md`, "Designated branch"). Append the phase to the run record (**Run
+record**). Then schedule the next ready phase.
+
+**Recurring blocker class.** When reviewers report the same class of defect (e.g. lock ordering,
+personal data exposed to the client) in two phases of a run, propose a project rule that would
+prevent it as an owner decision: the exact rule text and where it goes (the project rules file or
+the plan's binding decisions). Once decided it lands through the next PR, so later implementers read
+it before writing code.
 
 ## Owner decisions — block dependents only
 
@@ -413,6 +420,26 @@ blocked phase's work), the final report is the record instead; say so.
 In the owner's language — Turkish unless the owner writes otherwise. No narration of tool calls, no
 progress recaps. At most one line per landed phase; report a real blocker in a few lines only when
 it needs the owner now. Never withhold what an owner decision or safe execution needs.
+
+## Run record
+
+So that runs can be compared and the skill improved from evidence (`manager-retro` skill), keep a
+compact record of each run in this plugin's data directory, which persists across plugin updates and
+is shared by all projects on this machine: `${CLAUDE_PLUGIN_DATA}/runs/<YYYY-MM-DD>-<repo>-<run-id>.md`.
+If that path doesn't resolve to a writable directory (e.g. a cloud session or a copied skill), skip
+it and say so once in the final report. Never write it into a repository. Append one line per landed
+or blocked phase as it happens, so an interrupted run still leaves its data, and the summary at the
+end:
+
+```
+# <repo> <run-id> · plugin <version> · model strategy: <strategy>
+phase | risk | model impl/rev | rounds | impl tokens | review tokens per round | verdicts | blocker classes | skipped (when:) | fallback
+<one line per phase; tokens from the Agent tool's usage output, a resumed agent's delta>
+summary: phases landed <n>, blocked <n>; tokens impl <n>, review <n>; compactions <n>; owner questions <n>; usage change <n | unknown>
+```
+
+Blocker classes are short tags (e.g. `locking`, `pii`, `validation-gap`, `plan-record`), not code or
+quotes. Record numbers and tags only: no secrets, code, file contents or the owner's words.
 
 ## Stop conditions
 
