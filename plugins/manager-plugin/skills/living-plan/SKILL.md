@@ -47,7 +47,9 @@ questions at all.
   financial correctness, concurrency or locking, security, personal data), with the reason when
   critical. The manager's model strategy uses it.
 - **Validation cost.** List the commands every run of the phase needs, and mark expensive ones that
-  only matter for some changes with their trigger, e.g. `when: locking or schema code changes`.
+  only matter for some changes with a trigger in parentheses after the command, naming an
+  observable property of the diff (paths or code areas), e.g. `(when: migrations or locking code
+  change)`.
 - **Order by dependency, not by taste.** If B needs A's code, B comes after A. If two parts must
   land together, they are one phase. Put risky unknowns early (a spike or proof phase is fine).
 - **Every phase gets** an objective, scope (and out-of-scope when it matters), `Depends on`

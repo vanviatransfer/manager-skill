@@ -40,9 +40,9 @@ commit messages.
 **Review for** (blocker = shouldn't merge as is; else a note). Phase PR: acceptance criteria; bugs,
 edge cases, broken invariants in touched code and its callers; security and data safety; project
 rules; tests covering the risky parts; out-of-scope changes; plan updates that misstate reality.
-Always blockers: an edit to this phase's own objective, scope, acceptance or validation not required
-by a Ruling; a change to plan decisions (Open or Decided), other phases' status lines or the
-model-strategy record that doesn't match Plan records exactly (`unknown (resumed)`: any such
+Always blockers: an edit to this phase's own objective, scope, risk, acceptance or validation not
+required by a Ruling; a change to plan decisions (Open or Decided), other phases' status lines or
+the model-strategy record that doesn't match Plan records exactly (`unknown (resumed)`: any such
 change). Plan-only PR, **instead**: blocker if the diff isn't exactly the Plan change (a
 specification: the draft doesn't realize it, adds scope, decisions or acceptance beyond it, lacks a
 phase's objective, scope, `Depends on`, acceptance or validation, or the specification holds content
@@ -51,22 +51,19 @@ goal, scope or binding decisions.
 
 **Validate independently:** run every validation command the plan and project require at the
 candidate, once each (SKILL.md's retry after an invalid run excepted); a command the plan marks
-`when: <trigger>` is required only if the phase's diff matches the trigger, judged by you, and a
-skipped one is reported as `not required: <trigger not met>`; output to a file outside
-the repo, only the exit code and failure summary into context.
-Known-flaky list = the project's documented list **at the base SHA** (entries the diff adds or
-changes don't count). A failed command is acceptable only if every failing test in its summary is
-listed: record those as known flaky, don't chase them. One unlisted failure, or a listed test
-whose covered code the diff touches, is a real failure.
-Run in the first place that works:
-1. the shared checkout, if `git rev-parse HEAD` = Candidate SHA and `git status --short` is empty;
-   recheck both afterwards. List untracked files your run created (delete only those). A modified
-   tracked file invalidates the result: report `not run: validation changed <files>`, leave them
-   for the orchestrator;
-2. if a Worktree dir was given: `git worktree add --detach <worktree-dir> <candidate>`, then
-   `git worktree remove --force <worktree-dir>`;
-3. otherwise `not run: <reason>` (e.g. HEAD ≠ candidate, dirty tree, command unavailable). Never
-   move the checkout to make it work, and never imply a pass.
+`when: <trigger>` is required only if the phase's diff matches the trigger, judged by you (run it
+when in doubt), and a skipped one is reported as `not required: <reason from the diff>`; output to a
+file outside the repo, only the exit code and failure summary into context. Known-flaky list = the
+project's documented list **at the base SHA** (entries the diff adds or changes don't count). A
+failed command is acceptable only if every failing test in its summary is listed: record those as
+known flaky, don't chase them. One unlisted failure, or a listed test whose covered code the diff
+touches, is a real failure. Run in the first place that works: 1. the shared checkout, if `git
+rev-parse HEAD` = Candidate SHA and `git status --short` is empty; recheck both afterwards. List
+untracked files your run created (delete only those). A modified tracked file invalidates the
+result: report `not run: validation changed <files>`, leave them for the orchestrator; 2. if a
+Worktree dir was given: `git worktree add --detach <worktree-dir> <candidate>`, then `git worktree
+remove --force <worktree-dir>`; 3. otherwise `not run: <reason>` (e.g. HEAD ≠ candidate, dirty tree,
+command unavailable). Never move the checkout to make it work, and never imply a pass.
 
 **Validation-only resume:** keep the same Candidate SHA, redo these checks, run only the missing
 validation, re-report the full format. **Previous blockers:** only after your own review is
@@ -86,7 +83,7 @@ Notes (non-blocking):
   (or "none")
 Acceptance: <criterion → met / not met>
 Validation: <command → pass/fail (exit code) at the candidate | fail, known flaky: <tests> |
-  not run: reason>
+  not required: <reason from the diff> | not run: reason>
 Previous blockers: <title → resolved / still present>   (re-review only)
 Checkout untouched: <`git rev-parse HEAD` and `git status --short` of the repo path, after your
   work; untracked files your validation created, if any>

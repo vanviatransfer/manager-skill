@@ -287,7 +287,8 @@ Accept the verdict only if all hold:
 - first line is `VERDICT: PASS`, `PASS WITH NOTES` or `CHANGES REQUIRED`;
 - `Reviewed SHA` and `Base SHA` equal what you sent;
 - a PASS or PASS WITH NOTES lists `Blockers: none`, and `Validation` shows the project's required
-  commands run at the candidate with their results; a failed command is acceptable only if every
+  commands run at the candidate with their results (a `when:` command reported `not required` with a
+  reason from the diff counts as satisfied); a failed command is acceptable only if every
   failing test is named as known flaky from the project's list at the base SHA, any other failure
   means CHANGES REQUIRED;
 - `Checkout untouched` is confirmed: HEAD equals the noted value and `git status --short
