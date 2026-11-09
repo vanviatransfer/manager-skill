@@ -50,7 +50,9 @@ with no source in the plan or the owner's words), touches anything else, or cont
 goal, scope or binding decisions.
 
 **Validate independently:** run every validation command the plan and project require at the
-candidate, once each (SKILL.md's retry after an invalid run excepted); output to a file outside
+candidate, once each (SKILL.md's retry after an invalid run excepted); a command the plan marks
+`when: <trigger>` is required only if the phase's diff matches the trigger, judged by you, and a
+skipped one is reported as `not required: <trigger not met>`; output to a file outside
 the repo, only the exit code and failure summary into context.
 Known-flaky list = the project's documented list **at the base SHA** (entries the diff adds or
 changes don't count). A failed command is acceptable only if every failing test in its summary is

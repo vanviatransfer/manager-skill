@@ -47,12 +47,14 @@ or MCP tools beyond the GitHub backend's.
    require; never change this phase's objective, scope, acceptance or validation unless a Ruling
    requires it, then quote the Ruling in the change log.
 5. **Validate.** Develop with focused tests; on your final commit run every required validation
-   command once each, output to a file (`cmd > /tmp/<name>.log 2>&1; echo $?`); only the exit code
-   and failure summary (failing test names, first error lines) enter context. Known-flaky: only
-   tests on the project's documented list count (never edit it to cover your failures); rerun such
-   a command at most once more, record the tests as known flaky, don't chase them. An unlisted
-   failure, or a listed test whose covered code your diff touches, is real: fix it. Rerun the full
-   set only after a change that could affect it (fix rounds and integration always do). No CI.
+   command once each (a command the plan marks `when: <trigger>` is required only if this phase's
+   diff matches the trigger; say which you skipped and why), output to a file (`cmd >
+   /tmp/<name>.log 2>&1; echo $?`); only the exit code and failure summary (failing test names,
+   first error lines) enter context. Known-flaky: only tests on the project's documented list count
+   (never edit it to cover your failures); rerun such a command at most once more, record the tests
+   as known flaky, don't chase them. An unlisted failure, or a listed test whose covered code your
+   diff touches, is real: fix it. Rerun the full set only after a change that could affect it (fix
+   rounds and integration always do). No CI.
 6. **Leave** the shared checkout on your pushed head, tree clean (remove only untracked files your
    validation created; commit or restore tracked ones it changed), after every round: the
    reviewer validates there.

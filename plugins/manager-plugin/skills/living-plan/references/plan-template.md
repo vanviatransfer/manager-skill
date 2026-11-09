@@ -44,8 +44,9 @@ Status: todo
 Objective: <one deliverable>
 Scope: <files / areas>. Out of scope: <if it matters>
 Depends on: <phase ids or "none" — required; the manager schedules by it>
+Risk: <standard | critical — reason>
 Acceptance: <observable result>
-Validation: <commands, or "standard">
+Validation: <commands, or "standard">; <expensive command> when: <trigger, e.g. locking code changes>
 Notes: <decisions cited (B1, D2), risks, knowledge paths>
 
 ### P2. <title>

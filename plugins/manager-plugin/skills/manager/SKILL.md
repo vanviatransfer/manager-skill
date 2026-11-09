@@ -112,8 +112,10 @@ found.
 
 Guide for the recommendation: Sonnet for bounded code, docs, tests and ordinary reviews; Opus for
 architecture, numerical or financial correctness, concurrency, security-critical code or hard
-debugging; mixed (for example Sonnet implementers and Opus reviewers, or Opus only for named phases)
-when only part of the work needs it. Opus costs more per token; say so when you recommend it.
+debugging. Default to mixed by the plan's `Risk` field: `standard` phases Sonnet for both roles,
+`critical` phases Opus for both, unmarked phases standard — say all three in the question so the
+condition is settled by the owner's answer. Recommend Opus throughout only when most remaining
+phases are critical. Opus costs more per token; say so when you recommend it.
 
 **Applying.** The approved strategy fixes, per role (and per phase or condition for a mixed one),
 the `model` and the `effort` (`medium` unless the strategy says otherwise). It covers every dispatch
@@ -220,9 +222,11 @@ only.
 
 ## Phases and scheduling
 
-A phase is the smallest unit worth one branch, one PR and one independent review. Batch same-shape
-changes that share one judgment and one validation surface; split parts that need different
-judgment, can be validated alone and need no code from each other. If two parts must land together,
+A phase is one coherent deliverable worth one branch, one PR and one independent review, not the
+smallest possible unit: each phase pays a fixed cost (two fresh subagents, validation run twice).
+Batch same-shape changes that share one judgment, one validation surface and a diff one reviewer can
+check in one pass; split parts that need different judgment or risk level, can be validated alone
+and need no code from each other. If two parts must land together,
 they are one phase. Each phase carries an observable acceptance criterion **and** the validation
 commands; green validation alone is not acceptance.
 
