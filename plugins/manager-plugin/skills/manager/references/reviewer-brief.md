@@ -31,7 +31,7 @@ given. No checkout, switch, reset, rebase, stash, commit, push or edits. Read th
 (`gh pr diff <n>` / MCP `pull_request_read get_diff`) only if the candidate can't be fetched, and
 say so. GitHub backend read-only: no comments, reviews or merges.
 
-**Read:** this phase's plan section (objective, scope, out-of-scope, acceptance, validation) and
+**Read:** this phase's plan section (objective, scope, out-of-scope, risk, acceptance, validation) and
 the binding decisions it cites **at the base SHA** (`git show <base-sha>:<plan-path>`; the
 candidate may have edited them); the project rules; the full `git diff <base>...<candidate>`; the
 surrounding code its correctness depends on. Not PR comments or reviews, the PR description or
@@ -40,18 +40,21 @@ commit messages.
 **Review for** (blocker = shouldn't merge as is; else a note). Phase PR: acceptance criteria; bugs,
 edge cases, broken invariants in touched code and its callers; security and data safety; project
 rules; tests covering the risky parts; out-of-scope changes; plan updates that misstate reality.
-Always blockers: an edit to this phase's own objective, scope, acceptance or validation not required
-by a Ruling; a change to plan decisions (Open or Decided), other phases' status lines or the
-model-strategy record that doesn't match Plan records exactly (`unknown (resumed)`: any such
+Always blockers: an edit to this phase's own objective, scope, risk, acceptance or validation not
+required by a Ruling; a change to plan decisions (Open or Decided), other phases' status lines or
+the model-strategy record that doesn't match Plan records exactly (`unknown (resumed)`: any such
 change). Plan-only PR, **instead**: blocker if the diff isn't exactly the Plan change (a
 specification: the draft doesn't realize it, adds scope, decisions or acceptance beyond it, lacks a
-phase's objective, scope, `Depends on`, acceptance or validation, or the specification holds content
-with no source in the plan or the owner's words), touches anything else, or contradicts the plan's
-goal, scope or binding decisions.
+phase's objective, scope, `Depends on`, risk, acceptance or validation, or the specification holds
+content with no source in the plan or the owner's words), touches anything else, or contradicts the
+plan's goal, scope or binding decisions.
 
 **Validate independently:** run every validation command the plan and project require at the
 candidate, once each (SKILL.md's retry after an invalid run excepted); output to a file outside
-the repo, only the exit code and failure summary into context.
+the repo, only the exit code and failure summary into context. A command the plan marks
+`(when: <trigger>)` is required only if the phase's diff matches the trigger, judged by you against
+the current diff (run it when in doubt); report a skipped one as `not required: <reason from the
+diff>`.
 Known-flaky list = the project's documented list **at the base SHA** (entries the diff adds or
 changes don't count). A failed command is acceptable only if every failing test in its summary is
 listed: record those as known flaky, don't chase them. One unlisted failure, or a listed test
@@ -84,7 +87,7 @@ Notes (non-blocking):
   (or "none")
 Acceptance: <criterion → met / not met>
 Validation: <command → pass/fail (exit code) at the candidate | fail, known flaky: <tests> |
-  not run: reason>
+  not required: <reason from the diff> | not run: reason>
 Previous blockers: <title → resolved / still present>   (re-review only)
 Checkout untouched: <`git rev-parse HEAD` and `git status --short` of the repo path, after your
   work; untracked files your validation created, if any>

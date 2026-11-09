@@ -36,10 +36,21 @@ questions at all.
 - **Goal and done.** One or two sentences each. "Done" must be observable.
 - **Binding decisions.** Choices already made (by the owner or the project) that phases must not
   re-open. Number them so phases can cite them.
-- **Phases.** A phase is the smallest unit worth one branch, one PR and one independent review.
-  Batch same-shape changes with one judgment and one validation surface; split when parts need
-  different judgment and can be validated alone. Several steps in one change are not a reason to
-  split.
+- **Phases.** A phase is one coherent deliverable worth one branch, one PR and one independent
+  review — not the smallest possible unit. Every phase pays a fixed cost: two fresh subagents load
+  the rules, the plan and the code, and the full validation runs twice. So batch same-shape work
+  (several screens, endpoints or migrations of one kind) into one phase while it keeps one
+  judgment, one validation surface and a diff one reviewer can check in one pass. Split when parts
+  need different judgment or risk level, can be validated alone, or the diff would be too large to
+  review well. Several steps in one change are not a reason to split.
+- **Risk.** Mark each phase `Risk: standard` or `Risk: critical` (architecture, numerical or
+  financial correctness, concurrency or locking, security, personal data), with the reason when
+  critical. The manager's model strategy uses it.
+- **Validation cost.** List the commands every run of the phase needs, and mark expensive ones that
+  only matter for some changes with a trigger in parentheses after the command, naming an
+  observable property of the diff (paths or code areas), e.g. `(when: migrations or locking code
+  change)`. If a change could affect a suite indirectly (shared helpers, config, dependencies),
+  don't gate it.
 - **Order by dependency, not by taste.** If B needs A's code, B comes after A. If two parts must
   land together, they are one phase. Put risky unknowns early (a spike or proof phase is fine).
 - **Every phase gets** an objective, scope (and out-of-scope when it matters), `Depends on`

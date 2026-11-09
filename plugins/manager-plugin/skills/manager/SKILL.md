@@ -101,7 +101,7 @@ remaining phases' objectives and scope alone — or, with no plan yet, from the 
 don't read source. Recommend Sonnet, Opus or a mixed strategy, ask in Turkish, and end the turn:
 
 ```
-Bu çalışma için önerim: <Sonnet | Opus | Karma: <rol/koşul → model>>.
+Bu çalışma için önerim: <Sonnet | Opus | Karma: standard → Sonnet, critical → Opus, işaretsiz → standard>.
 Gerekçe: <tek cümle: doğruluk riski, karmaşıklık, tahmini token tüketimi ve maliyet>.
 [Başlamadan önce önerim: `/autocompact 600k` çalıştırın; cc-plugin-you-should-know'ı kapatın]
 Model tercihiniz hangisi?
@@ -112,8 +112,10 @@ found.
 
 Guide for the recommendation: Sonnet for bounded code, docs, tests and ordinary reviews; Opus for
 architecture, numerical or financial correctness, concurrency, security-critical code or hard
-debugging; mixed (for example Sonnet implementers and Opus reviewers, or Opus only for named phases)
-when only part of the work needs it. Opus costs more per token; say so when you recommend it.
+debugging. Default to mixed by the plan's `Risk` field: `standard` phases Sonnet for both roles,
+`critical` phases Opus for both, unmarked phases standard — say all three in the question so the
+condition is settled by the owner's answer. Recommend Opus throughout only when most remaining
+phases are critical. Opus costs more per token; say so when you recommend it.
 
 **Applying.** The approved strategy fixes, per role (and per phase or condition for a mixed one),
 the `model` and the `effort` (`medium` unless the strategy says otherwise). It covers every dispatch
@@ -207,22 +209,24 @@ field — it replaces the usual status and record edits; the reviewer gets the s
 that the diff writes exactly that, touches nothing else, and doesn't contradict the approved goal,
 scope or binding decisions. For a large split, where writing the text yourself would mean reading
 the plan and docs, the `Plan change` may instead be a specification file outside the repo: per new
-phase its id, title, objective, scope, `Depends on`, acceptance intent, validation and the binding
-decisions it cites, taken only from the plan and the owner's words. The implementer drafts the plan
-edit from it; the reviewer gets the same file and judges that the draft realizes it, adds no scope,
-decision or acceptance beyond it, gives every phase an objective, scope, `Depends on`, acceptance
-and validation, has nothing in the specification without a source in the plan or the owner's words,
-and touches nothing else. You verify only facts (changed files are the plan). A resumed plan-only PR
-gets a fresh specification file. Models: the strategy's cheapest allowed choice. Otherwise the
-normal loop applies. A resumed plan-only PR keeps none of its own decision or model records: write
-its Plan change again from the plan on the default branch and this conversation's owner answers
-only.
+phase its id, title, objective, scope, `Depends on`, risk, acceptance intent, validation and the
+binding decisions it cites, taken only from the plan and the owner's words. The implementer drafts
+the plan edit from it; the reviewer gets the same file and judges that the draft realizes it, adds
+no scope, decision or acceptance beyond it, gives every phase an objective, scope, `Depends on`,
+risk, acceptance and validation, has nothing in the specification without a source in the plan or
+the owner's words, and touches nothing else. You verify only facts (changed files are the plan). A
+resumed plan-only PR gets a fresh specification file. Models: the strategy's cheapest allowed
+choice. Otherwise the normal loop applies. A resumed plan-only PR keeps none of its own decision or
+model records: write its Plan change again from the plan on the default branch and this
+conversation's owner answers only.
 
 ## Phases and scheduling
 
-A phase is the smallest unit worth one branch, one PR and one independent review. Batch same-shape
-changes that share one judgment and one validation surface; split parts that need different
-judgment, can be validated alone and need no code from each other. If two parts must land together,
+A phase is one coherent deliverable worth one branch, one PR and one independent review, not the
+smallest possible unit: each phase pays a fixed cost (two fresh subagents, validation run twice).
+Batch same-shape changes that share one judgment, one validation surface and a diff one reviewer can
+check in one pass; split parts that need different judgment or risk level, can be validated alone
+and need no code from each other. If two parts must land together,
 they are one phase. Each phase carries an observable acceptance criterion **and** the validation
 commands; green validation alone is not acceptance.
 
@@ -273,7 +277,7 @@ HEAD` = candidate, `git status --short` empty), so the reviewer can validate the
    record why as an unresolved risk.
 
 Note both values. Dispatch a **new** reviewer with: PR number, base SHA, candidate SHA, phase id and
-plan path (it reads objective, scope, acceptance and validation from the plan at the base SHA
+plan path (it reads objective, scope, risk, acceptance and validation from the plan at the base SHA
 itself, so the candidate cannot redefine its own acceptance), project-rule paths, backend, a
 worktree location only if the project allows worktrees, and the rulings and plan records the
 implementer got (and the Plan change, for a plan-only PR). Never send the implementer's report, the
@@ -283,7 +287,8 @@ Accept the verdict only if all hold:
 - first line is `VERDICT: PASS`, `PASS WITH NOTES` or `CHANGES REQUIRED`;
 - `Reviewed SHA` and `Base SHA` equal what you sent;
 - a PASS or PASS WITH NOTES lists `Blockers: none`, and `Validation` shows the project's required
-  commands run at the candidate with their results; a failed command is acceptable only if every
+  commands run at the candidate with their results (a `when:` command reported `not required` with a
+  reason from the diff counts as satisfied); a failed command is acceptable only if every
   failing test is named as known flaky from the project's list at the base SHA, any other failure
   means CHANGES REQUIRED;
 - `Checkout untouched` is confirmed: HEAD equals the noted value and `git status --short
