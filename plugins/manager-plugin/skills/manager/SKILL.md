@@ -433,7 +433,8 @@ can't be written, skip the record and say so in the final report; in a cloud ses
 persist after the session. After a compaction, find the file by this run's id. Append one line per
 phase outcome (landed or blocked) as it happens, so an interrupted run still leaves its data, and
 never repeat a phase-and-outcome already listed (a phase blocked and later landed gets both lines).
-Keep one `summary:` line at the end, replacing it when the run continues:
+Append a `summary:` line when the run stops; if it continues, append a new one: the last `summary:`
+line is the current one. You tag each reported blocker with a generic class (see below). Format:
 
 ```
 # <repo> <run-id> · plugin <version> · model strategy: <strategy>

@@ -33,11 +33,11 @@ write otherwise.
 
 ## 1. Collect
 
-- Read the run records in `~/.claude/manager-runs/` through Bash (e.g. `cat
-  ~/.claude/manager-runs/*.md`; the manager writes them there) and, if present, the earlier retros
-  in `~/.claude/manager-runs/retro-log.md` (date, version, changes, expected effect). With fewer
-  than two records, say so and stop; the owner can paste run audits instead and you continue from
-  those.
+- Read the run records in `~/.claude/manager-runs/` through Bash: only the dated files (`cat
+  ~/.claude/manager-runs/[0-9]*.md`; the manager writes them there; the last `summary:` line of a
+  file is current) and, if present, the earlier retros in `~/.claude/manager-runs/retro-log.md`
+  (date, version, changes, expected effect). With fewer than two dated records, say so and stop; the
+  owner can paste run audits instead and you continue from those.
 - `git fetch origin` and work from the default branch's current head. Read skill files only where a
   proposal needs them.
 
