@@ -77,7 +77,7 @@ Raised: <date>
 - A phase PR updates its own status line and links itself; other status lines only to correct facts.
 - Facts that change later phases → update those phases in the same PR and add a change-log line.
 - A new owner decision → add it under Open owner decisions and mark blocked phases; an answer moves
-  it to Decided (owner's exact words, date) and unblocks them. Decision and model-strategy records
-  change only through the manager's Plan records.
+  it to Decided (owner's exact words, date) and unblocks them. Decision, binding-decision and
+  model-strategy records change only through the manager's Plan records.
 - No SHAs or test output here beyond PR links.
 ```

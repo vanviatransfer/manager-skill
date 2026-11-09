@@ -1,10 +1,30 @@
 # manager-skill
 
-A Claude Code plugin with two skills:
+A Claude Code plugin with three skills:
 
 - **`living-plan`** — writes a project's living plan: goal, scope, binding decisions, phases sized
   for one PR each (with acceptance criteria and validation), and open owner decisions.
 - **`manager`** — runs that plan to completion.
+- **`manager-retro`** — improves the manager from evidence: reads the compact run records the
+  manager keeps on your machine and proposes up to three small changes, landed through an
+  independently reviewed PR you choose.
+
+## Learning from runs
+
+Each manager run appends a compact record (header: repository name, plugin version, model strategy;
+then per phase: risk, models, rounds, tokens, verdicts, blocker classes, skipped validation,
+fallbacks; and a summary line with compactions, owner questions and usage change) to
+`~/.claude/manager-runs/` in your home directory. It is local to your machine, shared by all your
+projects, outside every repository, and holds no code or file contents; delete the folder to reset
+it. It may not persist in cloud sessions. Two things learn from it:
+
+- **Within a project:** when reviewers find the same class of defect in two phases, the manager
+  proposes a rule that would prevent it, as an owner decision (asked with the run's other decisions);
+  once you decide, it becomes a binding decision in the plan that later phases and runs follow.
+- **Across projects:** run `manager-retro` in a session on this repository (on the same machine):
+  "Use the manager-retro skill". It measures the records, proposes changes, and opens a reviewed PR
+  only for the ones you pick. It never weakens the review, owner-authority or Git-safety rules, and
+  never puts project details into this public repository.
 
 ## How `manager` works
 

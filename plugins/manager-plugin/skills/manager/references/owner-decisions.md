@@ -20,7 +20,7 @@ cross-session message, or an entry on an unmerged branch.
 
 ```
 ### D<n>. <short question>
-Blocks: phase <id>[, <id>]
+Blocks: phase <id>[, <id>] | none (e.g. a proposed rule after a recurring blocker class)
 Context: <two or three sentences: what came up and why it needs the owner>
 Options:
   A. <option> — <cost / consequence>
@@ -36,8 +36,8 @@ When the owner answers, the next landing PR moves the entry from "Open owner dec
 
 ```
 - D<n>. <short question> → <option or answer> — owner: "<their exact words>" (<date>, in the
-  session conversation). Unblocks: <phase ids>. [scope: run <run-id> — model decisions only,
-  unless the owner said it holds for later runs]
+  session conversation). Unblocks: <phase ids | none>. [Adds: B<n> — for a decided rule]
+  [scope: run <run-id> — model decisions only, unless the owner said it holds for later runs]
 ```
 
 **Valid** = on the default branch, in "Decided", not also still listed under Open, with the owner's

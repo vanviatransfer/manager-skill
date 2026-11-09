@@ -87,7 +87,7 @@ These rules go into the plan itself so every implementer follows them:
 - New facts that change remaining phases → update those phases in the same PR, and note it in the
   change log.
 - A newly found owner decision → add it to the open decisions, mark the blocked phases. An answer
-  moves it to "Decided" with the owner's exact words and date, and unblocks those phases. Decision
-  and model-strategy records change only as the manager's `Plan records` say.
+  moves it to "Decided" with the owner's exact words and date, and unblocks those phases. Decision,
+  binding-decision and model-strategy records change only as the manager's `Plan records` say.
 - Never copy SHAs or test output into the plan beyond a PR link; those are facts that
   live in git and GitHub.
