@@ -12,14 +12,15 @@ A Claude Code plugin with three skills:
 ## Learning from runs
 
 Each manager run appends a compact record (header: repository name, plugin version, model strategy;
-then per phase: risk, models, rounds, tokens, verdicts, blocker classes, skipped validation) to
+then per phase: risk, models, rounds, tokens, verdicts, blocker classes, skipped validation,
+fallbacks; and a summary line with compactions, owner questions and usage change) to
 `~/.claude/manager-runs/` in your home directory. It is local to your machine, shared by all your
 projects, outside every repository, and holds no code or file contents; delete the folder to reset
 it. It may not persist in cloud sessions. Two things learn from it:
 
 - **Within a project:** when reviewers find the same class of defect in two phases, the manager
-  proposes a rule that would prevent it, as an owner decision; once you decide, it becomes a binding
-  decision in the plan that later phases follow.
+  proposes a rule that would prevent it, as an owner decision (asked with the run's other decisions);
+  once you decide, it becomes a binding decision in the plan that later phases and runs follow.
 - **Across projects:** run `manager-retro` in a session on this repository (on the same machine):
   "Use the manager-retro skill". It measures the records, proposes changes, and opens a reviewed PR
   only for the ones you pick. It never weakens the review, owner-authority or Git-safety rules, and

@@ -1,6 +1,6 @@
 ---
 name: manager-retro
-description: Improve the manager skill from evidence. Reads the run records the manager leaves in this plugin's data directory, measures patterns (tokens per phase, review rounds, recurring blocker classes, fallbacks, skipped validation) and proposes at most three small changes to the manager-skill repository, landed only through an independently reviewed PR the owner chose. Use when the owner asks to improve or tune the manager skill from past runs ("manager retro", "skill'i iyileştir", "learn from the runs").
+description: Improve the manager skill from evidence. Reads the run records the manager leaves in ~/.claude/manager-runs/ (the owner's home directory), measures patterns (tokens per phase, review rounds, recurring blocker classes, fallbacks, skipped validation) and proposes at most three small changes to the manager-skill repository, landed only through an independently reviewed PR the owner chose. Use when the owner asks to improve or tune the manager skill from past runs ("manager retro", "skill'i iyileştir", "learn from the runs").
 ---
 
 # Improve the manager skill from recorded runs
@@ -33,10 +33,11 @@ write otherwise.
 
 ## 1. Collect
 
-- Read the run records in `~/.claude/manager-runs/` (resolve `~` with `echo ~`; the manager writes
-  them there) and, if present, the earlier retros in `~/.claude/manager-runs/retro-log.md` (date,
-  version, changes, expected effect). With fewer than two records, say so and stop; the owner can
-  paste run audits instead and you continue from those.
+- Read the run records in `~/.claude/manager-runs/` through Bash (e.g. `cat
+  ~/.claude/manager-runs/*.md`; the manager writes them there) and, if present, the earlier retros
+  in `~/.claude/manager-runs/retro-log.md` (date, version, changes, expected effect). With fewer
+  than two records, say so and stop; the owner can paste run audits instead and you continue from
+  those.
 - `git fetch origin` and work from the default branch's current head. Read skill files only where a
   proposal needs them.
 
@@ -71,9 +72,9 @@ skill: say so instead. Present the proposals numbered, with your recommendation,
    rounds, stop and report.
 3. Open the PR (body: aggregate evidence only). Merge, pinned to the reviewed SHA, only if the
    owner asked for it in this conversation.
-4. Append (creating the file if missing) to `~/.claude/manager-runs/retro-log.md`; if it can't be
-   written, say so in the report: date, new version, changes, expected effect,
-   records used (count and date range).
+4. Append through Bash (`>>`, creating the file if missing) to
+   `~/.claude/manager-runs/retro-log.md`; if it can't be written, say so in the report: date, new
+   version, changes, expected effect, records used (count and date range).
 
 ## Report
 

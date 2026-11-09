@@ -427,13 +427,13 @@ it needs the owner now. Never withhold what an owner decision or safe execution 
 So that runs can be compared and the skill improved from evidence (`manager-retro` skill), keep a
 compact record of each run in the owner's home directory, shared by all projects on this machine and
 outside every repository: `~/.claude/manager-runs/<YYYY-MM-DD>-<repo>-<run-id>.md`, where `<repo>`
-is the bare repository name (no owner, no slash). Resolve `~` once (`echo ~` in Bash) and use the
-absolute path; create the directory if it is missing. If it can't be written, skip the record and
-say so in the final report; in a cloud session it may not persist after the session. On resume,
-find the file by run id. Append one line per phase outcome (landed or blocked) as it happens, so an
-interrupted run still leaves its data, and never repeat a phase-and-outcome already listed (a phase
-blocked and later landed gets both lines). Keep one `summary:` line at the end, replacing it when the
-run continues:
+is the bare repository name (no owner, no slash). Write it through Bash (`mkdir -p
+~/.claude/manager-runs` once, then append with `>>`), which resolves `~` on every platform. If it
+can't be written, skip the record and say so in the final report; in a cloud session it may not
+persist after the session. After a compaction, find the file by this run's id. Append one line per
+phase outcome (landed or blocked) as it happens, so an interrupted run still leaves its data, and
+never repeat a phase-and-outcome already listed (a phase blocked and later landed gets both lines).
+Keep one `summary:` line at the end, replacing it when the run continues:
 
 ```
 # <repo> <run-id> · plugin <version> · model strategy: <strategy>
