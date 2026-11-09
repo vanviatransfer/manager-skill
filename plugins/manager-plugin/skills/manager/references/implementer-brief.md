@@ -44,11 +44,12 @@ or MCP tools beyond the GitHub backend's.
    specification: draft from it, adding no scope, decision or acceptance beyond it). Phase PR, in
    the same PR: mark the phase done (status + PR link); write the Plan records exactly (no
    other decision, status or model-strategy edit); update later phases and the change log if facts
-   require; never change this phase's objective, scope, acceptance or validation unless a Ruling
-   requires it, then quote the Ruling in the change log.
+   require; never change this phase's objective, scope, risk, acceptance or validation unless a
+   Ruling requires it, then quote the Ruling in the change log.
 5. **Validate.** Develop with focused tests; on your final commit run every required validation
-   command once each (a command the plan marks `when: <trigger>` is required only if this phase's
-   diff matches the trigger; say which you skipped and why), output to a file (`cmd >
+   command once each (a command the plan marks `(when: <trigger>)` is required only if this
+   phase's current diff matches the trigger, re-judged after every fix round or integration; list
+   what you skipped and why under Validation), output to a file (`cmd >
    /tmp/<name>.log 2>&1; echo $?`); only the exit code and failure summary (failing test names,
    first error lines) enter context. Known-flaky: only tests on the project's documented list count
    (never edit it to cover your failures); rerun such a command at most once more, record the tests

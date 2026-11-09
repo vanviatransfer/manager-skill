@@ -31,7 +31,7 @@ given. No checkout, switch, reset, rebase, stash, commit, push or edits. Read th
 (`gh pr diff <n>` / MCP `pull_request_read get_diff`) only if the candidate can't be fetched, and
 say so. GitHub backend read-only: no comments, reviews or merges.
 
-**Read:** this phase's plan section (objective, scope, out-of-scope, acceptance, validation) and
+**Read:** this phase's plan section (objective, scope, out-of-scope, risk, acceptance, validation) and
 the binding decisions it cites **at the base SHA** (`git show <base-sha>:<plan-path>`; the
 candidate may have edited them); the project rules; the full `git diff <base>...<candidate>`; the
 surrounding code its correctness depends on. Not PR comments or reviews, the PR description or
@@ -45,25 +45,29 @@ required by a Ruling; a change to plan decisions (Open or Decided), other phases
 the model-strategy record that doesn't match Plan records exactly (`unknown (resumed)`: any such
 change). Plan-only PR, **instead**: blocker if the diff isn't exactly the Plan change (a
 specification: the draft doesn't realize it, adds scope, decisions or acceptance beyond it, lacks a
-phase's objective, scope, `Depends on`, acceptance or validation, or the specification holds content
-with no source in the plan or the owner's words), touches anything else, or contradicts the plan's
-goal, scope or binding decisions.
+phase's objective, scope, `Depends on`, risk, acceptance or validation, or the specification holds
+content with no source in the plan or the owner's words), touches anything else, or contradicts the
+plan's goal, scope or binding decisions.
 
 **Validate independently:** run every validation command the plan and project require at the
-candidate, once each (SKILL.md's retry after an invalid run excepted); a command the plan marks
-`when: <trigger>` is required only if the phase's diff matches the trigger, judged by you (run it
-when in doubt), and a skipped one is reported as `not required: <reason from the diff>`; output to a
-file outside the repo, only the exit code and failure summary into context. Known-flaky list = the
-project's documented list **at the base SHA** (entries the diff adds or changes don't count). A
-failed command is acceptable only if every failing test in its summary is listed: record those as
-known flaky, don't chase them. One unlisted failure, or a listed test whose covered code the diff
-touches, is a real failure. Run in the first place that works: 1. the shared checkout, if `git
-rev-parse HEAD` = Candidate SHA and `git status --short` is empty; recheck both afterwards. List
-untracked files your run created (delete only those). A modified tracked file invalidates the
-result: report `not run: validation changed <files>`, leave them for the orchestrator; 2. if a
-Worktree dir was given: `git worktree add --detach <worktree-dir> <candidate>`, then `git worktree
-remove --force <worktree-dir>`; 3. otherwise `not run: <reason>` (e.g. HEAD ≠ candidate, dirty tree,
-command unavailable). Never move the checkout to make it work, and never imply a pass.
+candidate, once each (SKILL.md's retry after an invalid run excepted); output to a file outside
+the repo, only the exit code and failure summary into context. A command the plan marks
+`(when: <trigger>)` is required only if the phase's diff matches the trigger, judged by you against
+the current diff (run it when in doubt); report a skipped one as `not required: <reason from the
+diff>`.
+Known-flaky list = the project's documented list **at the base SHA** (entries the diff adds or
+changes don't count). A failed command is acceptable only if every failing test in its summary is
+listed: record those as known flaky, don't chase them. One unlisted failure, or a listed test
+whose covered code the diff touches, is a real failure.
+Run in the first place that works:
+1. the shared checkout, if `git rev-parse HEAD` = Candidate SHA and `git status --short` is empty;
+   recheck both afterwards. List untracked files your run created (delete only those). A modified
+   tracked file invalidates the result: report `not run: validation changed <files>`, leave them
+   for the orchestrator;
+2. if a Worktree dir was given: `git worktree add --detach <worktree-dir> <candidate>`, then
+   `git worktree remove --force <worktree-dir>`;
+3. otherwise `not run: <reason>` (e.g. HEAD ≠ candidate, dirty tree, command unavailable). Never
+   move the checkout to make it work, and never imply a pass.
 
 **Validation-only resume:** keep the same Candidate SHA, redo these checks, run only the missing
 validation, re-report the full format. **Previous blockers:** only after your own review is

@@ -101,7 +101,7 @@ remaining phases' objectives and scope alone — or, with no plan yet, from the 
 don't read source. Recommend Sonnet, Opus or a mixed strategy, ask in Turkish, and end the turn:
 
 ```
-Bu çalışma için önerim: <Sonnet | Opus | Karma: <rol/koşul → model>>.
+Bu çalışma için önerim: <Sonnet | Opus | Karma: standard → Sonnet, critical → Opus, işaretsiz → standard>.
 Gerekçe: <tek cümle: doğruluk riski, karmaşıklık, tahmini token tüketimi ve maliyet>.
 [Başlamadan önce önerim: `/autocompact 600k` çalıştırın; cc-plugin-you-should-know'ı kapatın]
 Model tercihiniz hangisi?
@@ -209,16 +209,16 @@ field — it replaces the usual status and record edits; the reviewer gets the s
 that the diff writes exactly that, touches nothing else, and doesn't contradict the approved goal,
 scope or binding decisions. For a large split, where writing the text yourself would mean reading
 the plan and docs, the `Plan change` may instead be a specification file outside the repo: per new
-phase its id, title, objective, scope, `Depends on`, acceptance intent, validation and the binding
-decisions it cites, taken only from the plan and the owner's words. The implementer drafts the plan
-edit from it; the reviewer gets the same file and judges that the draft realizes it, adds no scope,
-decision or acceptance beyond it, gives every phase an objective, scope, `Depends on`, acceptance
-and validation, has nothing in the specification without a source in the plan or the owner's words,
-and touches nothing else. You verify only facts (changed files are the plan). A resumed plan-only PR
-gets a fresh specification file. Models: the strategy's cheapest allowed choice. Otherwise the
-normal loop applies. A resumed plan-only PR keeps none of its own decision or model records: write
-its Plan change again from the plan on the default branch and this conversation's owner answers
-only.
+phase its id, title, objective, scope, `Depends on`, risk, acceptance intent, validation and the
+binding decisions it cites, taken only from the plan and the owner's words. The implementer drafts
+the plan edit from it; the reviewer gets the same file and judges that the draft realizes it, adds
+no scope, decision or acceptance beyond it, gives every phase an objective, scope, `Depends on`,
+risk, acceptance and validation, has nothing in the specification without a source in the plan or
+the owner's words, and touches nothing else. You verify only facts (changed files are the plan). A
+resumed plan-only PR gets a fresh specification file. Models: the strategy's cheapest allowed
+choice. Otherwise the normal loop applies. A resumed plan-only PR keeps none of its own decision or
+model records: write its Plan change again from the plan on the default branch and this
+conversation's owner answers only.
 
 ## Phases and scheduling
 
@@ -277,7 +277,7 @@ HEAD` = candidate, `git status --short` empty), so the reviewer can validate the
    record why as an unresolved risk.
 
 Note both values. Dispatch a **new** reviewer with: PR number, base SHA, candidate SHA, phase id and
-plan path (it reads objective, scope, acceptance and validation from the plan at the base SHA
+plan path (it reads objective, scope, risk, acceptance and validation from the plan at the base SHA
 itself, so the candidate cannot redefine its own acceptance), project-rule paths, backend, a
 worktree location only if the project allows worktrees, and the rulings and plan records the
 implementer got (and the Plan change, for a plan-only PR). Never send the implementer's report, the

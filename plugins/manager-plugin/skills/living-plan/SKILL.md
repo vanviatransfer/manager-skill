@@ -49,7 +49,8 @@ questions at all.
 - **Validation cost.** List the commands every run of the phase needs, and mark expensive ones that
   only matter for some changes with a trigger in parentheses after the command, naming an
   observable property of the diff (paths or code areas), e.g. `(when: migrations or locking code
-  change)`.
+  change)`. If a change could affect a suite indirectly (shared helpers, config, dependencies),
+  don't gate it.
 - **Order by dependency, not by taste.** If B needs A's code, B comes after A. If two parts must
   land together, they are one phase. Put risky unknowns early (a spike or proof phase is fine).
 - **Every phase gets** an objective, scope (and out-of-scope when it matters), `Depends on`
