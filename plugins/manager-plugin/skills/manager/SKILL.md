@@ -430,14 +430,16 @@ outside every repository: `~/.claude/manager-runs/<YYYY-MM-DD>-<repo>-<run-id>.m
 is the bare repository name (no owner, no slash). Write it through Bash (`mkdir -p
 ~/.claude/manager-runs` once, then append with `>>`), which resolves `~` on every platform. Never
 spend a tool call on it alone: put the write at the front of the next Bash command you run anyway,
-separated by `;` (`printf '…\n' >> <file>; <your command>`), so that command's exit status stays its
-own; only the final `summary:` line may need a call of its own. If it can't be written, skip the
-record and say so in the final report; in a cloud session it may not persist after the session.
-After a compaction, find the file by this run's id. Append one line per phase outcome (landed or
-blocked) as it happens, so an interrupted run still leaves its data, and never repeat a
-phase-and-outcome already listed (a phase blocked and later landed gets both lines). Append a
-`summary:` line when the run stops; if it continues, append a new one: the last `summary:` line is
-the current one. You tag each reported blocker with a generic class (see below). Format:
+separated by `;` (`printf '%s\n' '<line>' >> <file>; <your command>`, with no `'` inside the line),
+so that command's exit status stays its own; an error from the append is not that command's failure
+(then follow the skip rule). Only the final `summary:` line may need a call of its own. If it can't
+be written, skip the record and say so in the final report; in a cloud session it may not persist
+after the session. After a compaction, find the file by this run's id. Append one line per phase
+outcome (landed or blocked) with the next Bash command after it, so an interrupted run still leaves
+its data, and never repeat a phase-and-outcome already listed (a phase blocked and later landed gets
+both lines). Append a `summary:` line when the run stops; if it continues, append a new one: the
+last `summary:` line is the current one. You tag each reported blocker with a generic class (see
+below). Format:
 
 ```
 # <repo> <run-id> · plugin <version> · model strategy: <strategy>
