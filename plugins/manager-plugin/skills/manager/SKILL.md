@@ -259,6 +259,13 @@ ask the same implementer once for exactly those fields. Then `git fetch origin <
 After an integration (4a), the base SHA becomes the default head the implementer integrated, once
 `git merge-base --is-ancestor` confirms it is in the candidate.
 
+No report at all (the agent ended on an error, crash or usage limit): resume it once; if that fails,
+read the facts, not its last words: `git ls-remote origin <branch>` and the PR. No remote branch →
+nothing was delivered: dispatch a new implementer for the phase from the current default head. A
+remote branch → dispatch a replacement implementer on it (its own step 3 continues from the remote
+branch), then verify as usual. A usage limit that persists is an environment failure (**Stop
+conditions**), not a reason to keep dispatching.
+
 `NEEDS_OWNER_DECISION` → record it (**Owner decisions**). `BLOCKED` (technical) → if it is an
 environment or tooling problem you can repair, repair once and resume the same implementer;
 otherwise mark the phase blocked with a one-line reason (kept for the final report and the plan's
@@ -295,6 +302,9 @@ Accept the verdict only if all hold:
   --untracked-files=no` equals the noted tracked state (empty when the tree was clean). New
   untracked files are acceptable only if the reviewer listed them as created by its validation;
   remove those after the review.
+
+`Not checked` never blocks by itself; anything listed there goes into the final report's unresolved
+risks.
 
 Clean-tree route only: if the reviewer reports tracked files changed by its validation, the result
 is invalid (`not run`). Restore them from the repo root with `git restore --staged --worktree :/`
