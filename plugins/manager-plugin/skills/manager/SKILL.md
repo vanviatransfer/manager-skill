@@ -45,7 +45,8 @@ model-strategy gate, the plan's location, approval of a new plan) or at a stop c
 - **Sequential phases.** Phases run one at a time on the shared checkout. A blocked phase doesn't
   stop the run; the scheduler moves to the next ready phase. Exception: with a single designated
   push branch, a phase that blocks after pushing unmerged work occupies the only branch, so no
-  later phase can start (never stack on or discard unreviewed work); stop and report it.
+  later phase can start (never stack on or discard unreviewed work); stop and report it. The same
+  holds when the shared checkout holds work an agent left uncommitted or unpushed (loop step 2).
 
 ## Subagents
 
@@ -261,17 +262,18 @@ After an integration (4a), the base SHA becomes the default head the implementer
 
 No report at all (the agent ended on an error, crash or usage limit): resume it once. If that
 fails, judge from facts, not its last words. `git fetch origin <branch>`, then the shared checkout:
-a dirty tree or local commits missing from `origin/<branch>` → never discard them; every phase
-shares this checkout, so stop the run and report it (**Stop conditions**). Then the remote branch
-and the PR:
+a dirty tree (whoever left it) or local commits on no remote ref (`git log --oneline HEAD <branch>
+--not --remotes`) → never discard them; every phase shares this checkout, so stop the run and
+report it (**Stop conditions**). Then the remote branch and the PR:
 - an open PR whose head is a new candidate (not the one last reviewed) → step 2's fact checks,
   then a fresh review (previous blockers by title, as in 4b);
 - a remote branch with no new candidate → a replacement implementer on it (its own step 3
   continues from the remote branch), with its `Fix round` field if it ended mid fix round (4b);
 - no remote branch → nothing was delivered: restart step 1 (new base SHA = current default head).
-At most one such replacement per phase: a second agent ending with no report is an environment
-failure for that phase (move on to independent work), and a usage limit that persists is an
-environment failure (**Stop conditions**), not a reason to keep dispatching.
+At most one such replacement per phase: if it also ends with no report, do the same checkout
+check, then treat the phase as an environment failure (move on to independent work, unless
+**Sequential phases** says stop). A usage limit that persists is an environment failure (**Stop
+conditions**), not a reason to keep dispatching.
 
 `NEEDS_OWNER_DECISION` → record it (**Owner decisions**). `BLOCKED` (technical) → if it is an
 environment or tooling problem you can repair, repair once and resume the same implementer;
@@ -430,8 +432,9 @@ When a phase needs something only the owner can decide:
 decisions from them, status corrections and the model-strategy record ride the next PR that lands,
 as the implementer's `Plan records` field, written by you verbatim; the reviewer gets the same field
 and blocks any plan record in the diff that doesn't match it. Before the final report, if anything
-is still unpersisted, land one plan-only bookkeeping PR. If no branch is free for it (a designated
-branch holding a blocked phase's work), the final report is the record instead; say so.
+is still unpersisted, land one plan-only bookkeeping PR. If no branch or checkout is free for it (a
+designated branch holding a blocked phase's work, or a shared checkout holding uncommitted or
+unpushed work), the final report is the record instead; say so.
 
 ## Talking to the owner
 
@@ -477,7 +480,7 @@ location, a new plan's approval), or when no ready phase is left, and say which 
 - the plan is complete;
 - every remaining phase is blocked (owner decisions, tripped brakes, refused landings);
 - the environment is persistently broken after one repair attempt, or the shared checkout holds
-  work a crashed agent left unpushed.
+  uncommitted or unpushed work after an agent ended with no report.
 
 Final report, compact: phases landed (PR, merged SHA); phases blocked and why; the model strategy
 used and any model concerns; the plugin version and usage change (if readable); the run record path,
