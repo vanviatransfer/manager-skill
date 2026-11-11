@@ -88,6 +88,7 @@ Notes (non-blocking):
 Acceptance: <criterion → met / not met>
 Validation: <command → pass/fail (exit code) at the candidate | fail, known flaky: <tests> |
   not required: <reason from the diff> | not run: reason>
+Not checked: <what in scope you did not read, run or verify, and why | none>
 Previous blockers: <title → resolved / still present>   (re-review only)
 Checkout untouched: <`git rev-parse HEAD` and `git status --short` of the repo path, after your
   work; untracked files your validation created, if any>

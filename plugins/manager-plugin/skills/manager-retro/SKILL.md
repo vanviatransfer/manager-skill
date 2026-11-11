@@ -46,8 +46,13 @@ write otherwise.
 Aggregate by plugin version and model: phases; tokens per phase for implementer and reviewer;
 review rounds per phase and the share needing a second round; blocker classes with counts and in
 how many projects; skipped `when:` commands; fallback dispatches; compactions; usage change where
-known. For every change in the retro log, compare its expected effect with the records since: a
-change that didn't help is a candidate to revert.
+known. Watch item (not yet in the skill, add it only on evidence): a replacement implementer
+repeating an approach an earlier round already tried and failed with. The records hold only a
+proxy: a phase with 3 or more rounds and a single blocker class across them; they don't show
+which round or which implementer, so call it a proxy in the proposal. If two or more phases show it,
+propose a `Tried approaches` dispatch field for replacement implementers. For every change in the
+retro log, compare its expected effect with the records since: a change that didn't help is a
+candidate to revert.
 
 ## 3. Propose (at most three)
 
