@@ -470,6 +470,12 @@ phase | risk | model impl/rev | rounds | impl tokens | review tokens per round |
 summary: phases landed <n>, blocked <n>; tokens impl <n>, review <n>; compactions <n>; owner questions <n>; usage change <n | unknown>
 ```
 
+In the `summary:` line, each token total is the sum of the known values in this file's phase
+lines, followed by the count of unknown ones (`tokens impl 1840000 (+3 unknown)`); write `unknown`
+only when no value is known. The file holds only the header, the column line, phase lines and
+`summary:` lines: no free-text notes. Progress, open work and decisions go in the living plan and
+the review ledger, not here.
+
 Blocker classes are short generic tags (e.g. `locking`, `pii`, `validation-gap`, `plan-record`),
 never names of products, vendors, customers or code. Apart from the repository name and the model
 strategy in the header, record numbers and tags only: no secrets, code, file contents or the

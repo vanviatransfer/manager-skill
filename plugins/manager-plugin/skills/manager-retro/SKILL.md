@@ -48,8 +48,9 @@ review rounds per phase and the share needing a second round; blocker classes wi
 how many projects; skipped `when:` commands; fallback dispatches; compactions; usage change where
 known. Watch item (not yet in the skill, add it only on evidence): a replacement implementer
 repeating an approach an earlier round already tried and failed with. The records hold only a
-proxy: a phase with 3 or more rounds and a single blocker class across them; they don't show
-which round or which implementer, so call it a proxy in the proposal. If two or more phases show it,
+proxy: a phase with two or more CHANGES REQUIRED verdicts that share a blocker class (rounds
+that only waited on the owner or a device, or only integrated or re-checked a delta, don't count);
+they don't show which round or which implementer, so call it a proxy in the proposal. If two or more phases show it,
 propose a `Tried approaches` dispatch field for replacement implementers. For every change in the
 retro log, compare its expected effect with the records since: a change that didn't help is a
 candidate to revert.
