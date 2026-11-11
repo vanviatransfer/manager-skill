@@ -274,8 +274,8 @@ and the PR:
 - no remote branch → nothing was delivered: restart step 1 (new base SHA = current default head).
 At most one such replacement or restart per phase: if that agent also ends with no report, do the
 same checkout check, then treat the phase as an environment failure (move on to independent work,
-unless **Sequential phases** says stop). A usage limit that persists is an environment failure (**Stop
-conditions**), not a reason to keep dispatching.
+unless **Sequential phases** says stop). A usage limit that persists is an environment failure
+(**Stop conditions**), not a reason to keep dispatching.
 
 `NEEDS_OWNER_DECISION` → record it (**Owner decisions**). `BLOCKED` (technical) → if it is an
 environment or tooling problem you can repair, repair once and resume the same implementer;
