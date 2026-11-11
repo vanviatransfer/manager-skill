@@ -467,12 +467,14 @@ below). Format:
 # <repo> <run-id> · plugin <version> · model strategy: <strategy>
 phase | risk | model impl/rev | rounds | impl tokens | review tokens per round | verdicts | blocker classes | skipped (when:) | fallback
 <one line per phase; tokens from the Agent tool's usage output (a resumed agent's delta), else unknown>
-summary: phases landed <n>, blocked <n>; tokens impl <n>, review <n>; compactions <n>; owner questions <n>; usage change <n | unknown>
+summary: phases landed <n>, blocked <n>; tokens impl <n> (+<k> unknown) | unknown, review <n> (+<k> unknown) | unknown; compactions <n>; owner questions <n>; usage change <n | unknown>
 ```
 
 In the `summary:` line, each token total is the sum of the known values in this file's phase
-lines, followed by the count of unknown ones (`tokens impl 1840000 (+3 unknown)`); write `unknown`
-only when no value is known. The file holds only the header, the column line, phase lines and
+lines (for review, every round's value), followed by the count of unknown ones (`tokens impl
+1840000 (+3 unknown)`); write `unknown` only when no value is known. A later line for a phase
+already listed (blocked, then landed) records only the tokens spent since its earlier line, so
+nothing is counted twice. The file holds only the header, the column line, phase lines and
 `summary:` lines: no free-text notes. Progress, open work and decisions go in the living plan and
 the review ledger, not here.
 
