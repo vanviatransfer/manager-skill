@@ -47,8 +47,9 @@ Aggregate by plugin version and model: phases; tokens per phase for implementer 
 review rounds per phase and the share needing a second round; blocker classes with counts and in
 how many projects; skipped `when:` commands; fallback dispatches; compactions; usage change where
 known. Watch item (not yet in the skill, add it only on evidence): a replacement implementer
-repeating an approach an earlier round already tried and failed with (in the records: the same
-blocker class in consecutive rounds of one phase). If two or more phases show it,
+repeating an approach an earlier round already tried and failed with. The records hold only a
+proxy: a phase with 3 or more rounds whose `blocker classes` repeat one class; they don't show
+which round or which implementer, so call it a proxy in the proposal. If two or more phases show it,
 propose a `Tried approaches` dispatch field for replacement implementers. For every change in the
 retro log, compare its expected effect with the records since: a change that didn't help is a
 candidate to revert.

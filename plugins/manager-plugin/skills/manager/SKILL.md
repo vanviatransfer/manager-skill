@@ -259,12 +259,18 @@ ask the same implementer once for exactly those fields. Then `git fetch origin <
 After an integration (4a), the base SHA becomes the default head the implementer integrated, once
 `git merge-base --is-ancestor` confirms it is in the candidate.
 
-No report at all (the agent ended on an error, crash or usage limit): resume it once; if that fails,
-read the facts, not its last words: `git ls-remote origin <branch>` and the PR. No remote branch →
-nothing was delivered: dispatch a new implementer for the phase from the current default head. A
-remote branch → dispatch a replacement implementer on it (its own step 3 continues from the remote
-branch), then verify as usual. A usage limit that persists is an environment failure (**Stop
-conditions**), not a reason to keep dispatching.
+No report at all (the agent ended on an error, crash or usage limit): resume it once. If that
+fails, judge from facts, not its last words. First the shared checkout: a dirty tree or local
+commits missing from `origin/<branch>` → never discard them; block the phase and report it. Then
+`git ls-remote origin <branch>` and the PR:
+- an open PR whose head is a new candidate (not the one last reviewed) → step 2's fact checks,
+  then a fresh review;
+- a remote branch with no new candidate → a replacement implementer on it (its own step 3
+  continues from the remote branch), with its `Fix round` field if it ended mid fix round (4b);
+- no remote branch → nothing was delivered: a new implementer from the current default head.
+At most one such replacement per phase: a second agent ending with no report is an environment
+failure for that phase (move on to independent work), and a usage limit that persists is an
+environment failure (**Stop conditions**), not a reason to keep dispatching.
 
 `NEEDS_OWNER_DECISION` → record it (**Owner decisions**). `BLOCKED` (technical) → if it is an
 environment or tooling problem you can repair, repair once and resume the same implementer;
