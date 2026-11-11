@@ -260,14 +260,15 @@ After an integration (4a), the base SHA becomes the default head the implementer
 `git merge-base --is-ancestor` confirms it is in the candidate.
 
 No report at all (the agent ended on an error, crash or usage limit): resume it once. If that
-fails, judge from facts, not its last words. First the shared checkout: a dirty tree or local
-commits missing from `origin/<branch>` → never discard them; block the phase and report it. Then
-`git ls-remote origin <branch>` and the PR:
+fails, judge from facts, not its last words. `git fetch origin <branch>`, then the shared checkout:
+a dirty tree or local commits missing from `origin/<branch>` → never discard them; every phase
+shares this checkout, so stop the run and report it (**Stop conditions**). Then the remote branch
+and the PR:
 - an open PR whose head is a new candidate (not the one last reviewed) → step 2's fact checks,
-  then a fresh review;
+  then a fresh review (previous blockers by title, as in 4b);
 - a remote branch with no new candidate → a replacement implementer on it (its own step 3
   continues from the remote branch), with its `Fix round` field if it ended mid fix round (4b);
-- no remote branch → nothing was delivered: a new implementer from the current default head.
+- no remote branch → nothing was delivered: restart step 1 (new base SHA = current default head).
 At most one such replacement per phase: a second agent ending with no report is an environment
 failure for that phase (move on to independent work), and a usage limit that persists is an
 environment failure (**Stop conditions**), not a reason to keep dispatching.
@@ -475,7 +476,8 @@ End the turn only for a question that blocks all work (the model-strategy gate, 
 location, a new plan's approval), or when no ready phase is left, and say which holds:
 - the plan is complete;
 - every remaining phase is blocked (owner decisions, tripped brakes, refused landings);
-- the environment is persistently broken after one repair attempt.
+- the environment is persistently broken after one repair attempt, or the shared checkout holds
+  work a crashed agent left unpushed.
 
 Final report, compact: phases landed (PR, merged SHA); phases blocked and why; the model strategy
 used and any model concerns; the plugin version and usage change (if readable); the run record path,
