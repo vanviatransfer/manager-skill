@@ -262,8 +262,8 @@ After an integration (4a), the base SHA becomes the default head the implementer
 
 No report at all (the agent ended on an error, crash or usage limit): resume it once. If that
 fails, judge from facts, not its last words. `git fetch origin <branch>`, then the shared checkout:
-a dirty tree (whoever left it) or local commits on no remote ref (`git log --oneline HEAD <branch>
---not --remotes`) → never discard them; every phase shares this checkout, so stop the run and
+a dirty tree (whoever left it) or local commits on no remote ref (`git log --oneline HEAD
+--not --remotes`; also `<branch>` if it exists locally) → never discard them; every phase shares this checkout, so stop the run and
 report it (**Stop conditions**). Then the remote branch and the PR:
 - an open PR whose head is a new candidate (not the one last reviewed) → step 2's fact checks,
   then a fresh review (previous blockers by title, as in 4b);
