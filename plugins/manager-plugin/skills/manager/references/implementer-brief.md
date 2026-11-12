@@ -64,7 +64,8 @@ or MCP tools beyond the GitHub backend's.
    protection: `git worktree remove` follows such a link and empties its target even without
    `--force`. Before removing a worktree, check it holds no link: `find <dir> -type l`, and on
    Windows also `MSYS_NO_PATHCONV=1 cmd /c dir /AL /S "$(cygpath -w <dir>)"` (`find` may miss
-   junctions; only "File Not Found" means none, any other error means the check failed). Remove
+   junctions). No link means both: `find` exits 0 with no output, and `dir` reports only "File
+   Not Found" (or its localized equivalent); anything else means the check failed. Remove
    each link alone, never recursively (`rm <link>`, no `-r`; a junction with `cmd //c rmdir
    "$(cygpath -w <link>)"`, no `/S`), check again, then `git worktree remove <dir>`, never
    `--force`. If a check fails, a link stays or git refuses, leave the worktree and say so under
