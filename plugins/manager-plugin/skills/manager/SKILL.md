@@ -70,7 +70,7 @@ brief file: after a compaction re-read that block, never rebuild it from the tra
 project-specific Rulings you add to every dispatch as one working-notes line.
 
 **Ignored-data guard.** Before each dispatch, note one line for the shared checkout: the number of
-git-ignored entries and their total size, from the repo root (`git ls-files -z --others --ignored
+top-level git-ignored entries and their total size in KiB, from the repo root (`git ls-files -z --others --ignored
 --exclude-standard --directory | xargs -0 -r du -sk | awk '{n++; s+=$1} END {print n+0, s+0}'`;
 `du` doesn't follow links, so this works in Git Bash and POSIX shells). After the subagent returns,
 measure again. A drop the dispatch can't explain (untracked output the subagent listed as its own
@@ -323,7 +323,7 @@ Accept the verdict only if all hold:
 - `Checkout untouched` is confirmed: HEAD equals the noted value and `git status --short
   --untracked-files=no` equals the noted tracked state (empty when the tree was clean). New
   untracked files are acceptable only if the reviewer listed them as created by its validation;
-  remove those after the review.
+  remove those after the review, each by its listed path, never recursively through a link.
 
 `Not checked` never blocks by itself; anything listed there goes into the final report's unresolved
 risks.

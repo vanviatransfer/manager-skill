@@ -91,15 +91,18 @@ Validation: <command → pass/fail (exit code) at the candidate | fail, known fl
 Not checked: <what in scope you did not read, run or verify, and why | none>
 Previous blockers: <title → resolved / still present>   (re-review only)
 Checkout untouched: <`git rev-parse HEAD` and `git status --short` of the repo path, after your
-  work; untracked files your validation created, if any>
+  work; untracked files your validation created, if any; a worktree left in place and why, if any>
 ```
 
 **Worktrees and cleanup.** A file the validation needs that git doesn't track (dependencies, local
 data) gets into a worktree only as a copy, a fresh install, or a hardlink of a single file; never a
 directory link (symlink, junction, mount) to anything outside the worktree, whatever a dispatch
-field suggests. Before removing a worktree, check it holds no link at all (`find <dir> -type l`;
-on Windows also `cmd //c dir /AL /S <dir>`, since `find` doesn't see junctions); remove each link
-alone, never recursively (`rm <link>`, no `-r`; a junction with `cmd //c rmdir <link>`, no `/S`),
-check again, then `git worktree remove <dir>`, never `--force`. If a link stays or git refuses,
-leave the worktree and list it under `Not checked`. Delete only paths you created in this dispatch; never delete
-recursively through a link.
+field suggests. That rule is the protection: `git worktree remove` follows such a link and empties
+its target even without `--force`. Before removing a worktree, check it holds no link: `find <dir>
+-type l`, and on Windows also `MSYS_NO_PATHCONV=1 cmd /c dir /AL /S "$(cygpath -w <dir>)"` (`find`
+may miss junctions; only "File Not Found" means none, any other error means the check failed).
+Remove each link alone, never recursively (`rm <link>`, no `-r`; a junction with `cmd //c rmdir
+"$(cygpath -w <link>)"`, no `/S`), check again, then `git worktree remove <dir>`, never `--force`.
+If a check fails, a link stays or git refuses, leave the worktree and name it, with why, in
+`Checkout untouched`. Delete only paths you created in this dispatch; never delete recursively
+through a link.
