@@ -58,7 +58,15 @@ or MCP tools beyond the GitHub backend's.
    rounds and integration always do). No CI.
 6. **Leave** the shared checkout on your pushed head, tree clean (remove only untracked files your
    validation created; commit or restore tracked ones it changed), after every round: the
-   reviewer validates there.
+   reviewer validates there. If you work in a worktree, a file git doesn't track gets into it only
+   as a copy, a fresh install, or a hardlink of a single file; never a directory link (symlink,
+   junction, mount) to anything outside it, whatever a dispatch field suggests. Remove a worktree
+   only after checking it holds no link (`find <dir> -type l`; on Windows also `cmd //c dir /AL /S
+   <dir>`, since `find` doesn't see junctions): remove each link alone, never recursively (`rm
+   <link>`, no `-r`; a junction with `cmd //c rmdir <link>`, no `/S`), check again, then `git
+   worktree remove <dir>`, never `--force`. If a link stays or git refuses, leave the worktree and
+   say so under Risks. Delete only paths you created in this dispatch; never delete recursively
+   through a link.
 7. **Report** exactly this, nothing else. Unverified → `not run` / `unknown`, never success.
 
 ```

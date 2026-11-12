@@ -69,6 +69,17 @@ paths resolved in step 0 in every dispatch. The dispatch fields are the block at
 brief file: after a compaction re-read that block, never rebuild it from the transcript. Keep the
 project-specific Rulings you add to every dispatch as one working-notes line.
 
+**Ignored-data guard.** Before each dispatch, note one line for the shared checkout: the number of
+git-ignored entries and their total size, from the repo root (`git ls-files -z --others --ignored
+--exclude-standard --directory | xargs -0 -r du -sk | awk '{n++; s+=$1} END {print n+0, s+0}'`;
+`du` doesn't follow links, so this works in Git Bash and POSIX shells). After the subagent returns,
+measure again. A drop the dispatch can't explain (untracked output the subagent listed as its own
+doesn't count) is a stop: dispatch nothing more, don't try to restore it from memory or guesswork,
+report which entries shrank or vanished and any copy you can verify still exists, and wait for the
+owner. Measure only; never print the files' contents. Worktree fields carry only a path: never
+suggest linking, copying or reading the shared checkout's ignored data in a dispatch; the briefs'
+worktree rules decide how such data gets in.
+
 ## Model strategy — owner's choice, asked once per run
 
 No subagent is dispatched, no file is modified and no phase starts until the run has an
