@@ -69,6 +69,19 @@ paths resolved in step 0 in every dispatch. The dispatch fields are the block at
 brief file: after a compaction re-read that block, never rebuild it from the transcript. Keep the
 project-specific Rulings you add to every dispatch as one working-notes line.
 
+**Ignored-data guard.** Before each dispatch, note one line for the shared checkout: the number of
+top-level git-ignored entries and their total size in KiB, from the repo root (`git rev-parse
+--show-toplevel >/dev/null && git ls-files -z --others --ignored --exclude-standard --directory |
+sed -z 's#/$##' | xargs -0 -r du -sk | awk '{n++; s+=$1} END {print n+0, s+0}'`; stripping the
+trailing slash keeps `du` from counting what a linked directory points to). A git error, or `0 0`
+where the checkout holds ignored data, is a failed measurement: stop and report as for a drop.
+After the subagent returns, measure again. A drop the dispatch can't explain (untracked output the subagent listed as its own
+doesn't count) is a stop: dispatch nothing more, don't try to restore it from memory or guesswork,
+report which entries shrank or vanished and any copy you can verify still exists, and wait for the
+owner. Measure only; never print the files' contents. Worktree fields carry only a path: never
+suggest linking, copying or reading the shared checkout's ignored data in a dispatch; the briefs'
+worktree rules decide how such data gets in.
+
 ## Model strategy — owner's choice, asked once per run
 
 No subagent is dispatched, no file is modified and no phase starts until the run has an
@@ -312,7 +325,9 @@ Accept the verdict only if all hold:
 - `Checkout untouched` is confirmed: HEAD equals the noted value and `git status --short
   --untracked-files=no` equals the noted tracked state (empty when the tree was clean). New
   untracked files are acceptable only if the reviewer listed them as created by its validation;
-  remove those after the review.
+  remove those after the review, each by its listed path, never recursively through a link. A
+  worktree it reports left in place goes into the final report's unresolved risks; don't remove
+  it yourself.
 
 `Not checked` never blocks by itself; anything listed there goes into the final report's unresolved
 risks.
