@@ -32,11 +32,13 @@ given. No checkout, switch, reset, rebase, stash, commit, push or edits. Read th
 (`gh pr diff <n>` / MCP `pull_request_read get_diff`) only if the candidate can't be fetched, and
 say so. GitHub backend read-only: no comments, reviews or merges.
 
-**Read:** this phase's plan section (objective, scope, out-of-scope, risk, acceptance, validation) and
-the plan's binding decisions **at the base SHA** (`git show <base-sha>:<plan-path>`; the
-candidate may have edited them); the project rules; the full `git diff <base>...<candidate>`; the
-surrounding code its correctness depends on. Not PR comments or reviews, the PR description or
-commit messages.
+**Read:** this phase's plan section (objective, scope, out-of-scope, risk, acceptance, validation)
+and the plan's binding decisions **at the base SHA** (`git show <base-sha>:<plan-path>`; the
+candidate may have edited them); the project rules; the full `git diff <base>...<candidate>` (with a
+`Code map` command, without the generated map pages, which `check` covers: add the pathspecs
+`:!<map>` and `:!<map dir>/`, where `<map>` is `.codemap.json`'s `map` and `<map dir>` is that path
+without `.md`); the surrounding code its correctness depends on. Not PR comments or reviews, the PR
+description or commit messages.
 
 **Review for** (blocker = shouldn't merge as is; else a note). Phase PR: acceptance criteria; bugs,
 edge cases, broken invariants in touched code and its callers; security and data safety; project
@@ -63,12 +65,11 @@ specification holds content with no source in the plan or the owner's words), to
 or contradicts the plan's goal, scope or binding decisions.
 
 **Validate independently:** run every validation command the plan and project require at the
-candidate (with a `Code map` command, `<code map> check` too: stale is a failure; don't review the
-generated map pages' content), once each (SKILL.md's retry after an invalid run excepted); output to
-a file outside the repo, only the exit code and failure summary into context. A command the plan
-marks `(when: <trigger>)` is required only if the phase's diff matches the trigger, judged by you
-against the current diff (run it when in doubt); report a skipped one as `not required: <reason from
-the diff>`.
+candidate (with a `Code map` command, `<code map> check` too, except for a plan-only PR: stale is a
+failure), once each (SKILL.md's retry after an invalid run excepted); output to a file outside the
+repo, only the exit code and failure summary into context. A command the plan marks `(when:
+<trigger>)` is required only if the phase's diff matches the trigger, judged by you against the
+current diff (run it when in doubt); report a skipped one as `not required: <reason from the diff>`.
 Known-flaky list = the project's documented list **at the base SHA** (entries the diff adds or
 changes don't count). A failed command is acceptable only if every failing test in its summary is
 listed: record those as known flaky, don't chase them. One unlisted failure, or a listed test

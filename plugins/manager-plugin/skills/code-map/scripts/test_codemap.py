@@ -161,6 +161,40 @@ class CodemapTest(unittest.TestCase):
         subprocess.run(["git", "-C", self.root, "add", "-A"], check=True)
         self.assertIn("vault: brain/topics", run("detect", "--root", self.root)[1])
 
+    def test_page_names_never_collide(self):
+        names = codemap.page_names([".", "root", "_root", "a b", "a_b", "Docs", "docs", "con"])
+        self.assertEqual(len({v.lower() for v in names.values()}), 8)
+        self.assertEqual(names["con"], "_con.md")
+
+    def test_large_directory_is_split_by_subdirectory(self):
+        old = codemap.SPLIT_ABOVE
+        codemap.SPLIT_ABOVE = 3
+        try:
+            for i in range(4):
+                self.write("app/sub%d/m.py" % i, "def f%d():\n    pass\n" % i)
+            subprocess.run(["git", "-C", self.root, "add", "-A"], check=True)
+            run("build", "--root", self.root)
+            pages = os.listdir(os.path.join(self.root, "docs", "code-map"))
+            self.assertIn("app__sub0.md", pages)
+            self.assertIn("app.md", pages)
+        finally:
+            codemap.SPLIT_ABOVE = old
+
+    def test_python_symbols_do_not_depend_on_the_python_version(self):
+        self.write("lib/gen.py", 'def generic[T](x: T) -> T:\n    return x\n\n'
+                   'DOC = """\ndef not_a_def():\n"""\n\nfrom app import (\n    util,\n)\n')
+        subprocess.run(["git", "-C", self.root, "add", "-A"], check=True)
+        symbols, imports = codemap.python_info(self.read("lib/gen.py"))
+        self.assertEqual([n for n, _ in symbols], ["generic"])
+        self.assertIn((0, "app.util"), imports)
+
+    def test_git_failure_inside_a_repo_is_an_error(self):
+        os.environ["GIT_DIR"] = os.path.join(self.root, "missing")
+        try:
+            self.assertEqual(run("build", "--root", self.root)[0], 2)
+        finally:
+            del os.environ["GIT_DIR"]
+
     def test_query(self):
         code, out = run("query", "helper", "--root", self.root)
         self.assertEqual(code, 0)

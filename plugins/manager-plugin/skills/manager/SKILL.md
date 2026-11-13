@@ -165,13 +165,13 @@ Derive state from durable sources only — never from memory of an earlier conte
    the final report; otherwise skip this. Resolve the two brief files once,
    `${CLAUDE_SKILL_DIR}/references/implementer-brief.md` and `reviewer-brief.md`, and check that
    both exist: a missing one means an incomplete plugin copy (environment failure: report it). Use
-   these absolute paths in every dispatch. Code map: if the project has `.codemap.json`, resolve the
-   command as the `code-map` skill says (`${CLAUDE_SKILL_DIR}/../code-map/scripts/codemap.py` and a
-   Python 3.8+) and send it as `Code map:` in every dispatch. No Python: offer the install in the
-   model-strategy question (the skill's command for the OS); `none` if declined. A vault but no
-   `.codemap.json` (the skill's detection, or a vault folder you see): offer in that question to set
-   the map up, landed first as its own small PR (an implementer runs `build` and commits; a reviewer
-   runs `check`).
+   these absolute paths in every dispatch. Code map: if the default branch has `.codemap.json` (`git
+   show origin/<default>:.codemap.json` after step 2's fetch), resolve the command as the `code-map`
+   skill says (`${CLAUDE_SKILL_DIR}/../code-map/scripts/codemap.py` and a Python 3.8+) and send it
+   as `Code map:` in every dispatch. No Python: offer the install in the model-strategy question
+   (the skill's command for the OS); `none` if declined. A vault but no `.codemap.json` (the skill's
+   detection, or a vault folder you see): offer in that question to set the map up, landed first as
+   its own small PR (an implementer runs `build` and commits; a reviewer runs `check`).
 2. `git fetch origin`; record the default branch head.
 3. Read the project rules and the living plan **as on the default branch** (`git show
    origin/<default>:<path>`, not the working tree, which may hold an unmerged phase branch). Ask

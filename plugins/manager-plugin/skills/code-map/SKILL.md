@@ -14,9 +14,11 @@ targeted `grep` instead of exploring. It contains:
 
 It is produced by `scripts/codemap.py`, a Python 3.8+ script that uses only the standard library:
 - files come from `git ls-files`;
-- Python symbols come from `ast`, other languages from line patterns (approximate), and no
-  symbols are listed for tests;
-- imports are local only;
+- symbols are top-level definitions from line patterns, the same on every Python version
+  (approximate); none are listed for tests;
+- imports are local and parsed only for Python, JavaScript and TypeScript;
+- files must be tracked: if `git ls-files` fails in a repository (e.g. Windows "dubious
+  ownership"), it stops with an error instead of guessing;
 - files that may hold secrets (`.env`, keys, `secrets` or `credentials` paths) are never read;
 - vault pages are scanned outside code blocks for `[[links]]`, `[text](page.md)` links, and code
   spans that name a tracked file;
@@ -61,8 +63,9 @@ agrees in this conversation; if they decline, skip the map (nothing else depends
 `<cmd>` below is `<python> "<script>"`, run from the project root.
 
 - `<cmd> detect`: the vault and map paths, and how they were found.
-- `<cmd> build`: writes the map, plus one page per top-level directory above 150 source files and
-  a separate vault-pages page above 150 vault pages. It deletes map pages it generated earlier
+- `<cmd> build`: writes the map. Above 150 source files it adds one page per directory group of
+  at most 150 files, splitting large directories by subdirectory, and above 150 vault pages a
+  separate vault-pages page. It deletes map pages it generated earlier
   that are now gone. It touches no other file except `.codemap.json` on the first run.
 - `<cmd> check`: exit 0 if the map matches the repository, 1 if it is stale. It writes nothing,
   so it is safe on a shared checkout. It also prints broken vault links as warnings.
@@ -89,7 +92,8 @@ skill made, one the owner had made in another session, or an Obsidian vault.
 
 When the project has `.codemap.json` and Python is available, the manager gives implementers and
 reviewers `Code map: <cmd>`:
-- the implementer runs `build` before its final validation and commits the result;
-- the reviewer runs `check` as required validation (stale means CHANGES REQUIRED) and uses
-  `mentions` to find the vault pages to check;
+- the implementer runs `build` before its final validation and commits the result (not in a
+  plan-only PR), and again after any integration;
+- the reviewer runs `check` as required validation (stale means CHANGES REQUIRED), reads the diff
+  without the map pages, and uses `mentions` to find the vault pages to check;
 - a merge conflict in map pages is resolved by running `build` again, never by hand.

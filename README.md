@@ -172,4 +172,5 @@ The review and planning discipline draws on ideas from
 
 ## Development
 
-Tests for the code-map script: `python3 -m unittest discover -s plugins/manager-plugin/skills/code-map/scripts`.
+Tests for the code-map script:
+`python3 -m unittest discover -s plugins/manager-plugin/skills/code-map/scripts`.

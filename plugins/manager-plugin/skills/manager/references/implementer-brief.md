@@ -56,18 +56,17 @@ or MCP tools beyond the GitHub backend's.
    check; else `grep` the vault for the names and paths you rename or remove); correct the fact in
    place, keep its source (a path), add no status or plan content, and set the page's last line to
    `Verified: <date>, phase <id>, base <short Base SHA>`.
-5. **Validate.** With a `Code map` command: run `<code map> build` before the final validation
-   and commit what it changes (generated pages: never edit them by hand). Develop with focused
-   tests; on your final commit run every required validation
-   command once each (a command the plan marks `(when: <trigger>)` is required only if this
-   phase's current diff matches the trigger, re-judged after every fix round or integration; list
-   what you skipped and why under Validation), output to a file (`cmd >
-   /tmp/<name>.log 2>&1; echo $?`); only the exit code and failure summary (failing test names,
-   first error lines) enter context. Known-flaky: only tests on the project's documented list count
-   (never edit it to cover your failures); rerun such a command at most once more, record the tests
-   as known flaky, don't chase them. An unlisted failure, or a listed test whose covered code your
-   diff touches, is real: fix it. Rerun the full set only after a change that could affect it (fix
-   rounds and integration always do). No CI.
+5. **Validate.** With a `Code map` command, except in a plan-only PR: run `<code map> build` before
+   the final validation and commit what it changes (generated pages: never edit them by hand).
+   Develop with focused tests; on your final commit run every required validation command once each
+   (a command the plan marks `(when: <trigger>)` is required only if this phase's current diff
+   matches the trigger, re-judged after every fix round or integration; list what you skipped and
+   why under Validation), output to a file (`cmd > /tmp/<name>.log 2>&1; echo $?`); only the exit
+   code and failure summary (failing test names, first error lines) enter context. Known-flaky: only
+   tests on the project's documented list count (never edit it to cover your failures); rerun such a
+   command at most once more, record the tests as known flaky, don't chase them. An unlisted
+   failure, or a listed test whose covered code your diff touches, is real: fix it. Rerun the full
+   set only after a change that could affect it (fix rounds and integration always do). No CI.
 6. **Leave** the shared checkout on your pushed head, tree clean (remove only untracked files your
    validation created; commit or restore tracked ones it changed), after every round: the
    reviewer validates there. If you work in a worktree, a file git doesn't track gets into it only
@@ -118,7 +117,8 @@ the Base SHA). Use that method, else the dispatch's, after `git fetch origin <de
 - merge: `git merge <default-head>`; `git push origin <branch>`;
 - rebase: `git rebase <default-head>`; `git push --force-with-lease=<branch>:<current-candidate>
   origin <branch>`;
-- a conflict only in generated code-map pages → take either side, run `<code map> build`, commit;
+- generated code-map pages: on a conflict take either side; after any integration run
+  `<code map> build` and commit it (in a rebase: stage it and continue);
 - none allowed, not actually allowed, or a conflict you can't resolve within scope → don't
   improvise; report `BLOCKED` with the reason.
 
