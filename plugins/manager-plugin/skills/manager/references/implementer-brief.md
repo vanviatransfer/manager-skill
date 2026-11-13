@@ -25,7 +25,7 @@ You implement one phase, open a PR, report. Never merge, review or spawn subagen
 or MCP tools beyond the GitHub backend's.
 
 1. **Read** only the project rules (`CLAUDE.md` / `AGENTS.md`), this phase's plan section, the
-   plan's binding decisions and its knowledge paths.
+   plan's binding decisions and its knowledge paths (vault pages: those and `index.md`).
 2. **Scope.** Don't expand it or guess. An owner-only choice (open design, scope, spend,
    credentials, anything the project reserves) → stop, report `NEEDS_OWNER_DECISION` with options.
    Write the least that meets the acceptance criteria: reuse existing code, the standard library or
@@ -47,7 +47,11 @@ or MCP tools beyond the GitHub backend's.
    the same PR: mark the phase done (status + PR link); write the Plan records exactly (no
    other decision, status or model-strategy edit); update later phases and the change log if facts
    require; never change this phase's objective, scope, risk, acceptance or validation unless a
-   Ruling requires it, then quote the Ruling in the change log.
+   Ruling requires it, then quote the Ruling in the change log. If the project has a vault
+   (`docs/vault/` or the plan's vault path): a fact a page states that this phase changes, or a
+   concept it adds that the index lacks → update that page and its `Verified` line in this PR
+   (`grep` the vault for the names and paths you rename or remove); the vault's own rules are in
+   its `index.md` and the plugin's `create-vault` skill.
 5. **Validate.** Develop with focused tests; on your final commit run every required validation
    command once each (a command the plan marks `(when: <trigger>)` is required only if this
    phase's current diff matches the trigger, re-judged after every fix round or integration; list

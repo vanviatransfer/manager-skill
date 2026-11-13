@@ -1,10 +1,14 @@
 # manager-skill
 
-A Claude Code plugin with three skills:
+A Claude Code plugin with four skills:
 
 - **`living-plan`** — writes a project's living plan: goal, scope, binding decisions, phases sized
   for one PR each (with acceptance criteria and validation), and open owner decisions.
 - **`manager`** — runs that plan to completion.
+- **`create-vault`** — creates, adopts or refreshes a project vault in `docs/vault/`: short linked
+  pages of durable facts about the code (index, glossary, decision records, topic pages), each with
+  its sources and a `Verified` line, landed through a reviewed PR. The plan's phases point to the
+  pages they need, and the manager's implementers keep those pages current in their phase PRs.
 - **`manager-retro`** — improves the manager from evidence: reads the compact run records the
   manager keeps on your machine and proposes up to three small changes, landed through an
   independently reviewed PR you choose.
