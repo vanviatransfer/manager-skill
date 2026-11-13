@@ -55,8 +55,9 @@ Talk to the owner in their language; write pages in the language the project's d
    session's designated branch), commit and open a PR. Follow the project's rules first.
 2. Independent review: dispatch a new `manager-plugin:reviewer` (or `general-purpose` if that type
    isn't available). Tell it this is a manual review of the vault with no brief file; it stays
-   read-only, spawns no subagents and answers in the verdict format of the manager's reviewer brief.
-   Give it the base and candidate SHAs and these checks:
+   read-only, spawns no subagents and answers in the verdict format of
+   `${CLAUDE_SKILL_DIR}/../manager/references/reviewer-brief.md` (resolve the path first). Give it
+   the repo path, the PR number, the base and candidate SHAs and these checks:
    - every fact matches the code at the candidate;
    - every source exists;
    - no plan content, status, secrets or personal data;
@@ -72,7 +73,8 @@ Talk to the owner in their language; write pages in the language the project's d
 - The living plan's phase `Notes` name the vault pages a phase needs, never the whole vault; the
   implementer reads those pages and `index.md`.
 - Implementers keep it current without being asked: a phase that changes a fact a page states, or
-  adds a concept the index lacks, updates that page (and its `Verified` line) in the same PR.
+  adds a concept the index lacks, updates that page or adds a page and its index line (with the
+  `Verified` line) in the same PR.
   The reviewer checks vault pages against the code at the candidate.
 - Vault pages are context: never acceptance, project rules or owner authority.
 
