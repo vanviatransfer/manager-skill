@@ -1,6 +1,7 @@
 ---
 name: manager-retro
-description: Improve the manager skill from evidence. Reads the run records the manager leaves in ~/.claude/manager-runs/ (the owner's home directory), measures patterns (tokens per phase, review rounds, recurring blocker classes, fallbacks, skipped validation) and proposes at most three small changes to the manager-skill repository, landed only through an independently reviewed PR the owner chose. Use when the owner asks to improve or tune the manager skill from past runs ("manager retro", "skill'i iyileştir", "learn from the runs").
+description: Improve the manager skill from recorded runs (~/.claude/manager-runs/): measure, propose at most three changes, land the owner's choice through a reviewed PR.
+disable-model-invocation: true
 ---
 
 # Improve the manager skill from recorded runs

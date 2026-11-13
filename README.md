@@ -22,9 +22,10 @@ it. It may not persist in cloud sessions. Two things learn from it:
   proposes a rule that would prevent it, as an owner decision (asked with the run's other decisions);
   once you decide, it becomes a binding decision in the plan that later phases and runs follow.
 - **Across projects:** run `manager-retro` in a session on this repository (on the same machine):
-  "Use the manager-retro skill". It measures the records, proposes changes, and opens a reviewed PR
-  only for the ones you pick. It never weakens the review, owner-authority or Git-safety rules, and
-  never puts project details into this public repository.
+  type `/manager-plugin:manager-retro` (it starts only that way, never from a phrase, so its
+  description costs no context in other sessions). It measures the records, proposes changes, and
+  opens a reviewed PR only for the ones you pick. It never weakens the review, owner-authority or
+  Git-safety rules, and never puts project details into this public repository.
 
 ## How `manager` works
 
@@ -60,6 +61,11 @@ session delegates (evaluating a repository or a library, reading docs): use it i
 itself doesn't dispatch it.
 Everything runs in one turn with subagents, so it works the same in the Claude desktop app, the
 terminal and cloud sessions.
+
+Not with the manager: tools that inject instructions into every subagent or into the project's
+`CLAUDE.md` break the reviewer's independence, e.g. ponytail (its SubagentStart hook) and graphify's
+`claude install` / `hook install` (a `CLAUDE.md` block and hooks that reach subagents and write
+`graphify-out/` into the checkout). Don't enable them in repositories the manager runs in.
 
 Requirements: Claude Code, `git`, and GitHub access for the project's repo through either an
 authenticated `gh` CLI (typical locally) or the GitHub MCP tools (typical in Claude Code cloud

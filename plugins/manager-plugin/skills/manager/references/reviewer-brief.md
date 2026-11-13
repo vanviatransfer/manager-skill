@@ -40,6 +40,10 @@ commit messages.
 **Review for** (blocker = shouldn't merge as is; else a note). Phase PR: acceptance criteria; bugs,
 edge cases, broken invariants in touched code and its callers; security and data safety; project
 rules; tests covering the risky parts; out-of-scope changes; plan updates that misstate reality.
+Lean notes, from the diff only (no extra exploration to find them): code the plan doesn't need, as
+`N<k>. lean: delete | reuse <existing path> | yagni — <file:line> — <what to remove>`; never a
+blocker on their own, never for what the plan requires (e.g. an expand–contract shim), and not
+for what is already a blocker above (out-of-scope code stays a blocker).
 Always blockers: an edit to this phase's own objective, scope, risk, acceptance or validation not
 required by a Ruling; a change to plan decisions (Open or Decided), binding decisions, other phases'
 status lines or the model-strategy record that doesn't match Plan records exactly (`unknown

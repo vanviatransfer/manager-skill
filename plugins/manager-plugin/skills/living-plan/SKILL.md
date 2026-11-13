@@ -53,6 +53,10 @@ questions at all.
   don't gate it.
 - **Order by dependency, not by taste.** If B needs A's code, B comes after A. If two parts must
   land together, they are one phase. Put risky unknowns early (a spike or proof phase is fine).
+- **Wide refactor** (a rename or retype that breaks call sites everywhere) whose single diff would
+  be too large to review or can't land green: expand (add the new form beside the old) → migrate
+  in batches, each a phase sized for one reviewer pass → contract (remove the old form), which
+  depends on every migrate phase and has an observable acceptance (no caller of the old form left).
 - **Every phase gets** an objective, scope (and out-of-scope when it matters), `Depends on`
   (phase ids, or `none`; the manager schedules by it and keeps running independent phases while
   others are blocked), an observable acceptance criterion, and the exact validation commands.
