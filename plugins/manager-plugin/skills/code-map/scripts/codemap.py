@@ -5,7 +5,9 @@ Usage:
   codemap.py build [--root DIR] [--out PATH]   write the map (default docs/vault/map.md)
   codemap.py check [--root DIR] [--out PATH]   exit 0 if the map is current, 1 if stale
   codemap.py query TERM [--root DIR]           where TERM is defined, which paths match it,
-                                               and which files import a matching file
+                                               who imports them, which vault pages mention them
+  codemap.py mentions [PATH...] [--base SHA]   vault pages that mention these files (or the
+                                               files changed since SHA)
 
 Only the Python standard library is used (Python 3.8+). Files come from `git ls-files`, so
 ignored files are skipped. Symbols are top-level definitions found with the `ast` module for
@@ -20,6 +22,7 @@ import posixpath
 import re
 import subprocess
 import sys
+import unicodedata
 
 FORMAT = 1
 DEFAULT_OUT = "docs/vault/map.md"
@@ -35,6 +38,10 @@ SKIP_DIRS = {
     "venv", "__pycache__", ".git", ".next", ".nuxt", "coverage", "bin", "obj",
 }
 SKIP_SUFFIXES = (".min.js", ".min.css", ".map", ".lock", ".snap")
+# Files that may hold secrets are never read (patterns after graphify's detect.py).
+SENSITIVE = re.compile(r"(^|/)(\.env(\..*)?|\.envrc|id_(rsa|dsa|ecdsa|ed25519)(\.pub)?|\.netrc|"
+                       r"\.npmrc|\.pypirc|\.git-credentials)$|\.(pem|key|p12|pfx|crt|der|p8)$|"
+                       r"(^|/)(secrets?|credentials?)(/|\.)", re.IGNORECASE)
 
 LANG = {
     ".py": "Python", ".js": "JavaScript", ".jsx": "JavaScript", ".mjs": "JavaScript",
@@ -87,7 +94,7 @@ def git_files(root):
 
 
 def skipped(path, out_rel):
-    if path == out_rel:
+    if path == out_rel or SENSITIVE.search(path):
         return True
     parts = path.split("/")
     if any(p in SKIP_DIRS for p in parts[:-1]):
@@ -229,7 +236,7 @@ def scan(root, out_rel):
         stem = posixpath.splitext(posixpath.basename(path))[0].lower()
         if stem in ENTRY_NAMES and path.count("/") <= 2:
             entries.add(path)
-    return info, importers, sorted(e for e in entries if e in info)
+    return info, importers, sorted(e for e in entries if e in info), files
 
 
 def is_test(path):
@@ -268,7 +275,7 @@ def header(title, cmd):
     ]
 
 
-def render(info, importers, entries, cmd, out_rel):
+def render(info, importers, entries, cmd, out_rel, vault=None):
     """Return {relative path: text}: the map page, plus one page per directory if large."""
     by_dir = {}
     for path in info:
@@ -289,6 +296,12 @@ def render(info, importers, entries, cmd, out_rel):
     if ranked:
         lines += ["", "## Most imported", ""]
         lines += ["- `%s` — imported by %d files" % (p, len(importers[p])) for p in ranked[:TOP_IMPORTED]]
+    if vault is not None:
+        lines += ["", "## Vault", "",
+                  "%d pages; %d broken links; %d orphan pages (no page links to them)."
+                  % (len(vault["pages"]), len(vault["broken"]), len(vault["orphans"]))]
+        lines += ["- broken: `%s:%d` → %s" % b for b in vault["broken"][:50]]
+        lines += ["- orphan: `%s`" % o for o in vault["orphans"][:50]]
     pages = {}
     if split:
         lines += ["", "Files and symbols per directory are on the linked pages."]
@@ -319,12 +332,94 @@ def command_label():
     return "codemap.py"
 
 
+# Vault links. Markdown pages under the vault folder are scanned outside fenced code blocks:
+# [[wikilinks]] resolve by file name across the vault (a path-qualified link by path suffix,
+# ties to the shallowest, then first path), [text](page.md) links resolve relative to the page,
+# and inline code spans naming a tracked file are recorded as mentions of that file.
+WIKILINK = re.compile(r"(?<!!)\[\[([^\]|#]+?)(?:\|[^\]]*|#[^\]]*)?\]\]")
+MD_LINK = re.compile(r"(?<!!)\[[^\]]*\]\(<?([^)\s>]+)>?(?:\s+[^)]*)?\)")
+CODE_SPAN = re.compile(r"`([^`\n]+)`")
+FENCE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
+
+
+def nfc(text):
+    return unicodedata.normalize("NFC", text)
+
+
+def prose_lines(text):
+    fence = None
+    for lineno, line in enumerate(text.splitlines(), 1):
+        m = FENCE.match(line)
+        if fence:
+            if m and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence) \
+                    and not line.strip()[len(m.group(1)):].strip():
+                fence = None
+            continue
+        if m:
+            fence = m.group(1)
+            continue
+        yield lineno, line
+
+
+def scan_vault(root, out_rel, files, generated):
+    vault = posixpath.dirname(out_rel)
+    if not vault or vault.startswith(".."):
+        return None
+    pages = sorted(f for f in files if f.startswith(vault + "/") and f.endswith(".md")
+                   and f not in generated)
+    by_name = {}
+    for page in pages + sorted(generated):
+        by_name.setdefault(nfc(posixpath.basename(page)).lower(), []).append(page)
+    known = set(files)
+    links, broken, mentions = {p: set() for p in pages}, [], {}
+    for page in pages:
+        text = read_text(root, page) or ""
+        for lineno, line in prose_lines(text):
+            for target in WIKILINK.findall(line):
+                target = nfc(target.strip())
+                name = target if target.lower().endswith(".md") else target + ".md"
+                cands = by_name.get(posixpath.basename(name).lower(), [])
+                if "/" in name:
+                    cands = [c for c in cands if nfc(c).lower().endswith("/" + name.lower())]
+                cands.sort(key=lambda c: (c.count("/"), c))
+                if cands:
+                    links[page].add(cands[0])
+                else:
+                    broken.append((page, lineno, "[[%s]]" % target))
+            for target in MD_LINK.findall(line):
+                if re.match(r"^[a-z][a-z0-9+.-]*:|^#", target, re.I) or not target.endswith(".md"):
+                    continue
+                dest = posixpath.normpath(posixpath.join(posixpath.dirname(page), target))
+                if dest in known or dest in generated:
+                    links[page].add(dest)
+                else:
+                    broken.append((page, lineno, target))
+            for span in CODE_SPAN.findall(line):
+                ref = span.strip().split("::")[0].split(":")[0].lstrip("./")
+                if ref in known and not ref.startswith(vault + "/"):
+                    mentions.setdefault(ref, set()).add((page, lineno))
+    inbound = {p: 0 for p in pages}
+    for page, dests in links.items():
+        for d in dests:
+            if d in inbound and d != page:
+                inbound[d] += 1
+    orphans = [p for p in pages if not inbound[p] and posixpath.basename(p) != "index.md"]
+    return {"pages": pages, "broken": broken, "orphans": orphans, "mentions": mentions}
+
+
+def changed_files(root, base):
+    out = subprocess.run(["git", "-C", root, "diff", "--name-only", "--no-renames", base],
+                         capture_output=True, check=True)
+    return sorted({f for f in out.stdout.decode("utf-8", "replace").splitlines() if f})
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="codemap.py", description="Deterministic code map.")
-    ap.add_argument("action", choices=["build", "check", "query"])
-    ap.add_argument("term", nargs="?")
+    ap.add_argument("action", choices=["build", "check", "query", "mentions"])
+    ap.add_argument("terms", nargs="*")
     ap.add_argument("--root", default=".")
     ap.add_argument("--out", default=DEFAULT_OUT)
+    ap.add_argument("--base", help="mentions: use the files changed since this commit")
     args = ap.parse_args(argv)
     root = os.path.abspath(args.root)
     if not os.path.isdir(root):
@@ -332,12 +427,17 @@ def main(argv=None):
     out = os.path.abspath(args.out) if os.path.isabs(args.out) else None
     out_rel = (os.path.relpath(out, root).replace(os.sep, "/") if out
                else args.out.replace("\\", "/"))
-    info, importers, entries = scan(root, out_rel)
+    info, importers, entries, files = scan(root, out_rel)
+    cmd = command_label()
+    planned = set(render(info, importers, entries, cmd, out_rel))
+    existing = set(generated_pages(root, out_rel))
+    vault = scan_vault(root, out_rel, files, planned | existing)
+    mentions = vault["mentions"] if vault else {}
 
     if args.action == "query":
-        if not args.term:
-            ap.error("query needs a TERM")
-        term = args.term.lower()
+        if len(args.terms) != 1:
+            ap.error("query needs one TERM")
+        term = args.terms[0].lower()
         hits = [(p, n, ln) for p, d in sorted(info.items()) for n, ln in d["symbols"]
                 if term in n.lower()]
         paths = [p for p in sorted(info) if term in p.lower()]
@@ -350,10 +450,28 @@ def main(argv=None):
             print("  %s (imported by %d)" % (p, len(users)))
             for u in users[:20]:
                 print("    <- %s" % u)
+            for page, ln in sorted(mentions.get(p, ()))[:20]:
+                print("    mentioned in %s:%d" % (page, ln))
         return 0
 
-    pages = render(info, importers, entries, command_label(), out_rel)
-    stale_extra = [p for p in generated_pages(root, out_rel) if p not in pages]
+    if args.action == "mentions":
+        targets = list(args.terms)
+        if args.base:
+            try:
+                targets += changed_files(root, args.base)
+            except (OSError, subprocess.CalledProcessError):
+                ap.error("cannot diff against %s" % args.base)
+        found = 0
+        for t in sorted(set(x.replace("\\", "/").lstrip("./") for x in targets)):
+            for page, ln in sorted(mentions.get(t, ())):
+                print("%s:%d mentions %s" % (page, ln, t))
+                found += 1
+        if not found:
+            print("no vault page mentions these files")
+        return 0
+
+    pages = render(info, importers, entries, cmd, out_rel, vault)
+    stale_extra = sorted(existing - set(pages))
     if args.action == "check":
         bad = []
         for rel, text in sorted(pages.items()):
@@ -361,6 +479,8 @@ def main(argv=None):
             if current is None or current.replace("\r\n", "\n") != text:
                 bad.append(rel)
         bad += stale_extra
+        for page, ln, target in (vault or {}).get("broken", [])[:20]:
+            print("warning: broken link %s:%d -> %s" % (page, ln, target))
         if bad:
             print("stale: %s; run build" % ", ".join(bad))
             return 1

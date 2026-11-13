@@ -34,8 +34,8 @@ Talk to the owner in their language; write pages in the language the project's d
   updates it in a phase PR. A fact the code doesn't confirm is marked `(unverified)` or left out. A
   changed fact is corrected in place, never appended as a new version.
 - `map.md` (and `map/<dir>.md` in large repos): the generated code map, built with the `code-map`
-  skill when Python 3.8+ is available; listed in the index, never edited by hand, no `Verified`
-  line (its `check` is its review).
+  skill (it offers to install Python 3.8+ if it is missing; skipped only if the owner declines);
+  listed in the index, never edited by hand, no `Verified` line (its `check` is its review).
 - Links are `[[page]]`. No page repeats another's content; it links to it.
 
 ## Modes

@@ -90,6 +90,44 @@ class CodemapTest(unittest.TestCase):
         finally:
             codemap.SPLIT_ABOVE = old
 
+    def vault_setup(self):
+        self.write("docs/vault/index.md", "- [[mimari]]\n- [[Ödeme]]\n- [[map]]\n")
+        self.write("docs/vault/topics/mimari.md", "See `app/util.py` and [[yok]].\n"
+                   "```\n[[inside-fence]]\n```\n")
+        self.write("docs/vault/Ödeme.md", "Uses `web/lib.ts:x`.\n")
+        self.write("docs/vault/orphan.md", "nothing links here\n")
+        self.write(".env", "SECRET=1\n")
+        self.write("app/secrets.py", "def leak():\n    pass\n")
+        subprocess.run(["git", "-C", self.root, "add", "-A"], check=True)
+
+    def test_vault_links_mentions_and_sensitive_files(self):
+        self.vault_setup()
+        run("build", "--root", self.root)
+        text = self.read("docs/vault/map.md")
+        self.assertIn("4 pages; 1 broken links; 1 orphan pages", text)
+        self.assertIn("broken: `docs/vault/topics/mimari.md:1` → [[yok]]", text)
+        self.assertNotIn("inside-fence", text)
+        self.assertIn("orphan: `docs/vault/orphan.md`", text)
+        self.assertNotIn("secrets.py", text)
+        self.assertNotIn("leak", text)
+        code, out = run("mentions", "app/util.py", "web/lib.ts", "--root", self.root)
+        self.assertIn("docs/vault/topics/mimari.md:1 mentions app/util.py", out)
+        self.assertIn("docs/vault/Ödeme.md:1 mentions web/lib.ts", out)
+        self.assertEqual(run("check", "--root", self.root)[0], 0)
+        self.write("docs/vault/index.md", "- [[mimari]]\n- [[Ödeme]]\n- [[map]]\n- [[orphan]]\n")
+        self.assertEqual(run("check", "--root", self.root)[0], 1)
+
+    def test_mentions_since_base(self):
+        self.vault_setup()
+        subprocess.run(["git", "-C", self.root, "-c", "user.name=t", "-c", "user.email=t@t",
+                        "commit", "-qm", "base"], check=True)
+        base = subprocess.run(["git", "-C", self.root, "rev-parse", "HEAD"],
+                              capture_output=True, check=True).stdout.decode().strip()
+        self.write("app/util.py", "class Helper:\n    pass\n\ndef added():\n    pass\n")
+        code, out = run("mentions", "--base", base, "--root", self.root)
+        self.assertIn("mimari.md:1 mentions app/util.py", out)
+        self.assertNotIn("web/lib.ts", out)
+
     def test_query(self):
         code, out = run("query", "helper", "--root", self.root)
         self.assertEqual(code, 0)

@@ -118,11 +118,12 @@ don't read source. Recommend Sonnet, Opus or a mixed strategy, ask in Turkish, a
 Bu çalışma için önerim: <Sonnet | Opus | Karma: standard → Sonnet, critical → Opus, işaretsiz → standard>.
 Gerekçe: <tek cümle: doğruluk riski, karmaşıklık, tahmini token tüketimi ve maliyet>.
 [Başlamadan önce önerim: `/autocompact 600k` çalıştırın; cc-plugin-you-should-know'ı kapatın]
+[Kod haritası için Python yok; kurayım mı? (`<komut>`) Hayır derseniz harita atlanır.]
 Model tercihiniz hangisi?
 ```
 
-The bracketed line only when the session check in step 0 found something, with only the items it
-found.
+The bracketed lines only when step 0 found something (the session check, a code map without
+Python), with only the items it found. An install answer is carried out right after the gate.
 
 Guide for the recommendation: Sonnet for bounded code, docs, tests and ordinary reviews; Opus for
 architecture, numerical or financial correctness, concurrency, security-critical code or hard
@@ -165,7 +166,8 @@ Derive state from durable sources only — never from memory of an earlier conte
    these absolute paths in every dispatch. If the project has `docs/vault/map.md`, resolve the
    code-map command as the `code-map` skill says
    (`${CLAUDE_SKILL_DIR}/../code-map/scripts/codemap.py` and a Python 3.8+); send it as `Code map:`
-   in every dispatch, or `none` without Python.
+   in every dispatch. No Python: offer the install in the model-strategy question (the skill's
+   command for the OS); `none` if declined.
 2. `git fetch origin`; record the default branch head.
 3. Read the project rules and the living plan **as on the default branch** (`git show
    origin/<default>:<path>`, not the working tree, which may hold an unmerged phase branch). Ask

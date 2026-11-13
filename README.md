@@ -10,14 +10,13 @@ A Claude Code plugin with five skills:
   its sources and a `Verified` line, landed through a reviewed PR. The plan's phases point to the
   pages they need, and the manager's implementers keep those pages current in their phase PRs.
 - **`code-map`** — a generated map of the code (`docs/vault/map.md`: directories, entry points, most
-  imported files, top-level symbols per file; per-directory pages in large repos) and a `query`
-  for where a name is defined and who imports a file, from the plugin's own standard-library
-  Python script (3.8+; nothing to install, nothing sent anywhere). When a project has the map, the
-  manager's implementers regenerate it in every phase PR and reviewers run its `check`. Without
-  Python it is skipped.
-- **`manager-retro`** — improves the manager from evidence: reads the compact run records the
-  manager keeps on your machine and proposes up to three small changes, landed through an
-  independently reviewed PR you choose.
+  imported files, top-level symbols per file; per-directory pages in large repos; the vault's broken
+  links and orphan pages) with `query` (where a name is defined, who imports a file, which vault
+  pages mention it) and `mentions` (the vault pages to check after a change), from the plugin's own
+  standard-library Python script (3.8+; no packages, nothing sent anywhere; files that may hold
+  secrets are never read). When a project has the map, the manager's implementers regenerate it in
+  every phase PR and reviewers run its `check`. Without Python it offers the install command and
+  skips the map only if you decline.
 
 ## Learning from runs
 
