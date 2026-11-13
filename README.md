@@ -5,18 +5,22 @@ A Claude Code plugin with five skills:
 - **`living-plan`** — writes a project's living plan: goal, scope, binding decisions, phases sized
   for one PR each (with acceptance criteria and validation), and open owner decisions.
 - **`manager`** — runs that plan to completion.
-- **`create-vault`** — creates, adopts or refreshes a project vault in `docs/vault/`: short linked
-  pages of durable facts about the code (index, glossary, decision records, topic pages), each with
-  its sources and a `Verified` line, landed through a reviewed PR. The plan's phases point to the
-  pages they need, and the manager's implementers keep those pages current in their phase PRs.
-- **`code-map`** — a generated map of the code (`docs/vault/map.md`: directories, entry points, most
-  imported files, top-level symbols per file; per-directory pages in large repos; the vault's broken
-  links and orphan pages) with `query` (where a name is defined, who imports a file, which vault
-  pages mention it) and `mentions` (the vault pages to check after a change), from the plugin's own
+- **`create-vault`** — creates a project vault in `docs/vault/`, or adopts or refreshes an existing
+  one: short linked pages of durable facts about the code (index, glossary, decision records, topic
+  pages), each with its sources and a `Verified` line, landed through a reviewed PR. The plan's
+  phases point to the pages they need, and the manager's implementers keep those pages current in
+  their phase PRs.
+- **`code-map`** — a generated map of the repository: directories, entry points, most imported files
+  and top-level symbols per file, plus a vault index (every page with its title, size and inbound
+  links), broken links and orphan pages, so agents read one page instead of exploring. `query` finds
+  where a name is defined, who imports a file and which vault pages mention it; `mentions` lists the
+  vault pages to check after a change. It finds an existing vault wherever it is (a `.obsidian/`
+  folder, a known folder name, or the folder with most `[[wikilinks]]`), including vaults made
+  without this plugin, and records the layout in `.codemap.json`. It is the plugin's own
   standard-library Python script (3.8+; no packages, nothing sent anywhere; files that may hold
-  secrets are never read). When a project has the map, the manager's implementers regenerate it in
-  every phase PR and reviewers run its `check`. Without Python it offers the install command and
-  skips the map only if you decline.
+  secrets are never read). When a project has `.codemap.json`, the manager's implementers regenerate
+  the map in every phase PR and reviewers run its `check`. Without Python it offers the install
+  command and skips the map only if you decline.
 
 ## Learning from runs
 

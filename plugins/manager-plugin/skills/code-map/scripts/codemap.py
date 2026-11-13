@@ -8,6 +8,12 @@ Usage:
                                                who imports them, which vault pages mention them
   codemap.py mentions [PATH...] [--base SHA]   vault pages that mention these files (or the
                                                files changed since SHA)
+  codemap.py detect [--root DIR]               where the vault and the map are, and why
+
+The vault and map locations come from .codemap.json at the repository root. Without it they
+are detected (a folder with .obsidian/, a known vault folder name, or the folder holding most
+pages with [[wikilinks]]); the first build writes .codemap.json so later runs agree. An existing
+hand-written map.md is never overwritten: the map then goes to code-map.md.
 
 Only the Python standard library is used (Python 3.8+). Files come from `git ls-files`, so
 ignored files are skipped. Symbols are top-level definitions found with the `ast` module for
@@ -25,7 +31,11 @@ import sys
 import unicodedata
 
 FORMAT = 1
-DEFAULT_OUT = "docs/vault/map.md"
+CONFIG = ".codemap.json"
+NO_VAULT_MAP = "docs/code-map.md"
+KNOWN_VAULTS = ("docs/vault", "vault", "docs/knowledge", "knowledge", "docs/wiki", "wiki",
+                "docs/notes", "notes", "kb", "docs/kb")
+MAX_VAULT_ROWS = 400
 MAX_BYTES = 512 * 1024
 MAX_SYMBOLS = 6
 SPLIT_ABOVE = 150
@@ -302,7 +312,23 @@ def render(info, importers, entries, cmd, out_rel, vault=None):
                   % (len(vault["pages"]), len(vault["broken"]), len(vault["orphans"]))]
         lines += ["- broken: `%s:%d` → %s" % b for b in vault["broken"][:50]]
         lines += ["- orphan: `%s`" % o for o in vault["orphans"][:50]]
+        rows = ["| Page | Title | Words | Linked from |", "|---|---|---|---|"]
+        rows += ["| `%s` | %s | %d | %d |" % (pg, vault["meta"][pg][0], vault["meta"][pg][1],
+                                              vault["inbound"][pg])
+                 for pg in vault["pages"][:MAX_VAULT_ROWS]]
+        if len(vault["pages"]) > MAX_VAULT_ROWS:
+            rows.append("| (%d more) | | | |" % (len(vault["pages"]) - MAX_VAULT_ROWS))
+        if len(vault["pages"]) > SPLIT_ABOVE:
+            pages_name = sub + "/vault-pages.md"
+            lines += ["", "Vault pages with titles: [vault pages](%s/vault-pages.md)."
+                      % posixpath.basename(sub)]
+            vault_page = header("Code map: vault pages", cmd) + [""] + rows
+        else:
+            lines += ["", "### Vault pages", ""] + rows
+            pages_name = None
     pages = {}
+    if vault is not None and pages_name:
+        pages[pages_name] = "\n".join(vault_page) + "\n"
     if split:
         lines += ["", "Files and symbols per directory are on the linked pages."]
         for d in sorted(by_dir):
@@ -361,9 +387,24 @@ def prose_lines(text):
         yield lineno, line
 
 
-def scan_vault(root, out_rel, files, generated):
-    vault = posixpath.dirname(out_rel)
-    if not vault or vault.startswith(".."):
+def page_title(text, page):
+    lines = text.splitlines()
+    if lines and lines[0].strip() == "---":
+        for line in lines[1:40]:
+            if line.strip() == "---":
+                break
+            m = re.match(r"^title:\s*['\"]?(.+?)['\"]?\s*$", line)
+            if m:
+                return m.group(1)
+    for _, line in prose_lines(text):
+        m = re.match(r"^\s{0,3}#\s+(.+?)\s*#*\s*$", line)
+        if m:
+            return m.group(1)
+    return posixpath.splitext(posixpath.basename(page))[0]
+
+
+def scan_vault(root, vault, files, generated):
+    if not vault:
         return None
     pages = sorted(f for f in files if f.startswith(vault + "/") and f.endswith(".md")
                    and f not in generated)
@@ -371,9 +412,10 @@ def scan_vault(root, out_rel, files, generated):
     for page in pages + sorted(generated):
         by_name.setdefault(nfc(posixpath.basename(page)).lower(), []).append(page)
     known = set(files)
-    links, broken, mentions = {p: set() for p in pages}, [], {}
+    links, broken, mentions, meta = {p: set() for p in pages}, [], {}, {}
     for page in pages:
         text = read_text(root, page) or ""
+        meta[page] = (page_title(text, page).replace("|", "/"), len(text.split()))
         for lineno, line in prose_lines(text):
             for target in WIKILINK.findall(line):
                 target = nfc(target.strip())
@@ -404,7 +446,63 @@ def scan_vault(root, out_rel, files, generated):
             if d in inbound and d != page:
                 inbound[d] += 1
     orphans = [p for p in pages if not inbound[p] and posixpath.basename(p) != "index.md"]
-    return {"pages": pages, "broken": broken, "orphans": orphans, "mentions": mentions}
+    return {"dir": vault, "pages": pages, "broken": broken, "orphans": orphans,
+            "mentions": mentions, "meta": meta, "inbound": inbound}
+
+
+def detect_vault(root, files):
+    """(vault dir or None, reason). Deterministic: the same files give the same answer."""
+    md = [f for f in files if f.lower().endswith(".md")]
+    dirs = sorted({posixpath.dirname(f) for f in md if posixpath.dirname(f)})
+    prefixes = {"/".join(d.split("/")[:i]) for d in dirs
+                for i in range(1, min(3, d.count("/") + 1) + 1)}
+    tops = sorted(prefixes, key=lambda d: (d.count("/"), d))
+    for d in tops:
+        if os.path.isdir(os.path.join(root, *d.split("/"), ".obsidian")):
+            return d, "has .obsidian/"
+    for d in KNOWN_VAULTS:
+        if any(f.startswith(d + "/") for f in md):
+            return d, "known vault folder name"
+    linked = []
+    for f in md:
+        text = read_text(root, f) or ""
+        if any(WIKILINK.search(line) for _, line in prose_lines(text)):
+            linked.append(f)
+    if len(linked) >= 5:
+        counts = {}
+        for f in linked:
+            parts = f.split("/")[:-1]
+            for i in range(1, len(parts) + 1):
+                counts["/".join(parts[:i])] = counts.get("/".join(parts[:i]), 0) + 1
+        best = [d for d, c in counts.items() if c * 10 >= len(linked) * 8]
+        if best:
+            d = sorted(best, key=lambda d: (-d.count("/"), d))[0]
+            return d, "holds most of the %d pages with [[wikilinks]]" % len(linked)
+    return None, "no vault found"
+
+
+def resolve_layout(root, files, vault_arg=None, out_arg=None):
+    """(vault, map path, source). Config wins, then arguments, then detection."""
+    cfg = {}
+    text = read_text(root, CONFIG)
+    if text:
+        try:
+            cfg = json.loads(text)
+        except ValueError:
+            cfg = {}
+    if cfg and vault_arg is None and out_arg is None:
+        return cfg.get("vault"), cfg.get("map") or NO_VAULT_MAP, CONFIG
+    vault, reason = (vault_arg.strip("/"), "--vault") if vault_arg else detect_vault(root, files)
+    if out_arg:
+        return vault, out_arg, reason
+    if not vault:
+        return None, NO_VAULT_MAP, reason
+    for name in ("map.md", "code-map.md", "code-map-generated.md"):
+        rel = vault + "/" + name
+        existing = read_text(root, rel)
+        if existing is None or MARKER in existing[:400]:
+            return vault, rel, reason
+    return vault, vault + "/code-map-generated.md", reason
 
 
 def changed_files(root, base):
@@ -415,23 +513,37 @@ def changed_files(root, base):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="codemap.py", description="Deterministic code map.")
-    ap.add_argument("action", choices=["build", "check", "query", "mentions"])
+    ap.add_argument("action", choices=["build", "check", "query", "mentions", "detect"])
     ap.add_argument("terms", nargs="*")
     ap.add_argument("--root", default=".")
-    ap.add_argument("--out", default=DEFAULT_OUT)
+    ap.add_argument("--out", help="map path (default: from %s, else detected)" % CONFIG)
+    ap.add_argument("--vault", help="vault folder (default: from %s, else detected)" % CONFIG)
+    ap.add_argument("--redetect", action="store_true", help="build: ignore and rewrite %s" % CONFIG)
     ap.add_argument("--base", help="mentions: use the files changed since this commit")
     args = ap.parse_args(argv)
     root = os.path.abspath(args.root)
     if not os.path.isdir(root):
         ap.error("no such directory: %s" % args.root)
-    out = os.path.abspath(args.out) if os.path.isabs(args.out) else None
-    out_rel = (os.path.relpath(out, root).replace(os.sep, "/") if out
-               else args.out.replace("\\", "/"))
+    out_arg = None
+    if args.out:
+        out_arg = (os.path.relpath(os.path.abspath(args.out), root).replace(os.sep, "/")
+                   if os.path.isabs(args.out) else args.out.replace("\\", "/"))
+    tracked = git_files(root)
+    if args.redetect and args.action == "build":
+        tracked = [f for f in tracked if f != CONFIG]
+        cfg_path = os.path.join(root, CONFIG)
+        if os.path.exists(cfg_path):
+            os.remove(cfg_path)
+    vault_dir, out_rel, source = resolve_layout(root, tracked, args.vault, out_arg)
+    if args.action == "detect":
+        print("vault: %s (%s)" % (vault_dir or "none", source))
+        print("map: %s" % out_rel)
+        return 0
     info, importers, entries, files = scan(root, out_rel)
     cmd = command_label()
     planned = set(render(info, importers, entries, cmd, out_rel))
     existing = set(generated_pages(root, out_rel))
-    vault = scan_vault(root, out_rel, files, planned | existing)
+    vault = scan_vault(root, vault_dir, files, planned | existing | {out_rel})
     mentions = vault["mentions"] if vault else {}
 
     if args.action == "query":
@@ -488,6 +600,10 @@ def main(argv=None):
         return 0
     for rel in stale_extra:
         os.remove(os.path.join(root, *rel.split("/")))
+    if source != CONFIG and not args.out and not os.path.exists(os.path.join(root, CONFIG)):
+        with open(os.path.join(root, CONFIG), "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(json.dumps({"vault": vault_dir, "map": out_rel}, indent=2) + "\n")
+        print("wrote %s (vault: %s, %s)" % (CONFIG, vault_dir or "none", source))
     for rel, text in sorted(pages.items()):
         path = os.path.join(root, *rel.split("/"))
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)

@@ -1,14 +1,15 @@
 ---
 name: create-vault
-description: Create, adopt or refresh a project's knowledge vault in docs/vault/ (linked markdown pages of durable facts about the code, a glossary and decision records) that the manager's implementers keep current. Use when the owner asks for a vault or project knowledge base, or to update it ("vault oluştur", "vault'u güncelle", "create a vault").
+description: Create, adopt or refresh a project's knowledge vault (docs/vault/, or an existing one wherever it is; linked markdown pages of durable facts about the code, a glossary and decision records) that the manager's implementers keep current. Use when the owner asks for a vault or project knowledge base, or to update it ("vault oluştur", "vault'u güncelle", "create a vault").
 ---
 
 # Project vault
 
 The vault is the project's durable knowledge: what the code is and why, in short linked pages, so
 agents read a page instead of exploring the code again. It lives in the project repository at
-`docs/vault/` (or the path the project's rules name), tracked by git, and changes only through
-reviewed PRs. Never in the plugin repository.
+`docs/vault/` (or where the project already keeps one: `.codemap.json`'s `vault`, the path the
+project's rules name, or what the `code-map` skill's `detect` finds), tracked by git, and changes
+only through reviewed PRs. Never in the plugin repository.
 
 The vault holds **knowledge**, not intent or status:
 - not the plan's goal, phases or progress (the living plan holds those);
@@ -44,9 +45,10 @@ Talk to the owner in their language; write pages in the language the project's d
    points and how it is tested. Draft `index.md`, `glossary.md` and the few topic pages the code
    clearly supports; add a decision record only for a decision the repo or the owner documents.
    Ask the owner, in one numbered batch, only what the code can't answer.
-2. **Adopt** (a vault exists). Keep its structure and file names. Add only what is missing from
-   the rules above: an index line, a `Verified` line, a source. Report what doesn't fit (status,
-   plan content, secrets) instead of rewriting it.
+2. **Adopt** (a vault exists). Keep its structure and file names. Add only what is missing from the
+   rules above: an index line, a `Verified` line, a source. Report what doesn't fit (status, plan
+   content, secrets) instead of rewriting it. With Python, set up the code map for it (the
+   `code-map` skill's "Setting it up").
 3. **Refresh** (the owner asks to update it). For each page, check its facts against the code at
    the default branch head; correct what changed, mark what you can't confirm, and update the
    `Verified` lines. Touch no page you didn't check.

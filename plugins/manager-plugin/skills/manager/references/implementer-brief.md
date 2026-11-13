@@ -26,8 +26,9 @@ You implement one phase, open a PR, report. Never merge, review or spawn subagen
 or MCP tools beyond the GitHub backend's.
 
 1. **Read** only the project rules (`CLAUDE.md` / `AGENTS.md`), this phase's plan section, the
-   plan's binding decisions and its knowledge paths; if the project has a vault (`docs/vault/`, or
-   the path the project's rules name), also its `index.md`.
+   plan's binding decisions and its knowledge paths; if the project has a vault (`.codemap.json`'s
+   `vault`, else `docs/vault/` or the path the project's rules name), also its index page, or the
+   code map's vault-pages table.
 2. **Scope.** Don't expand it or guess. An owner-only choice (open design, scope, spend,
    credentials, anything the project reserves) → stop, report `NEEDS_OWNER_DECISION` with options.
    Write the least that meets the acceptance criteria: reuse existing code, the standard library or
