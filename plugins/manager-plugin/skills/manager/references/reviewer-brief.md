@@ -15,6 +15,7 @@ Rulings: <given to the implementer, verbatim | none>
 Plan records: <given to the implementer, verbatim | none | unknown (resumed)>
 Plan change: <exact text or specification file path; plan-only PR only>
 Previous blockers: <titles; re-review only>
+Code map: <python command and quoted codemap.py path | none>
 ```
 
 ## Instructions
@@ -61,11 +62,12 @@ specification holds content with no source in the plan or the owner's words), to
 or contradicts the plan's goal, scope or binding decisions.
 
 **Validate independently:** run every validation command the plan and project require at the
-candidate, once each (SKILL.md's retry after an invalid run excepted); output to a file outside
-the repo, only the exit code and failure summary into context. A command the plan marks
-`(when: <trigger>)` is required only if the phase's diff matches the trigger, judged by you against
-the current diff (run it when in doubt); report a skipped one as `not required: <reason from the
-diff>`.
+candidate (with a `Code map` command, `<code map> check` too: stale is a failure; don't review the
+generated map pages' content), once each (SKILL.md's retry after an invalid run excepted); output to
+a file outside the repo, only the exit code and failure summary into context. A command the plan
+marks `(when: <trigger>)` is required only if the phase's diff matches the trigger, judged by you
+against the current diff (run it when in doubt); report a skipped one as `not required: <reason from
+the diff>`.
 Known-flaky list = the project's documented list **at the base SHA** (entries the diff adds or
 changes don't count). A failed command is acceptable only if every failing test in its summary is
 listed: record those as known flaky, don't chase them. One unlisted failure, or a listed test

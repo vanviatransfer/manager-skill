@@ -1,6 +1,6 @@
 # manager-skill
 
-A Claude Code plugin with four skills:
+A Claude Code plugin with five skills:
 
 - **`living-plan`** — writes a project's living plan: goal, scope, binding decisions, phases sized
   for one PR each (with acceptance criteria and validation), and open owner decisions.
@@ -9,6 +9,12 @@ A Claude Code plugin with four skills:
   pages of durable facts about the code (index, glossary, decision records, topic pages), each with
   its sources and a `Verified` line, landed through a reviewed PR. The plan's phases point to the
   pages they need, and the manager's implementers keep those pages current in their phase PRs.
+- **`code-map`** — a generated map of the code (`docs/vault/map.md`: directories, entry points, most
+  imported files, top-level symbols per file; per-directory pages in large repos) and a `query`
+  for where a name is defined and who imports a file, from the plugin's own standard-library
+  Python script (3.8+; nothing to install, nothing sent anywhere). When a project has the map, the
+  manager's implementers regenerate it in every phase PR and reviewers run its `check`. Without
+  Python it is skipped.
 - **`manager-retro`** — improves the manager from evidence: reads the compact run records the
   manager keeps on your machine and proposes up to three small changes, landed through an
   independently reviewed PR you choose.
@@ -160,3 +166,7 @@ change them itself):
 
 The review and planning discipline draws on ideas from
 [obra/superpowers](https://github.com/obra/superpowers) (MIT).
+
+## Development
+
+Tests for the code-map script: `python3 -m unittest discover -s plugins/manager-plugin/skills/code-map/scripts`.

@@ -33,6 +33,9 @@ Talk to the owner in their language; write pages in the language the project's d
   commit checked>` here, and `Verified: <date>, phase <id>, base <short SHA>` when an implementer
   updates it in a phase PR. A fact the code doesn't confirm is marked `(unverified)` or left out. A
   changed fact is corrected in place, never appended as a new version.
+- `map.md` (and `map/<dir>.md` in large repos): the generated code map, built with the `code-map`
+  skill when Python 3.8+ is available; listed in the index, never edited by hand, no `Verified`
+  line (its `check` is its review).
 - Links are `[[page]]`. No page repeats another's content; it links to it.
 
 ## Modes
@@ -61,7 +64,8 @@ Talk to the owner in their language; write pages in the language the project's d
    - every fact matches the code at the candidate;
    - every source exists;
    - no plan content, status, secrets or personal data;
-   - the index lists every page, and every page ends with a `Verified` line;
+   - the index lists every page, and every hand-written page ends with a `Verified` line;
+   - with a code map: `<code map> check` passes;
    - validation: the project's docs checks if it has any, else `not required: docs-only diff`.
 
    Accept a verdict only for the candidate SHA. Fix and review again with a new reviewer until it

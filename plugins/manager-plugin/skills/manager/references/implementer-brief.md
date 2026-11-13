@@ -17,6 +17,7 @@ Plan records: <exact entries: open decisions, Decided moves, new binding decisio
   corrections, model-strategy record | none>
 Plan change: <exact plan text, or a specification file path; plan-only PR only>
 Fix round: <PR #<n> at <sha>; blockers verbatim; replacement implementer only>
+Code map: <python command and quoted codemap.py path | none>
 ```
 
 ## Instructions
@@ -53,7 +54,9 @@ or MCP tools beyond the GitHub backend's.
    this PR (`grep` the vault for the names and paths you rename or remove); correct the fact in
    place, keep its source (a path), add no status or plan content, and set the page's last line to
    `Verified: <date>, phase <id>, base <short Base SHA>`.
-5. **Validate.** Develop with focused tests; on your final commit run every required validation
+5. **Validate.** With a `Code map` command: run `<code map> build` before the final validation
+   and commit what it changes (generated pages: never edit them by hand). Develop with focused
+   tests; on your final commit run every required validation
    command once each (a command the plan marks `(when: <trigger>)` is required only if this
    phase's current diff matches the trigger, re-judged after every fix round or integration; list
    what you skipped and why under Validation), output to a file (`cmd >
@@ -113,6 +116,7 @@ the Base SHA). Use that method, else the dispatch's, after `git fetch origin <de
 - merge: `git merge <default-head>`; `git push origin <branch>`;
 - rebase: `git rebase <default-head>`; `git push --force-with-lease=<branch>:<current-candidate>
   origin <branch>`;
+- a conflict only in generated code-map pages → take either side, run `<code map> build`, commit;
 - none allowed, not actually allowed, or a conflict you can't resolve within scope → don't
   improvise; report `BLOCKED` with the reason.
 
