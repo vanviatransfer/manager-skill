@@ -53,6 +53,10 @@ The implementer and reviewer are the plugin's own tool-restricted subagents (`ag
 allowlists narrow the tools available to them instead of inheriting every tool, plugin and MCP
 server (the reviewer gets no Edit/Write or GitHub MCP write tools; staying read-only still comes
 from its brief). Whether this lowers startup tokens is to be measured, not assumed.
+A third one, `manager-plugin:researcher` (read-only tools, web search and fetch, Write for its
+report), is for read-only research an orchestrating session delegates (evaluating a repository or
+a library, reading docs): use it instead of `general-purpose` so the research agent doesn't
+inherit every skill and MCP tool. The manager loop itself doesn't dispatch it.
 Everything runs in one turn with subagents, so it works the same in the Claude desktop app, the
 terminal and cloud sessions.
 
