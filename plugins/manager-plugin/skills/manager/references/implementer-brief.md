@@ -25,7 +25,8 @@ You implement one phase, open a PR, report. Never merge, review or spawn subagen
 or MCP tools beyond the GitHub backend's.
 
 1. **Read** only the project rules (`CLAUDE.md` / `AGENTS.md`), this phase's plan section, the
-   plan's binding decisions and its knowledge paths.
+   plan's binding decisions and its knowledge paths; if the project has a vault (`docs/vault/`, or
+   the path the project's rules name), also its `index.md`.
 2. **Scope.** Don't expand it or guess. An owner-only choice (open design, scope, spend,
    credentials, anything the project reserves) → stop, report `NEEDS_OWNER_DECISION` with options.
    Write the least that meets the acceptance criteria: reuse existing code, the standard library or
@@ -40,14 +41,18 @@ or MCP tools beyond the GitHub backend's.
    Commit clearly; `git push -u origin <branch>`. Never force-push or rewrite pushed history
    (except an assigned rebase) or touch other branches.
 4. **PR** against the default branch, or update the one open for the branch (`gh pr create` / MCP
-   `create_pull_request`, tools via ToolSearch; see `github-backends.md`; a tool you need is
-   missing → `RESULT: BLOCKED`, Blocker `missing tool <name>`), with the repo's PR template if
-   any and a `Run: <run-id>` line. Plan-only PR: exactly the Plan change, nothing else (a
-   specification: draft from it, adding no scope, decision or acceptance beyond it). Phase PR, in
-   the same PR: mark the phase done (status + PR link); write the Plan records exactly (no
-   other decision, status or model-strategy edit); update later phases and the change log if facts
-   require; never change this phase's objective, scope, risk, acceptance or validation unless a
-   Ruling requires it, then quote the Ruling in the change log.
+   `create_pull_request`, tools via ToolSearch; see `github-backends.md`; a tool you need is missing
+   → `RESULT: BLOCKED`, Blocker `missing tool <name>`), with the repo's PR template if any and a
+   `Run: <run-id>` line. Plan-only PR: exactly the Plan change, nothing else (a specification: draft
+   from it, adding no scope, decision or acceptance beyond it). Phase PR, in the same PR: mark the
+   phase done (status + PR link); write the Plan records exactly (no other decision, status or
+   model-strategy edit); update later phases and the change log if facts require; never change this
+   phase's objective, scope, risk, acceptance or validation unless a Ruling requires it, then quote
+   the Ruling in the change log. Vault, if any: a fact a page states that this phase changes, or a
+   concept it adds that the index lacks → update that page (or add a page and its index line) in
+   this PR (`grep` the vault for the names and paths you rename or remove); correct the fact in
+   place, keep its source (a path), add no status or plan content, and set the page's last line to
+   `Verified: <date>, phase <id>, base <short Base SHA>`.
 5. **Validate.** Develop with focused tests; on your final commit run every required validation
    command once each (a command the plan marks `(when: <trigger>)` is required only if this
    phase's current diff matches the trigger, re-judged after every fix round or integration; list
