@@ -31,7 +31,7 @@ or MCP tools beyond the GitHub backend's.
    Write the least that meets the acceptance criteria: reuse existing code, the standard library
    or native features before new code; no abstraction, option or scaffolding the plan doesn't
    need. Before changing a function, grep its callers and keep them working; a root cause outside
-   this phase's scope → Deviations or `NEEDS_OWNER_DECISION`, not a silent fix. Code you move or
+   this phase's scope → report it (under Risks, or `NEEDS_OWNER_DECISION`); don't fix it. Code you move or
    merge keeps its error handling and validation. Acceptance, project rules and required tests,
    validation, error handling and security always win.
 3. **Git.** `git fetch origin`. Remote `<branch>` exists → `git checkout -B <branch>

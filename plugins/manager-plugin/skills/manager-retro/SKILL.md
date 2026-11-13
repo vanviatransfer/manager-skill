@@ -1,6 +1,6 @@
 ---
 name: manager-retro
-description: Improve the manager skill from recorded runs (~/.claude/manager-runs/): measure, propose at most three changes, land the owner's choice through a reviewed PR.
+description: "Improve the manager skill from recorded runs in ~/.claude/manager-runs/: measure, propose at most three changes, land the owner's choice through a reviewed PR."
 disable-model-invocation: true
 ---
 

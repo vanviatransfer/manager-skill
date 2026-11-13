@@ -19,11 +19,11 @@ projects, outside every repository, and holds no code or file contents; delete t
 it. It may not persist in cloud sessions. Two things learn from it:
 
 - **Within a project:** when reviewers find the same class of defect in two phases, the manager
-  proposes a rule that would prevent it, as an owner decision (asked with the run's other decisions);
-  once you decide, it becomes a binding decision in the plan that later phases and runs follow.
+  proposes what would prevent it (an automated check for a mechanical pattern, else a written rule),
+  as an owner decision (asked with the run's other decisions); once you decide, it becomes a binding decision in the plan that later phases and runs follow.
 - **Across projects:** run `manager-retro` in a session on this repository (on the same machine):
-  type `/manager-plugin:manager-retro` (it starts only that way, never from a phrase, so its
-  description costs no context in other sessions). It measures the records, proposes changes, and
+  type `/manager-plugin:manager-retro` (it starts only that way, never from a phrase, so it isn't
+  listed to the model in other sessions). It measures the records, proposes changes, and
   opens a reviewed PR only for the ones you pick. It never weakens the review, owner-authority or
   Git-safety rules, and never puts project details into this public repository.
 

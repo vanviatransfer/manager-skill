@@ -55,7 +55,7 @@ questions at all.
   land together, they are one phase. Put risky unknowns early (a spike or proof phase is fine).
 - **Wide refactor** (a rename or retype that breaks call sites everywhere) whose single diff would
   be too large to review or can't land green: expand (add the new form beside the old) → migrate
-  in batches, each a phase sized for one reviewer pass → contract (remove the old form), which
+  in batches, each a phase sized for one reviewer pass and depending on expand → contract (remove the old form), which
   depends on every migrate phase and has an observable acceptance (no caller of the old form left).
 - **Every phase gets** an objective, scope (and out-of-scope when it matters), `Depends on`
   (phase ids, or `none`; the manager schedules by it and keeps running independent phases while
