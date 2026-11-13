@@ -20,7 +20,8 @@ it. It may not persist in cloud sessions. Two things learn from it:
 
 - **Within a project:** when reviewers find the same class of defect in two phases, the manager
   proposes what would prevent it (an automated check for a mechanical pattern, else a written rule),
-  as an owner decision (asked with the run's other decisions); once you decide, it becomes a binding decision in the plan that later phases and runs follow.
+  as an owner decision (asked with the run's other decisions); once you decide, it becomes a binding
+  decision in the plan that later phases and runs follow.
 - **Across projects:** run `manager-retro` in a session on this repository (on the same machine):
   type `/manager-plugin:manager-retro` (it starts only that way, never from a phrase, so it isn't
   listed to the model in other sessions). It measures the records, proposes changes, and

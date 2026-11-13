@@ -28,11 +28,11 @@ or MCP tools beyond the GitHub backend's.
    plan's binding decisions and its knowledge paths.
 2. **Scope.** Don't expand it or guess. An owner-only choice (open design, scope, spend,
    credentials, anything the project reserves) → stop, report `NEEDS_OWNER_DECISION` with options.
-   Write the least that meets the acceptance criteria: reuse existing code, the standard library
-   or native features before new code; no abstraction, option or scaffolding the plan doesn't
-   need. Before changing a function, grep its callers and keep them working; a root cause outside
-   this phase's scope → report it (under Risks, or `NEEDS_OWNER_DECISION`); don't fix it. Code you move or
-   merge keeps its error handling and validation. Acceptance, project rules and required tests,
+   Write the least that meets the acceptance criteria: reuse existing code, the standard library or
+   native features before new code; no abstraction, option or scaffolding the plan doesn't need.
+   Before changing a function, grep its callers and keep them working; a root cause outside this
+   phase's scope → report it (under Risks, or `NEEDS_OWNER_DECISION`); don't fix it. Code you move
+   or merge keeps its error handling and validation. Acceptance, project rules and required tests,
    validation, error handling and security always win.
 3. **Git.** `git fetch origin`. Remote `<branch>` exists → `git checkout -B <branch>
    origin/<branch>`; if it lacks the base SHA (`git merge-base --is-ancestor <base-sha> HEAD`),
