@@ -268,8 +268,8 @@ ask the same implementer once for exactly those fields. Then `git fetch origin <
 - the **candidate SHA** is GitHub's `headRefOid`, never the report's; if they differ, find out why
   (unpushed or unexpected commits) before review;
 - `git merge-base --is-ancestor <base-sha> <candidate>` holds, and the base ref is the default;
-- `git diff --name-only <base-sha>...<candidate>` stays inside the phase scope (vault pages the
-  phase's changes affect count as in scope).
+- `git diff --name-only <base-sha>...<candidate>` stays inside the phase scope (files under the
+  project's vault path count as in scope).
 
 After an integration (4a), the base SHA becomes the default head the implementer integrated, once
 `git merge-base --is-ancestor` confirms it is in the candidate.
@@ -436,12 +436,12 @@ scope covers the check's setup (config, dependency, script) and those failures, 
 the owner picks one (added to the plan through a plan-only PR). A prose rule (exact text) is for
 judgement calls, or option B. You only propose it. Once decided, it lands as a new binding decision
 (`B<n>`) through the next PR's `Plan records`, or a plan-only PR if no PR would land before the
-adding phase starts: the rule text, or for a check "phase <id> adds <command> and fixes its current
-failures; it is required validation for that phase and for every phase whose base contains its
-merge". Dispatch the adding phase only from a base that holds that `B<n>`; it measures the failures
-again there, and new ones outside its scope are an owner decision, not a silent widening.
-Implementers and reviewers read all of the plan's binding decisions, so later phases apply it.
-Moving it into the project rules file is the owner's call.
+adding phase starts: the rule text, or for a check "phase <id> adds <command> and fixes the failures
+it finds at its base inside its scope (any outside it → NEEDS_OWNER_DECISION); it is required
+validation for that phase and for every phase whose base contains its merge". Dispatch the adding
+phase only from a base that holds that `B<n>`. Implementers and reviewers read all of the plan's
+binding decisions, so later phases apply it. Moving it into the project rules file is the owner's
+call.
 
 ## Owner decisions — block dependents only
 

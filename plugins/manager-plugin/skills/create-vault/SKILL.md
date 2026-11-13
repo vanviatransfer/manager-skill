@@ -7,7 +7,7 @@ description: Create, adopt or refresh a project's knowledge vault in docs/vault/
 
 The vault is the project's durable knowledge: what the code is and why, in short linked pages, so
 agents read a page instead of exploring the code again. It lives in the project repository at
-`docs/vault/` (or the project's existing vault path), tracked by git, and changes only through
+`docs/vault/` (or the path the project's rules name), tracked by git, and changes only through
 reviewed PRs. Never in the plugin repository.
 
 The vault holds **knowledge**, not intent or status:
@@ -29,10 +29,10 @@ Talk to the owner in their language; write pages in the language the project's d
   by the plan's binding decisions.
 - Topic pages (architecture, a module, data model, operations, integrations): created only when
   there is something durable to say. A page states facts with a source (a path, or `path:symbol`)
-  and ends with `Verified: <date>, <short SHA of the commit checked>` (in a phase PR, whose SHA
-  isn't final: `Verified: <date>, phase <id>`). A fact the code doesn't confirm is marked
-  `(unverified)` or left out. Write history, not the present tense of a moment: a claim carries
-  its date and SHA, and a changed fact is corrected, not appended.
+  and ends with one `Verified:` line that dates its facts: `Verified: <date>, <short SHA of the
+  commit checked>` here, and `Verified: <date>, phase <id>, base <short SHA>` when an implementer
+  updates it in a phase PR. A fact the code doesn't confirm is marked `(unverified)` or left out. A
+  changed fact is corrected in place, never appended as a new version.
 - Links are `[[page]]`. No page repeats another's content; it links to it.
 
 ## Modes
@@ -50,8 +50,9 @@ Talk to the owner in their language; write pages in the language the project's d
 
 ## Landing
 
-1. Fetch, branch from the default branch (`vault/<mode>-<date>`, or the session's designated
-   branch), commit and open a PR. Follow the project's rules first.
+1. Check the checkout first: a dirty tree or local commits on no remote ref → never discard them;
+   stop and report. Then fetch, branch from the default branch (`vault/<mode>-<date>`, or the
+   session's designated branch), commit and open a PR. Follow the project's rules first.
 2. Independent review: dispatch a new `manager-plugin:reviewer` (or `general-purpose` if that type
    isn't available). Tell it this is a manual review of the vault with no brief file; it stays
    read-only, spawns no subagents and answers in the verdict format of the manager's reviewer brief.
@@ -59,7 +60,8 @@ Talk to the owner in their language; write pages in the language the project's d
    - every fact matches the code at the candidate;
    - every source exists;
    - no plan content, status, secrets or personal data;
-   - the index lists every page.
+   - the index lists every page, and every page ends with a `Verified` line;
+   - validation: the project's docs checks if it has any, else `not required: docs-only diff`.
 
    Accept a verdict only for the candidate SHA. Fix and review again with a new reviewer until it
    is PASS or PASS WITH NOTES without blockers. After three rounds, stop and report.
