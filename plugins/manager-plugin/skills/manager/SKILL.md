@@ -395,7 +395,8 @@ dependents, and have a fresh reviewer validate the landed tree (base = the merge
 parent, candidate = the merge commit; judge the combined tree, not the plan records of the commits
 that raced in); never fix it silently. A PASS there unblocks the dependents; anything else is an
 owner decision (a revert or fix is the owner's call). Non-blocking notes go to the next relevant
-phase's brief or the plan's notes; never a fix round of their own.
+phase's brief (lean notes only to a phase whose scope covers that file) or the plan's notes; never
+a fix round of their own.
 
 A landing refused or blocked (branch protection, unexplained ref drift, a project rule) stops that
 landing only: report it, mark the phase and its dependents blocked, continue independent work.
@@ -426,11 +427,17 @@ owner one line (phase, PR, merged SHA). With a designated branch, reconcile it f
 record**). Then schedule the next ready phase.
 
 **Recurring blocker class.** When reviewers report the same class of defect (e.g. lock ordering,
-personal data exposed to the client) in two phases of a run, propose a rule that would prevent it,
-as an ordinary owner decision (`D<n>`, asked in the batch, blocking no phase) with the exact rule
-text. You only propose it. Once decided, it lands as a new binding decision (`B<n>`) through the next
-PR's `Plan records`; implementers and reviewers read all of the plan's binding decisions, so later
-phases apply it. Moving it into the project rules file is the owner's call.
+personal data exposed to the client) in two phases of a run, propose what would prevent it, as an
+ordinary owner decision (`D<n>`, asked in the batch, blocking no phase). If the class is mechanical
+(a fixed pattern a linter, type check or test can catch), option A is that check: the command, where
+it fails today (its cost), and which phase adds it and fixes those failures: a later phase whose
+scope covers them, or a new phase if the owner picks one (added to the plan through a plan-only PR).
+A prose rule (exact text) is for judgement calls, or option B. You only propose it. Once decided, it
+lands as a new binding decision (`B<n>`) through the next PR's `Plan records`: the rule text, or for
+a check "phase <id> adds <command> and fixes its current failures; it is required validation for
+that phase and for every phase whose base contains its merge". Dispatch the adding phase only from a
+base that holds that `B<n>`; implementers and reviewers read all of the plan's binding decisions, so
+later phases apply it. Moving it into the project rules file is the owner's call.
 
 ## Owner decisions — block dependents only
 

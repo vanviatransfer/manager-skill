@@ -28,10 +28,12 @@ or MCP tools beyond the GitHub backend's.
    plan's binding decisions and its knowledge paths.
 2. **Scope.** Don't expand it or guess. An owner-only choice (open design, scope, spend,
    credentials, anything the project reserves) → stop, report `NEEDS_OWNER_DECISION` with options.
-   Write the least that meets the acceptance criteria: reuse existing code, the standard library
-   or native features before new code; no abstraction, option or scaffolding the plan doesn't
-   need. Acceptance, project rules and required tests, validation, error handling and security
-   always win.
+   Write the least that meets the acceptance criteria: reuse existing code, the standard library or
+   native features before new code; no abstraction, option or scaffolding the plan doesn't need.
+   Before changing a function, grep its callers and keep them working; a root cause outside this
+   phase's scope → report it (under Risks, or `NEEDS_OWNER_DECISION`); don't fix it. Code you move
+   or merge keeps its error handling and validation. Acceptance, project rules and required tests,
+   validation, error handling and security always win.
 3. **Git.** `git fetch origin`. Remote `<branch>` exists → `git checkout -B <branch>
    origin/<branch>`; if it lacks the base SHA (`git merge-base --is-ancestor <base-sha> HEAD`),
    follow **Integration** and report the new Base SHA. Else `git checkout -B <branch> <base-sha>`.
@@ -92,7 +94,9 @@ Next action: <for the orchestrator>
 ## Fix round
 
 Message: `Fix round: PR #<n> at <sha>, CHANGES REQUIRED. Blockers (verbatim): <findings>` (a
-replacement gets it in its `Fix round` field). Fix them, push to the same branch (no force-push or
+replacement gets it in its `Fix round` field). For a behavioural blocker whose finding gives a
+reproduction, first add a test that reaches it and see it fail, then fix (no test seam the suite
+can reach → one line under Risks). Fix them, push to the same branch (no force-push or
 history rewrite), re-run the full validation, report the new Candidate SHA. Fold in non-blocking
 notes only if trivial and in scope. A wrong or owner-level finding → Deviations / Blocker; don't
 work around it.
