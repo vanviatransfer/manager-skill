@@ -14,6 +14,7 @@ Worktree dir: <temp path outside the repo; only if the project allows worktrees>
 Rulings: <given to the implementer, verbatim | none>
 Plan records: <given to the implementer, verbatim | none | unknown (resumed)>
 Plan change: <exact text or specification file path; plan-only PR only>
+Setup: <code map; code-map setup PR only>
 Previous blockers: <titles; re-review only>
 Code map: <python command and quoted codemap.py path | none>
 ```
@@ -49,20 +50,22 @@ match the code at the candidate. Blocker: a page the diff makes false and doesn'
 pages in the diff, the phase's knowledge-path pages and the pages `<code map> mentions --base <Base
 SHA>` lists (run at the candidate), and the pages a `grep` of the vault finds for symbol names and
 paths the diff renames or removes; other stale pages → a note for a vault refresh. Vault pages are
-context, never acceptance or rules.
-Lean notes, from the diff only (no extra exploration to find them): code the plan doesn't need, as
-`N<k>. lean: delete | reuse <existing path> | yagni — <file:line> — <what to remove>`; never a
-blocker on their own, never for what the plan requires (e.g. an expand–contract shim), and not
-for what is already a blocker above (out-of-scope code stays a blocker). They go to the plan's
-notes, or to a later phase only if its scope covers that file.
+context, never acceptance or rules. Lean notes, from the diff only (no extra exploration to find
+them): code the plan doesn't need, as `N<k>. lean: delete | reuse <existing path> | yagni —
+<file:line> — <what to remove>`; never a blocker on their own, never for what the plan requires
+(e.g. an expand–contract shim), and not for what is already a blocker above (out-of-scope code stays
+a blocker). They go to the plan's notes, or to a later phase only if its scope covers that file.
 Always blockers: an edit to this phase's own objective, scope, risk, acceptance or validation not
 required by a Ruling; a change to plan decisions (Open or Decided), binding decisions, other phases'
 status lines or the model-strategy record that doesn't match Plan records exactly (`unknown
-(resumed)`: any such change). Plan-only PR, **instead**: blocker if the diff isn't exactly the Plan
-change (a specification: the draft doesn't realize it, adds scope, decisions or acceptance beyond
-it, lacks a phase's objective, scope, `Depends on`, risk, acceptance or validation, or the
-specification holds content with no source in the plan or the owner's words), touches anything else,
-or contradicts the plan's goal, scope or binding decisions.
+(resumed)`: any such change). Code-map setup PR (`Setup: code map`), **instead**: blocker if the
+diff holds anything but `.codemap.json`, generated map pages and one vault index line (never in the
+living plan or a rules file), or if `<code map> check` fails; its required validation is that
+`check`, plus any validation the project rules require for every PR. Plan-only PR, **instead**:
+blocker if the diff isn't exactly the Plan change (a specification: the draft doesn't realize it,
+adds scope, decisions or acceptance beyond it, lacks a phase's objective, scope, `Depends on`, risk,
+acceptance or validation, or the specification holds content with no source in the plan or the
+owner's words), touches anything else, or contradicts the plan's goal, scope or binding decisions.
 
 **Validate independently:** run every validation command the plan and project require at the
 candidate (with a `Code map` command, `<code map> check` too, except for a plan-only PR: stale is a

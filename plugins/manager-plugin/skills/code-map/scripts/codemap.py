@@ -90,6 +90,14 @@ TEST_FILE = re.compile(r"(^test_|_test\.|\.test\.|\.spec\.|Tests?\.)")
 ENTRY_NAMES = {"main", "index", "app", "server", "cli", "__main__", "manage", "program"}
 
 
+def is_link(path):
+    """A symlink, or on Windows a junction (Python 3.12+ can tell)."""
+    if os.path.islink(path):
+        return True
+    isjunction = getattr(os.path, "isjunction", None)
+    return bool(isjunction and isjunction(path))
+
+
 class GitError(Exception):
     pass
 
@@ -140,7 +148,7 @@ def skipped(path, out_rel):
 def read_text(root, path):
     full = os.path.join(root, *path.split("/"))
     try:
-        if os.path.islink(full) or os.path.getsize(full) > 2 * MAX_BYTES:
+        if link_in_path(root, path) or os.path.getsize(full) > 2 * MAX_BYTES:
             return None
         with open(full, "rb") as fh:
             data = fh.read().replace(b"\r\n", b"\n")
@@ -488,7 +496,7 @@ def generated_pages(root, out_rel):
     found = []
     sub = posixpath.splitext(out_rel)[0]
     folder = os.path.join(root, *sub.split("/"))
-    if os.path.isdir(folder):
+    if os.path.isdir(folder) and not is_link(folder):
         for name in sorted(os.listdir(folder)):
             rel = sub + "/" + name
             if name.endswith(".md") and is_generated(read_text(root, rel)):
@@ -639,7 +647,7 @@ def mentions_of(mentions, path):
 
 def wikilinked(root, f):
     text = read_text(root, f) or ""
-    return any(WIKILINK.search(line) for _, line in prose_lines(text))
+    return any(WIKILINK.search(CODE_SPAN.sub(" ", line)) for _, line in prose_lines(text))
 
 
 def detect_vault(root, files):
@@ -696,6 +704,8 @@ def safe_rel(value, what):
 def foreign_in_map_dir(root, out):
     """Files in the map's page folder that this tool didn't write."""
     folder = os.path.join(root, *posixpath.splitext(out)[0].split("/"))
+    if is_link(folder):
+        return [posixpath.splitext(out)[0] + " (a symlink)"]
     if not os.path.isdir(folder):
         return []
     sub = posixpath.splitext(out)[0]
@@ -708,16 +718,34 @@ def is_generated(text):
     return len(lines) > 2 and lines[2].startswith(MARKER + " (format")
 
 
+def link_in_path(root, rel):
+    """True if the path, a folder on the way to it inside the repo, or (for a map) its page
+    folder is a symlink."""
+    parts = rel.split("/")
+    if any(is_link(os.path.join(root, *parts[:i])) for i in range(1, len(parts) + 1)):
+        return True
+    return rel.lower().endswith(".md") and is_link(
+        os.path.join(root, *posixpath.splitext(rel)[0].split("/")))
+
+
 def check_map_path(root, out):
     if not out.lower().endswith(".md"):
         raise LayoutError("map must be a .md file: %r" % out)
+    full = os.path.join(root, *out.split("/"))
+    if link_in_path(root, out):
+        raise LayoutError("map %r is, or lies under, a symlink" % out)
+    foreign = foreign_in_map_dir(root, out)
+    if foreign:
+        raise LayoutError("the map's page folder holds files this tool didn't write: %s"
+                          % ", ".join(foreign))
     existing = read_text(root, out)
-    if os.path.isdir(os.path.join(root, *out.split("/"))) or foreign_in_map_dir(root, out) or (
-            existing is not None and not is_generated(existing)):
+    if os.path.isdir(full) or (os.path.lexists(full) and not is_generated(existing)):
         raise LayoutError("map %r is an existing file this tool didn't write" % out)
 
 
 def read_config(root):
+    if is_link(os.path.join(root, CONFIG)):
+        raise LayoutError("%s is a symlink; replace it with a plain file" % CONFIG)
     text = read_text(root, CONFIG)
     if not text:
         return None
@@ -732,13 +760,19 @@ def read_config(root):
 
 def default_map(root, vault):
     if not vault:
-        return NO_VAULT_MAP
-    base = "" if vault == "." else vault + "/"
-    for name in ("map.md", "code-map.md", "code-map-generated.md"):
-        existing = read_text(root, base + name)
-        if (existing is None or is_generated(existing)) and not foreign_in_map_dir(root, base + name):
-            return base + name
-    return base + "code-map-generated.md"
+        names = (NO_VAULT_MAP, "docs/code-map-generated.md")
+    else:
+        base = "" if vault == "." else vault + "/"
+        names = tuple(base + n for n in ("map.md", "code-map.md", "code-map-generated.md"))
+    for rel in names:
+        existing = read_text(root, rel)
+        free = existing is None and not os.path.lexists(os.path.join(root, *rel.split("/")))
+        if (free or is_generated(existing)) and not foreign_in_map_dir(root, rel) \
+                and not link_in_path(root, rel):
+            return rel
+    raise LayoutError("no free map location: %s each hold a file this tool didn't write, a "
+                      "symlink, or hand-written pages; set \"map\" in %s"
+                      % (", ".join(names), CONFIG))
 
 
 def resolve_layout(root, files, vault_arg=None, out_arg=None, use_config=True):
@@ -782,8 +816,14 @@ def main(argv=None):
         ap.error("no such directory: %s" % args.root)
     out_arg = None
     if args.out:
-        out_arg = (os.path.relpath(os.path.abspath(args.out), root).replace(os.sep, "/")
-                   if os.path.isabs(args.out) else args.out.replace("\\", "/"))
+        try:
+            out_arg = posixpath.normpath(
+                os.path.relpath(os.path.abspath(args.out), root).replace(os.sep, "/")
+                if os.path.isabs(args.out) else args.out.replace("\\", "/"))
+        except ValueError:  # Windows: a path on another drive has no relative form
+            print("error: --out must be on the repository's drive: %s" % args.out,
+                  file=sys.stderr)
+            return 2
     try:
         tracked = git_files(root)
     except GitError as exc:
@@ -794,6 +834,11 @@ def main(argv=None):
         old = None if not redetect else resolve_layout(root, tracked)
         vault_dir, out_rel, source = resolve_layout(root, tracked, args.vault, out_arg,
                                                     use_config=not redetect)
+        if out_arg is not None and args.action in ("build", "check"):
+            if not out_rel.lower().endswith(".md"):
+                raise LayoutError("--out must be a .md file: %r" % out_rel)
+            if not out_rel.startswith("../"):
+                check_map_path(root, out_rel)
     except LayoutError as exc:
         print("error: %s" % exc, file=sys.stderr)
         return 2
@@ -877,8 +922,9 @@ def main(argv=None):
         print("current: %s" % out_rel)
         return 0
     foreign = [rel for rel in sorted(pages)
-               if os.path.exists(os.path.join(root, *rel.split("/")))
-               and not is_generated(read_text(root, rel))]
+               if (not rel.startswith("../") and link_in_path(root, rel))
+               or (os.path.lexists(os.path.join(root, *rel.split("/")))
+                   and not is_generated(read_text(root, rel)))]
     if foreign:
         print("error: refusing to overwrite files this tool didn't write: %s" % ", ".join(foreign),
               file=sys.stderr)
@@ -889,6 +935,19 @@ def main(argv=None):
         for rel in [old[1]] + generated_pages(root, old[1]):
             if is_generated(read_text(root, rel)):
                 os.remove(os.path.join(root, *rel.split("/")))
+        rel_dir = posixpath.splitext(old[1])[0]
+        while rel_dir and rel_dir not in (".", ".."):  # the page folder, then empty parents
+            d = os.path.join(root, *rel_dir.split("/"))
+            if os.path.lexists(d):
+                if not os.path.isdir(d) or is_link(d) or os.listdir(d):
+                    break
+                try:
+                    os.rmdir(d)
+                except OSError as exc:
+                    print("warning: could not remove empty folder %s: %s" % (rel_dir, exc),
+                          file=sys.stderr)
+                    break
+            rel_dir = posixpath.dirname(rel_dir)
     inside = not out_rel.startswith("../")
     if inside and (redetect or (source != CONFIG and not args.out and not read_config(root))):
         with open(os.path.join(root, CONFIG), "w", encoding="utf-8", newline="\n") as fh:

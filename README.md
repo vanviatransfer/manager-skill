@@ -18,9 +18,10 @@ A Claude Code plugin with five skills:
   folder, a known folder name, or the folder with most `[[wikilinks]]`), including vaults made
   without this plugin, and records the layout in `.codemap.json`. It is the plugin's own
   standard-library Python script (3.8+; no packages, nothing sent anywhere; files that may hold
-  secrets are never read). When a project has `.codemap.json`, the manager's implementers regenerate
-  the map in every phase PR and reviewers run its `check`. Without Python it offers the install
-  command and skips the map only if you decline.
+  secrets are never read). The manager checks at the start of every run whether the map is set up
+  (the committed `.codemap.json` is the guard) and offers to set it up if not; once it is,
+  implementers regenerate the map in every phase PR and reviewers run its `check`. Without Python it
+  offers the install command and skips the map only if you decline.
 
 ## Learning from runs
 
