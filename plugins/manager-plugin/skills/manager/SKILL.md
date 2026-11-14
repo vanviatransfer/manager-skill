@@ -124,8 +124,9 @@ Gerekçe: <tek cümle: doğruluk riski, karmaşıklık, tahmini token tüketimi 
 Model tercihiniz hangisi?
 ```
 
-The bracketed lines only when step 0 found something (the session check, a code map not set up,
-a code map set up but no Python), with only the items it found. An install answer is carried out right after the gate.
+The bracketed lines only when step 0 found something (the session check, a code map not set up, a
+code map set up but no Python), with only the items it found. An install answer is carried out right
+after the gate.
 
 Guide for the recommendation: Sonnet for bounded code, docs, tests and ordinary reviews; Opus for
 architecture, numerical or financial correctness, concurrency, security-critical code or hard
