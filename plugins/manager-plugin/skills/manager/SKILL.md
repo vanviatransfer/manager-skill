@@ -59,15 +59,15 @@ use the same two. If a role's type isn't available or reports a missing tool (e.
 server has another name), use `manager-plugin:fallback` for every later dispatch of that role in
 this run, with `Role: implementer | reviewer` on the line after `Read and follow ...` (add it
 whenever you rebuild a dispatch): it inherits the session's tools minus skills, subagents and the
-known MCP servers no role uses, so it should cost much less context than `general-purpose` (not yet
-measured). Use `general-purpose` only if no plugin agent type is available at all, with
-`[general-purpose: <reason>]` in the prompt: the plugin's hook blocks any other general-purpose
-spawn. Never use `manager-plugin:worker` for a phase: it isn't bound to the briefs. Note either
-fallback once for the final report. If the fallback fails the same way, that is an environment
-failure (stop condition). The role instructions live in the brief files; you send only the
-**dispatch fields** listed at the top of each file, prefixed with one line: `Read and follow <the
-role's resolved brief path>.` (If a subagent can't read that path, paste the file's instruction
-block instead.)
+known MCP servers no role uses, so it costs much less context than `general-purpose` (measured once:
+about 14k start tokens against about 77k). Use `general-purpose` only if no plugin agent type is
+available at all, with `[general-purpose: <reason>]` in the prompt: the plugin's hook blocks any
+other general-purpose spawn. Never use `manager-plugin:worker` for a phase: it isn't bound to the
+briefs. Note either fallback once for the final report. If the fallback fails the same way, that is
+an environment failure (stop condition). The role instructions live in the brief files; you send
+only the **dispatch fields** listed at the top of each file, prefixed with one line: `Read and
+follow <the role's resolved brief path>.` (If a subagent can't read that path, paste the file's
+instruction block instead.)
 
 One implementer and one reviewer per round; no extra advisors or audits. Subagents must not spawn
 further subagents. Fill fields with paths, not pasted documents (an excerpt only when clearly
@@ -125,6 +125,7 @@ don't read source. Recommend Sonnet, Opus or a mixed strategy, ask in Turkish, a
 Bu çalışma için önerim: <Sonnet | Opus | Karma: standard → Sonnet, critical → Opus, işaretsiz → standard>.
 Gerekçe: <tek cümle: doğruluk riski, karmaşıklık, tahmini token tüketimi ve maliyet>.
 [Başlamadan önce önerim: `/autocompact 600k` çalıştırın; cc-plugin-you-should-know'ı kapatın]
+[Bu projede kullanılmayacak görünen sunucular: <adlar>. Kapatmak için (yalnız bu projede, sonraki oturumdan itibaren): `/mcp disable <ad>` · geri açmak: `/mcp enable <ad>`]
 [Kod haritası kurulu değil (kod ve vault için tek dizin sayfası); kurayım mı? [Python yok: önce <komut> ile kurulur.] Evet / Bu sefer hayır / Hayır, bu repoda bir daha sorma]
 [Kod haritası kurulu ama Python yok; kurayım mı? (`<komut>`) Hayır derseniz bu çalışmada harita kullanılmaz.]
 Model tercihiniz hangisi?
@@ -228,9 +229,16 @@ Derive state from durable sources only — never from memory of an earlier conte
    built-in command, and a `--autocompact` flag isn't visible to you); a different value set there
    is the owner's choice: leave it. (b) Whether `cc-plugin-you-should-know@builtin` is enabled
    (`true`) in an `enabledPlugins` of those files: its side checks are extra requests to the same
-   model and its notes wait for a human at the prompt, so recommend disabling it for the run. Put
-   these recommendations in the model-strategy question when you ask it, otherwise in the final
-   report.
+   model and its notes wait for a human at the prompt, so recommend disabling it for the run.
+   (c) The MCP servers and connectors this session shows (names from its deferred-tool list and
+   MCP server instruction blocks): each loads into the main session every turn, while the plugin's
+   subagents don't get them. From the plan's remaining phases and the project rules, name the ones
+   this project's work won't use and recommend `/mcp disable <name>` for each: it turns the server
+   off for this project only, from the next session on, and `/mcp enable <name>` turns it back on.
+   Never recommend the GitHub backend's server or any server the plan or project rules use; when
+   unsure, leave it out. You can't run these commands; the owner types them. Put these
+   recommendations in the model-strategy question when you ask it, otherwise in the final report,
+   once per run.
 4. **Reconcile decisions** (`references/owner-decisions.md`): a decision is decided only if the
    plan on the default branch has a valid Decided entry or the owner answered it in this
    conversation. Phases blocked only by decided decisions become ready; correct their status lines

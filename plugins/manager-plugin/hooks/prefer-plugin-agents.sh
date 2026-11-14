@@ -29,7 +29,7 @@ norm=$(printf '%s' "$type" | tr 'A-Z' 'a-z' | tr -d ' _-')
 
 cat >&2 <<'MSG'
 manager-plugin: general-purpose is blocked here because it loads every skill, MCP server and tool
-(about 77k start tokens measured once, against about 10k for a restricted plugin agent). Re-dispatch
+(about 77k start tokens measured once, against about 9k for manager-plugin:worker). Re-dispatch
 with the agent that fits the task:
 - manager-plugin:worker: a task that changes files (implement, fix, refactor, docs, tests, a PR);
 - manager-plugin:researcher: read-only research or a lookup that ends in a report;
