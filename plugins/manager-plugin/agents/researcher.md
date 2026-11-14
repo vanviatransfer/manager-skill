@@ -1,6 +1,6 @@
 ---
 name: researcher
-description: Read-only research for an orchestrating session (code, a repository clone the caller provides, docs or the web) that ends in one written report. Use instead of general-purpose when the task needs only reading and a report, to avoid inheriting every skill and MCP tool.
+description: Read-only research (code, a repository clone the caller provides, docs or the web) that ends in one written report. Use instead of general-purpose for any delegated research or lookup in any session, with or without a living plan, to avoid inheriting every skill and MCP tool.
 tools: Read, Grep, Glob, Bash, Write, WebSearch, WebFetch
 ---
 

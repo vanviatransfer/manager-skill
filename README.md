@@ -87,6 +87,15 @@ tools): it inherits the session's tools but drops skills, subagents and the MCP 
 uses (mail, calendar, drive, docs, browser and remote-session tools), so connectors you need in
 other sessions stay on. Only if no plugin agent type is available does the manager use
 `general-purpose`.
+
+Outside the manager loop too, with or without a living plan: ask a session to send an agent and it
+can pick the plugin's restricted agents instead of `general-purpose` — `manager-plugin:worker` for
+a task that changes files (implement, fix, refactor, docs, tests, a PR), `manager-plugin:researcher`
+for read-only research, `manager-plugin:reviewer` for an independent review. In one session a
+restricted plugin agent started with about 10k tokens and `general-purpose` with about 77k. Which
+agent a session picks is the model's choice, guided by the agents' descriptions; to make it a
+rule, add a line to your user-level `CLAUDE.md`, e.g. "When delegating, use manager-plugin:worker,
+researcher or reviewer instead of general-purpose".
 Everything runs in one turn with subagents, so it works the same in the Claude desktop app, the
 terminal and cloud sessions.
 
