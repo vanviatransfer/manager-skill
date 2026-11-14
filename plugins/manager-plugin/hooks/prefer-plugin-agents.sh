@@ -5,6 +5,7 @@
 # Escape hatch: a prompt containing "[general-purpose: <reason>]" is let through.
 # Plain POSIX sh + grep/sed, no other runtime; on any unexpected input it lets the call through.
 
+command -v grep >/dev/null 2>&1 && command -v sed >/dev/null 2>&1 || exit 0
 input=$(cat) || exit 0
 case "$input" in
   *'"tool_input"'*) ;;
@@ -14,14 +15,17 @@ case "$input" in
   *'[general-purpose:'*) exit 0 ;;
 esac
 
+# A missing or null subagent_type means general-purpose. The CLI matches names loosely (case,
+# spaces, "-" and "_"), so compare a normalised form.
 field=$(printf '%s' "$input" | grep -o '"subagent_type"[[:space:]]*:[[:space:]]*"[^"]*"' | head -n 1)
 if [ -n "$field" ]; then
   type=$(printf '%s' "$field" | sed 's/.*:[[:space:]]*"\([^"]*\)"$/\1/')
 else
   type=general-purpose
 fi
+norm=$(printf '%s' "$type" | tr 'A-Z' 'a-z' | tr -d ' _-')
 
-[ "$type" = "general-purpose" ] || exit 0
+[ "$norm" = "generalpurpose" ] || exit 0
 
 cat >&2 <<'MSG'
 manager-plugin: general-purpose is blocked here because it loads every skill, MCP server and tool

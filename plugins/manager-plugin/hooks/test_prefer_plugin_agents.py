@@ -43,6 +43,16 @@ class HookTest(unittest.TestCase):
         data = json.dumps(spawn(subagent_type="general-purpose", prompt="x"), indent=2)
         self.assertEqual(run(data)[0], 2)
 
+    def test_null_type_and_name_variants_are_blocked(self):
+        self.assertEqual(run(spawn(subagent_type=None, prompt="x"))[0], 2)
+        for t in ("General-Purpose", "general_purpose", "GeneralPurpose"):
+            self.assertEqual(run(spawn(subagent_type=t, prompt="x"))[0], 2, t)
+
+    def test_hook_entry_fails_open_on_windows_without_bash(self):
+        with open(os.path.join(os.path.dirname(HOOK), "hooks.json")) as fh:
+            entry = json.load(fh)["hooks"]["PreToolUse"][0]["hooks"][0]
+        self.assertEqual(entry.get("onFailure"), "continue")
+
     def test_unexpected_input_fails_open(self):
         self.assertEqual(run("not json")[0], 0)
         self.assertEqual(run("")[0], 0)
