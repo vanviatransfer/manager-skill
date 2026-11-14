@@ -176,8 +176,8 @@ At step 6 (after the fetch and the plan read), before any dispatch, whatever the
     before the next dispatch). It carries `Plan records: none`: pending records ride the next phase
     or plan-only PR. A remote `setup/code-map` branch with no open PR, or with only a PR closed
     unmerged, is abandoned: report it and use `setup/code-map-<run-id>`. Then every dispatch gets
-    the command. If the setup PR blocks or can't land: on `setup/code-map`, report why, use `Code
-    map: none` and go on with the phases; on a single designated branch it occupies the branch
+    the command. If the setup PR blocks or can't land: on a `setup/code-map*` branch, report why,
+    use `Code map: none` and go on with the phases; on a single designated branch it occupies the branch
     (**Sequential phases**): stop and report.
   - **Bu sefer hayır:** `Code map: none` this run; asked again next run.
   - **Bir daha sorma:** record it as a Decided owner decision (owner's words, date) through the
