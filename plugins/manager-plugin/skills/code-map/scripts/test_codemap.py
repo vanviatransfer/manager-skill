@@ -306,7 +306,6 @@ class CodemapTest(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(self.root, "docs", "code-map.md")))
         self.assertIn('"vault": "docs/vault"', self.read(".codemap.json"))
         self.assertFalse(os.path.exists(os.path.join(self.root, "docs", "code-map")))
-        self.assertFalse(os.path.exists(os.path.join(self.root, "docs", "code-map.md")))
         self.assertEqual(run("check", "--root", self.root)[0], 0)
 
     def test_python_parser_edge_cases(self):

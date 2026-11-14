@@ -52,7 +52,8 @@ repository is the caller's choice; there only existing files are protected.
 
 The first `build` writes `.codemap.json`. Commit it with the map so every later run, on any
 machine, agrees. `build --redetect` re-detects the layout, for example after a vault is created; it
-rewrites `.codemap.json` and removes the generated map from its old place. A `.codemap.json` that
+rewrites `.codemap.json` and removes the generated map from its old place, with any folders that
+are then empty. A `.codemap.json` that
 isn't an object, points outside the repository, or names as `map` anything but a `.md` file this
 tool writes, is an error. `.obsidian/` is often gitignored, so commit `.codemap.json`: detection on
 a fresh clone may differ.

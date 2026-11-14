@@ -165,8 +165,9 @@ At step 6 (after the fetch and the plan read), before any dispatch, whatever the
   in every dispatch. No Python: offer the install as the code-map question (its own bracket line
   in the gate, or its own question when the gate isn't asked); declined → `Code map: none` this
   run, and say in the final report that the map stays stale until a run with Python rebuilds it.
-- **Not a plain file** (`.codemap.json` committed as a symlink): don't ask; use `Code map: none`
-  and report it, so the owner can replace it with a plain file.
+- **Not a plain file** (`git ls-tree origin/<default> .codemap.json` shows mode `120000`, a
+  symlink; check this first): don't ask; use `Code map: none` and report it, so the owner can
+  replace it with a plain file.
 - **Not set up**, and the plan on the default branch has no valid Decided entry declining it: ask
   the code-map question: `Kod haritası kurulu değil (kod ve vault için tek dizin sayfası);
   kurayım mı? [Python yok: önce <komut> ile kurulur.] Evet / Bu sefer hayır / Hayır, bu repoda

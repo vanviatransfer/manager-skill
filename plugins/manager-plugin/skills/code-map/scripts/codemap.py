@@ -941,7 +941,12 @@ def main(argv=None):
             if os.path.lexists(d):
                 if not os.path.isdir(d) or is_link(d) or os.listdir(d):
                     break
-                os.rmdir(d)
+                try:
+                    os.rmdir(d)
+                except OSError as exc:
+                    print("warning: could not remove empty folder %s: %s" % (rel_dir, exc),
+                          file=sys.stderr)
+                    break
             rel_dir = posixpath.dirname(rel_dir)
     inside = not out_rel.startswith("../")
     if inside and (redetect or (source != CONFIG and not args.out and not read_config(root))):
