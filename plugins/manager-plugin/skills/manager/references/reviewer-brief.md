@@ -15,6 +15,7 @@ Rulings: <given to the implementer, verbatim | none>
 Plan records: <given to the implementer, verbatim | none | unknown (resumed)>
 Plan change: <exact text or specification file path; plan-only PR only>
 Previous blockers: <titles; re-review only>
+Code map: <python command and quoted codemap.py path | none>
 ```
 
 ## Instructions
@@ -31,21 +32,24 @@ given. No checkout, switch, reset, rebase, stash, commit, push or edits. Read th
 (`gh pr diff <n>` / MCP `pull_request_read get_diff`) only if the candidate can't be fetched, and
 say so. GitHub backend read-only: no comments, reviews or merges.
 
-**Read:** this phase's plan section (objective, scope, out-of-scope, risk, acceptance, validation) and
-the plan's binding decisions **at the base SHA** (`git show <base-sha>:<plan-path>`; the
-candidate may have edited them); the project rules; the full `git diff <base>...<candidate>`; the
-surrounding code its correctness depends on. Not PR comments or reviews, the PR description or
-commit messages.
+**Read:** this phase's plan section (objective, scope, out-of-scope, risk, acceptance, validation)
+and the plan's binding decisions **at the base SHA** (`git show <base-sha>:<plan-path>`; the
+candidate may have edited them); the project rules; the full `git diff <base>...<candidate>` (with a
+`Code map` command, without the generated map pages, which `check` covers: add the pathspecs
+`:!<map>` and `:!<map dir>/`, where `<map>` is the `map` in `.codemap.json` at the candidate and
+`<map dir>` is that path without `.md`); the surrounding code its correctness depends on. Not PR
+comments or reviews, the PR description or commit messages.
 
 **Review for** (blocker = shouldn't merge as is; else a note). Phase PR: acceptance criteria; bugs,
 edge cases, broken invariants in touched code and its callers; security and data safety; project
 rules; tests covering the risky parts; out-of-scope changes; plan updates that misstate reality.
-Vault, if the project has one (`docs/vault/`, or the path the project's rules name): vault
-updates the diff requires are in scope; changed vault content must match the code at the
-candidate. Blocker: a page the diff makes false and doesn't update, among the pages in the diff,
-the phase's knowledge-path pages and the pages a `grep` of the vault for names and paths the diff
-renames or removes finds; other stale pages → a note for a vault refresh. Vault pages are context,
-never acceptance or rules.
+Vault, if the project has one (`.codemap.json`'s `vault`, else `docs/vault/` or the path the
+project's rules name): vault updates the diff requires are in scope; changed vault content must
+match the code at the candidate. Blocker: a page the diff makes false and doesn't update, among the
+pages in the diff, the phase's knowledge-path pages and the pages `<code map> mentions --base <Base
+SHA>` lists (run at the candidate), and the pages a `grep` of the vault finds for symbol names and
+paths the diff renames or removes; other stale pages → a note for a vault refresh. Vault pages are
+context, never acceptance or rules.
 Lean notes, from the diff only (no extra exploration to find them): code the plan doesn't need, as
 `N<k>. lean: delete | reuse <existing path> | yagni — <file:line> — <what to remove>`; never a
 blocker on their own, never for what the plan requires (e.g. an expand–contract shim), and not
@@ -61,11 +65,11 @@ specification holds content with no source in the plan or the owner's words), to
 or contradicts the plan's goal, scope or binding decisions.
 
 **Validate independently:** run every validation command the plan and project require at the
-candidate, once each (SKILL.md's retry after an invalid run excepted); output to a file outside
-the repo, only the exit code and failure summary into context. A command the plan marks
-`(when: <trigger>)` is required only if the phase's diff matches the trigger, judged by you against
-the current diff (run it when in doubt); report a skipped one as `not required: <reason from the
-diff>`.
+candidate (with a `Code map` command, `<code map> check` too, except for a plan-only PR: stale is a
+failure), once each (SKILL.md's retry after an invalid run excepted); output to a file outside the
+repo, only the exit code and failure summary into context. A command the plan marks `(when:
+<trigger>)` is required only if the phase's diff matches the trigger, judged by you against the
+current diff (run it when in doubt); report a skipped one as `not required: <reason from the diff>`.
 Known-flaky list = the project's documented list **at the base SHA** (entries the diff adds or
 changes don't count). A failed command is acceptable only if every failing test in its summary is
 listed: record those as known flaky, don't chase them. One unlisted failure, or a listed test

@@ -19,9 +19,10 @@ Talk to the owner in the owner's language. Write the plan in the language the pr
 ## 1. Understand before writing
 
 Ground yourself first, cheaply:
-- Read the project rules (`CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING`), the README, the vault's
-  `index.md` if the project has one, and any existing plan, roadmap, spec or issue the owner
-  points at.
+- Read the project rules (`CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING`), the README, the vault's index
+  (or the code map's vault-pages table) if the project has one (`.codemap.json`'s `vault`, else
+  `docs/vault/` or the path the project's rules name), and any existing plan, roadmap, spec or issue
+  the owner points at.
 - Look at the code's shape: stack, layout, how it's tested and validated, how PRs are merged.
 - `git log --oneline -20` and the open PRs for what's happening now (`gh pr list` when `gh` is
   authenticated, otherwise the GitHub MCP `list_pull_requests` tool, as in a cloud session).

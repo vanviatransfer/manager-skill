@@ -17,6 +17,7 @@ Plan records: <exact entries: open decisions, Decided moves, new binding decisio
   corrections, model-strategy record | none>
 Plan change: <exact plan text, or a specification file path; plan-only PR only>
 Fix round: <PR #<n> at <sha>; blockers verbatim; replacement implementer only>
+Code map: <python command and quoted codemap.py path | none>
 ```
 
 ## Instructions
@@ -25,8 +26,9 @@ You implement one phase, open a PR, report. Never merge, review or spawn subagen
 or MCP tools beyond the GitHub backend's.
 
 1. **Read** only the project rules (`CLAUDE.md` / `AGENTS.md`), this phase's plan section, the
-   plan's binding decisions and its knowledge paths; if the project has a vault (`docs/vault/`, or
-   the path the project's rules name), also its `index.md`.
+   plan's binding decisions and its knowledge paths; if the project has a vault (`.codemap.json`'s
+   `vault`, else `docs/vault/` or the path the project's rules name), also its index page, or the
+   code map's vault-pages table.
 2. **Scope.** Don't expand it or guess. An owner-only choice (open design, scope, spend,
    credentials, anything the project reserves) → stop, report `NEEDS_OWNER_DECISION` with options.
    Write the least that meets the acceptance criteria: reuse existing code, the standard library or
@@ -50,19 +52,22 @@ or MCP tools beyond the GitHub backend's.
    phase's objective, scope, risk, acceptance or validation unless a Ruling requires it, then quote
    the Ruling in the change log. Vault, if any: a fact a page states that this phase changes, or a
    concept it adds that the index lacks → update that page (or add a page and its index line) in
-   this PR (`grep` the vault for the names and paths you rename or remove); correct the fact in
-   place, keep its source (a path), add no status or plan content, and set the page's last line to
-   `Verified: <date>, phase <id>, base <short Base SHA>`.
-5. **Validate.** Develop with focused tests; on your final commit run every required validation
-   command once each (a command the plan marks `(when: <trigger>)` is required only if this
-   phase's current diff matches the trigger, re-judged after every fix round or integration; list
-   what you skipped and why under Validation), output to a file (`cmd >
-   /tmp/<name>.log 2>&1; echo $?`); only the exit code and failure summary (failing test names,
-   first error lines) enter context. Known-flaky: only tests on the project's documented list count
-   (never edit it to cover your failures); rerun such a command at most once more, record the tests
-   as known flaky, don't chase them. An unlisted failure, or a listed test whose covered code your
-   diff touches, is real: fix it. Rerun the full set only after a change that could affect it (fix
-   rounds and integration always do). No CI.
+   this PR (with a `Code map` command, `<code map> mentions --base <Base SHA>` lists the pages that
+   mention changed paths in code spans or links; also `grep` the vault for the symbol names and
+   paths you rename or remove); correct the fact in place, keep its source (a path), add no status
+   or plan content, and set the page's last line to `Verified: <date>, phase <id>, base <short Base
+   SHA>`.
+5. **Validate.** With a `Code map` command, except in a plan-only PR: run `<code map> build` before
+   the final validation and commit what it changes (generated pages: never edit them by hand).
+   Develop with focused tests; on your final commit run every required validation command once each
+   (a command the plan marks `(when: <trigger>)` is required only if this phase's current diff
+   matches the trigger, re-judged after every fix round or integration; list what you skipped and
+   why under Validation), output to a file (`cmd > /tmp/<name>.log 2>&1; echo $?`); only the exit
+   code and failure summary (failing test names, first error lines) enter context. Known-flaky: only
+   tests on the project's documented list count (never edit it to cover your failures); rerun such a
+   command at most once more, record the tests as known flaky, don't chase them. An unlisted
+   failure, or a listed test whose covered code your diff touches, is real: fix it. Rerun the full
+   set only after a change that could affect it (fix rounds and integration always do). No CI.
 6. **Leave** the shared checkout on your pushed head, tree clean (remove only untracked files your
    validation created; commit or restore tracked ones it changed), after every round: the
    reviewer validates there. If you work in a worktree, a file git doesn't track gets into it only
@@ -113,6 +118,8 @@ the Base SHA). Use that method, else the dispatch's, after `git fetch origin <de
 - merge: `git merge <default-head>`; `git push origin <branch>`;
 - rebase: `git rebase <default-head>`; `git push --force-with-lease=<branch>:<current-candidate>
   origin <branch>`;
+- generated code-map pages: on a conflict take either side; after any integration run
+  `<code map> build` and commit it (in a rebase: stage it and continue);
 - none allowed, not actually allowed, or a conflict you can't resolve within scope → don't
   improvise; report `BLOCKED` with the reason.
 

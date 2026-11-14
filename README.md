@@ -1,17 +1,26 @@
 # manager-skill
 
-A Claude Code plugin with four skills:
+A Claude Code plugin with five skills:
 
 - **`living-plan`** — writes a project's living plan: goal, scope, binding decisions, phases sized
   for one PR each (with acceptance criteria and validation), and open owner decisions.
 - **`manager`** — runs that plan to completion.
-- **`create-vault`** — creates, adopts or refreshes a project vault in `docs/vault/`: short linked
-  pages of durable facts about the code (index, glossary, decision records, topic pages), each with
-  its sources and a `Verified` line, landed through a reviewed PR. The plan's phases point to the
-  pages they need, and the manager's implementers keep those pages current in their phase PRs.
-- **`manager-retro`** — improves the manager from evidence: reads the compact run records the
-  manager keeps on your machine and proposes up to three small changes, landed through an
-  independently reviewed PR you choose.
+- **`create-vault`** — creates a project vault in `docs/vault/`, or adopts or refreshes an existing
+  one: short linked pages of durable facts about the code (index, glossary, decision records, topic
+  pages), each with its sources and a `Verified` line, landed through a reviewed PR. The plan's
+  phases point to the pages they need, and the manager's implementers keep those pages current in
+  their phase PRs.
+- **`code-map`** — a generated map of the repository: directories, entry points, most imported files
+  and top-level symbols per file, plus a vault index (every page with its title, size and inbound
+  links), broken links and orphan pages, so agents read one page instead of exploring. `query` finds
+  where a name is defined, who imports a file and which vault pages mention it; `mentions` lists the
+  vault pages to check after a change. It finds an existing vault wherever it is (a `.obsidian/`
+  folder, a known folder name, or the folder with most `[[wikilinks]]`), including vaults made
+  without this plugin, and records the layout in `.codemap.json`. It is the plugin's own
+  standard-library Python script (3.8+; no packages, nothing sent anywhere; files that may hold
+  secrets are never read). When a project has `.codemap.json`, the manager's implementers regenerate
+  the map in every phase PR and reviewers run its `check`. Without Python it offers the install
+  command and skips the map only if you decline.
 
 ## Learning from runs
 
@@ -159,4 +168,11 @@ change them itself):
 ## Credits
 
 The review and planning discipline draws on ideas from
-[obra/superpowers](https://github.com/obra/superpowers) (MIT).
+[obra/superpowers](https://github.com/obra/superpowers) (MIT). The `code-map` script's vault link
+rules and secret-file patterns follow ideas from
+[safishamsi/graphify](https://github.com/safishamsi/graphify) (Apache-2.0); no code was copied.
+
+## Development
+
+Tests for the code-map script:
+`python3 -m unittest discover -s plugins/manager-plugin/skills/code-map/scripts`.

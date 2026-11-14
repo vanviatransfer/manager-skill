@@ -118,11 +118,14 @@ don't read source. Recommend Sonnet, Opus or a mixed strategy, ask in Turkish, a
 Bu çalışma için önerim: <Sonnet | Opus | Karma: standard → Sonnet, critical → Opus, işaretsiz → standard>.
 Gerekçe: <tek cümle: doğruluk riski, karmaşıklık, tahmini token tüketimi ve maliyet>.
 [Başlamadan önce önerim: `/autocompact 600k` çalıştırın; cc-plugin-you-should-know'ı kapatın]
+[Kod haritası için Python yok; kurayım mı? (`<komut>`) Hayır derseniz harita atlanır.]
+[Bu repoda vault var ama kod haritası yok; kurayım mı? (kod ve vault için tek dizin sayfası)]
 Model tercihiniz hangisi?
 ```
 
-The bracketed line only when the session check in step 0 found something, with only the items it
-found.
+The bracketed lines only when step 0 found something (the session check, a code map without Python,
+a vault without a map), with only the items it found. An install answer is carried out right after
+the gate.
 
 Guide for the recommendation: Sonnet for bounded code, docs, tests and ordinary reviews; Opus for
 architecture, numerical or financial correctness, concurrency, security-critical code or hard
@@ -155,14 +158,20 @@ running the other phases.
 
 Derive state from durable sources only — never from memory of an earlier context:
 
-1. Choose the GitHub backend; note whether the session has a designated push branch. Note the
-   plugin version (`version` in `${CLAUDE_SKILL_DIR}/../../.claude-plugin/plugin.json`, if it
-   resolves) for the final report: a stale cached copy then shows up. If the environment exposes
-   the account's usage values (a usage command or tool), note the weekly percentage here and give
-   the change in the final report; otherwise skip this. Resolve the two brief files once,
+1. Choose the GitHub backend; note whether the session has a designated push branch. Note the plugin
+   version (`version` in `${CLAUDE_SKILL_DIR}/../../.claude-plugin/plugin.json`, if it resolves) for
+   the final report: a stale cached copy then shows up. If the environment exposes the account's
+   usage values (a usage command or tool), note the weekly percentage here and give the change in
+   the final report; otherwise skip this. Resolve the two brief files once,
    `${CLAUDE_SKILL_DIR}/references/implementer-brief.md` and `reviewer-brief.md`, and check that
    both exist: a missing one means an incomplete plugin copy (environment failure: report it). Use
-   these absolute paths in every dispatch.
+   these absolute paths in every dispatch. Code map: if the default branch has `.codemap.json` (`git
+   show origin/<default>:.codemap.json` after step 2's fetch), resolve the command as the `code-map`
+   skill says (`${CLAUDE_SKILL_DIR}/../code-map/scripts/codemap.py` and a Python 3.8+) and send it
+   as `Code map:` in every dispatch. No Python: offer the install in the model-strategy question
+   (the skill's command for the OS); `none` if declined. A vault but no `.codemap.json` (the skill's
+   detection, or a vault folder you see): offer in that question to set the map up, landed first as
+   its own small PR (an implementer runs `build` and commits; a reviewer runs `check`).
 2. `git fetch origin`; record the default branch head.
 3. Read the project rules and the living plan **as on the default branch** (`git show
    origin/<default>:<path>`, not the working tree, which may hold an unmerged phase branch). Ask
@@ -268,8 +277,9 @@ ask the same implementer once for exactly those fields. Then `git fetch origin <
 - the **candidate SHA** is GitHub's `headRefOid`, never the report's; if they differ, find out why
   (unpushed or unexpected commits) before review;
 - `git merge-base --is-ancestor <base-sha> <candidate>` holds, and the base ref is the default;
-- `git diff --name-only <base-sha>...<candidate>` stays inside the phase scope (files under the
-  project's vault path count as in scope).
+- `git diff --name-only <base-sha>...<candidate>` stays inside the phase scope (vault pages and
+  the generated code-map pages pass this check, never the living plan; the reviewer judges
+  whether the diff requires them).
 
 After an integration (4a), the base SHA becomes the default head the implementer integrated, once
 `git merge-base --is-ancestor` confirms it is in the candidate.
@@ -436,12 +446,12 @@ scope covers the check's setup (config, dependency, script) and those failures, 
 the owner picks one (added to the plan through a plan-only PR). A prose rule (exact text) is for
 judgement calls, or option B. You only propose it. Once decided, it lands as a new binding decision
 (`B<n>`) through the next PR's `Plan records`, or, if no PR would land before the adding phase
-starts, a plan-only PR whose `Plan change` is that `B<n>`: the rule text, or for a check "phase <id>
-adds <command> and fixes the failures it finds at its base inside its scope (any outside it →
-NEEDS_OWNER_DECISION); it is required validation for that phase and for every phase whose base
-contains its merge". Dispatch the adding phase only from a base that holds that `B<n>`. Implementers
-and reviewers read all of the plan's binding decisions, so later phases apply it. Moving it into the
-project rules file is the owner's call.
+starts, a plan-only PR whose `Plan change` is that `B<n>` and its `D<n>` Decided move: the rule
+text, or for a check "phase <id> adds <command> and fixes the failures it finds at its base inside
+its scope (any outside it → NEEDS_OWNER_DECISION); it is required validation for that phase and for
+every phase whose base contains its merge". Dispatch the adding phase only from a base that holds
+that `B<n>`. Implementers and reviewers read all of the plan's binding decisions, so later phases
+apply it. Moving it into the project rules file is the owner's call.
 
 ## Owner decisions — block dependents only
 
