@@ -60,12 +60,14 @@ server has another name), use `manager-plugin:fallback` for every later dispatch
 this run, with `Role: implementer | reviewer` on the line after `Read and follow ...` (add it
 whenever you rebuild a dispatch): it inherits the session's tools minus skills, subagents and the
 known MCP servers no role uses, so it should cost much less context than `general-purpose` (not yet
-measured). Use `general-purpose` only if no plugin agent type is available at all. Never use
-`manager-plugin:worker` for a phase: it isn't bound to the briefs. Note either fallback once for the
-final report. If the fallback fails the same way, that is an environment failure (stop condition).
-The role instructions live in the brief files; you send only the **dispatch fields** listed at the
-top of each file, prefixed with one line: `Read and follow <the role's resolved brief path>.` (If a
-subagent can't read that path, paste the file's instruction block instead.)
+measured). Use `general-purpose` only if no plugin agent type is available at all, with
+`[general-purpose: <reason>]` in the prompt: the plugin's hook blocks any other general-purpose
+spawn. Never use `manager-plugin:worker` for a phase: it isn't bound to the briefs. Note either
+fallback once for the final report. If the fallback fails the same way, that is an environment
+failure (stop condition). The role instructions live in the brief files; you send only the
+**dispatch fields** listed at the top of each file, prefixed with one line: `Read and follow <the
+role's resolved brief path>.` (If a subagent can't read that path, paste the file's instruction
+block instead.)
 
 One implementer and one reviewer per round; no extra advisors or audits. Subagents must not spawn
 further subagents. Fill fields with paths, not pasted documents (an excerpt only when clearly

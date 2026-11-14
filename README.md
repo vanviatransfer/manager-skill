@@ -89,14 +89,22 @@ are still inherited, though its instructions forbid using them), so connectors y
 other sessions stay on. Only if no plugin agent type is available does the manager use
 `general-purpose`.
 
-Outside the manager loop too, with or without a living plan: ask a session to send an agent and it
-can pick the plugin's restricted agents instead of `general-purpose` — `manager-plugin:worker` for
-a task that changes files (implement, fix, refactor, docs, tests, a PR), `manager-plugin:researcher`
-for read-only research, `manager-plugin:reviewer` for an independent review. In one session a
-restricted plugin agent started with about 10k tokens and `general-purpose` with about 77k. Which
-agent a session picks is the model's choice, guided by the agents' descriptions; to make it a
-rule, add a line to your user-level `CLAUDE.md`, e.g. "When delegating, use manager-plugin:worker,
-researcher or reviewer instead of general-purpose".
+Outside the manager loop too, with or without a living plan: when a session sends an agent, the
+plugin's restricted agents replace `general-purpose` — `manager-plugin:worker` for a task that
+changes files (implement, fix, refactor, docs, tests, a PR), `manager-plugin:researcher` for
+read-only research, `manager-plugin:reviewer` for an independent review. In one session a
+restricted plugin agent started with about 10k tokens and `general-purpose` with about 77k.
+
+A `PreToolUse` hook (`hooks/`) enforces this in every session where the plugin is enabled: a
+`general-purpose` spawn (also one with no agent type, which defaults to it) is blocked, and the
+model is told which agent to use instead (`worker`, `researcher` or `reviewer`; `implementer` is
+only for manager phases, which the manager dispatches with a brief). A request containing
+`[general-purpose: <reason>]` passes, for work that needs a tool the restricted agents don't have;
+another plugin or skill that dispatches `general-purpose` needs one retry with that marker. The hook
+writes nothing, touches none of your settings files and goes away with the plugin. It is a plain
+`sh` script; on Windows it runs in Git Bash, and where Git Bash (or `grep`/`sed`) is missing it
+fails open (`onFailure: continue`), so spawns are allowed and nothing is blocked.
+
 Everything runs in one turn with subagents, so it works the same in the Claude desktop app, the
 terminal and cloud sessions.
 
@@ -200,5 +208,6 @@ rules and secret-file patterns follow ideas from
 
 Tests for the code-map script:
 `python3 -m unittest discover -s plugins/manager-plugin/skills/code-map/scripts`.
+Tests for the subagent hook: `python3 -m unittest discover -s plugins/manager-plugin/hooks`.
 Tests for the self-training-skills script:
 `python3 -m unittest discover -s plugins/manager-plugin/skills/self-training-skills/scripts`.
