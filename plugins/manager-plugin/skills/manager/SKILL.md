@@ -548,9 +548,9 @@ holds:
 
 Final report, compact: phases landed (PR, merged SHA); phases blocked and why; the model strategy
 used and any model concerns; the plugin version and usage change (if readable); the run record path,
-or why it was skipped; session-check recommendations not already given at the gate; one line on
-repo-enabled plugins, MCP servers or skills found in step 0 (names, "disable for this repo if
-unneeded") and any `general-purpose` fallback dispatch; unresolved risks (including validation the
-reviewer could not run); decisions answered but not yet persisted, if any; non-blocking notes
-carried forward; the default branch's final head SHA; then the numbered batch of unresolved owner
-decisions.
+or why it was skipped; the code map (set up, set up in this run, or not used and why); session-check
+recommendations not already given at the gate; one line on repo-enabled plugins, MCP servers or
+skills found in step 0 (names, "disable for this repo if unneeded") and any `general-purpose`
+fallback dispatch; unresolved risks (including validation the reviewer could not run); decisions
+answered but not yet persisted, if any; non-blocking notes carried forward; the default branch's
+final head SHA; then the numbered batch of unresolved owner decisions.
