@@ -56,7 +56,9 @@ through a symlink.
 - `<cmd> check <skill dir>`: exit 0 if the skill (or trainer) is well formed, 1 with one line per
   problem, 2 for a bad path. Unmarked skills are not checked.
 - `<cmd> stats <skill dir>`: records, outcomes, tags and owner verdicts since the last training,
-  the phases still `pending-review`, the expected effects, and `training due`.
+  the phases still `pending-review`, the expected effects, rows that don't parse, and `training
+  due`. "Since the last training" means the rows after the `records: <n>` count of the last
+  changelog entry (for an entry without one, the rows dated strictly after its date).
 - `<cmd> due <repo root>`: one line per marked skill, with its trainer if any.
 
 ## Modes
@@ -96,11 +98,15 @@ through a symlink.
       ```
 
       On yes, write it from `references/trainer-template.md` (thin, about 60 lines).
-   4. Run `<cmd> check` on each new folder, then land through a reviewed PR (as in Train, step 8),
-      or as the living plan's skill phase when the manager runs it.
+   4. Run `<cmd> check` on each new folder (it must print `ok:`). With a code map, run its
+      `build` and commit the result too. Then land through a reviewed PR (as in Train, step 8), or
+      as the living plan's skill phase when the manager runs it.
 3. **Adopt.** For an existing skill, or an existing worker+trainer pair made without this plugin,
-   keep its structure and files and leave it as it is. Add only the marker and missing pieces
-   (records path, changelog) if the owner agrees. `check` applies only to marked skills.
+   keep its structure and files and leave it as it is. `check` applies only to marked skills, so
+   an unmarked one is never checked or trained by this skill. Adding the marker means bringing the
+   skill into the template's shape too: the six sections in order, a citation on every rule, a
+   `Records:` line, `lessons.md` and the changelog (for a trainer, its five sections and
+   `## Trains`). Do that only with the owner's agreement; otherwise it stays unmarked.
 4. **Record** (done by whoever uses a worker skill: the owner's session, or a manager implementer).
    Append exactly one row to the records table in the format of `references/records-format.md`,
    with the facts known then:
@@ -111,12 +117,18 @@ through a symlink.
    - a short note, with the owner's words verbatim when they gave a verdict.
 
    Never rewrite earlier rows; a correction is a new row. An owner session commits the row with
-   the work it records, following the project rules.
+   the work it records, following the project rules; with a code map (a records file in the vault
+   changes its vault index), it runs the map's `build` and commits the result too.
+
+   Between trainings, manager-phase rows stay `pending-review` (Train resolves them), so for those
+   rows only the 5-records trigger of `training due` applies; the tag trigger sees only owner
+   verdicts and `failed` rows.
 5. **Train** (the owner asks, e.g. "skill'i eğit", or the manager's final report recommends it).
    1. Run `<cmd> stats <skill dir>` and read its summary, not the whole records file.
    2. Resolve `pending-review` rows from git and GitHub: the phase's PR in the plan's status line,
       its review-ledger comments, verdicts and blocker titles. Note one new row per resolved phase
-      (same context, the verdict as outcome, blocker classes as tags); it is appended in step 7.
+      (the date of the use, not today; same context; the verdict as outcome; blocker classes as
+      tags); it is appended in step 7.
    3. Read only the lessons and the vault pages the skill cites (the code-map skill's `query` can
       find more).
    4. Measure: outcome counts since the last training, recurring tags and blocker classes, owner
@@ -126,9 +138,13 @@ through a symlink.
    6. Propose at most 3 changes. For each, give the evidence (record and lesson ids, counts), the
       smallest edit, the expected effect, and what would show it failed. Apply the evidence rules
       from `references/evidence-rules.md`. End the turn.
-   7. Apply only what the owner chose: edit the skill, append the resolved records rows and the
-      lessons rows, add a changelog entry `v<n> <date>: <change> — evidence: <ids> — expect:
-      <observable effect> — revert if: <signal>`, and run `<cmd> check`.
+   7. Apply only what the owner chose: append the resolved records rows, edit the skill, append the
+      lessons rows, and add a changelog entry `v<n> <date>: <change> — evidence: <ids> — records:
+      <n> — expect: <observable effect> — revert if: <signal>`, where `<n>` is the records table's
+      row count after the resolved rows (the rows this training consumed). If the owner chose no
+      change, still append the resolved rows and add `v<n> <date>: no change — records: <n> —
+      reason: owner declined`, so `due` resets. Run `<cmd> check`; with a code map, run its `build`
+      and commit the result.
    8. Land through a PR with an independent reviewer. Dispatch a new `manager-plugin:reviewer`
       (fallback `general-purpose`) for a manual review: read-only, no subagents, the verdict format
       of `${CLAUDE_SKILL_DIR}/../manager/references/reviewer-brief.md` (resolve the path first);
@@ -138,7 +154,8 @@ through a symlink.
       - every change cites real evidence;
       - no rule contradicts the project rules;
       - `<cmd> check` passes;
-      - the size budget.
+      - the size budget;
+      - the validation the project rules require for every PR.
 
       Accept only a verdict for the candidate SHA. Run fix rounds with a new reviewer, at most 3,
       then stop and report. Merge, pinned to the reviewed SHA, only on the owner's request.
@@ -147,12 +164,12 @@ through a symlink.
 
 - The `living-plan` skill asks, once the plan's recurring work is clear, whether to write
   self-training skills for it. On yes, the plan gets an early skill phase (acceptance: `check`
-  passes for each skill), and the repeating phases' `Notes` cite `skill: .claude/skills/<name>/
-  SKILL.md` and its records path.
+  prints `ok:` for each skill), and the repeating phases' `Notes` cite `skill:
+  .claude/skills/<name>/SKILL.md` and its records path.
 - The manager's implementers follow a cited skill where it doesn't conflict with their brief, the
   plan or the project rules, and append one `pending-review` records row; reviewers treat the
-  skill as context and allow only that row in a phase PR. The final report runs `<cmd> due` and
-  names the skills due for training.
+  skill as context and allow only that row in a phase PR. The final report runs `<cmd> due` (on
+  the default branch's state) and names the skills due for training.
 
 ## Report
 

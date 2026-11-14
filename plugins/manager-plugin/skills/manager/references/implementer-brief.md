@@ -67,7 +67,8 @@ or MCP tools beyond the GitHub backend's.
    `Verified: <date>, phase <id>, base <short Base SHA>`. A cited project skill (phase PRs only):
    append exactly one row to its records file as its `## Record` says (context `phase <id>`,
    outcome `pending-review`); change nothing else in the skill's folder or records unless this
-   phase is a skill phase.
+   phase is a skill phase. A records file is evidence, not a vault page: it gets no `Verified`
+   line.
 5. **Validate.** With a `Code map` command, except in a plan-only PR: run `<code map> build` before
    the final validation and commit what it changes (generated pages: never edit them by hand).
    Develop with focused tests; on your final commit run every required validation command once each

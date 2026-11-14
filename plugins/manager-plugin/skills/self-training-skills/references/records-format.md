@@ -22,5 +22,10 @@ A records file holds one markdown table; a title line above it is allowed. Heade
   `key=value`. Escape a literal pipe as `\|`.
 
 Rows are append-only: never edit or delete one. A correction or a resolved verdict is a new row
-with the same context; the latest row for a context is its current state. No secrets or personal
+with the same context, and it keeps the date of the use (not the day it was resolved); the latest
+row for a context is its current state. A row must start and end with `|` and have all five
+cells: `check` reports one that doesn't, and `stats` skips it and says so. No secrets or personal
 data.
+
+Each Train changelog entry records `records: <n>`, the row count it consumed; the rows after that
+count are "since the last training".

@@ -72,8 +72,8 @@ questions at all.
   (step 4), or in step 1's question batch when it is clear early, ask in Turkish:
   `Bu planda tekrarlanacak işler var: <iş (≈N kez)>, ... Bunlar için kendini geliştiren skill
   yazılsın mı? (self-training-skills) [önerim]`. If yes:
-  - add an early skill phase (`Risk: standard`; acceptance: `skilltrain.py check` passes for each
-    skill; validation: that check);
+  - add an early skill phase (`Risk: standard`; acceptance: `skilltrain.py check` prints `ok:` for
+    each skill; validation: that check);
   - the repeating phases' `Notes` cite `skill: .claude/skills/<name>/SKILL.md` and its records
     path;
   - record the answer like any owner decision.
@@ -91,11 +91,11 @@ completed phases and decided items, re-plan only what remains, and say what chan
 ## 4. Review with the owner
 
 Show a short summary, not the whole file: goal, number of phases with their titles, the first two
-or three in a line each, and the open decisions with your recommendations. Ask for approval or
+or three in a line each, and the open decisions with your recommendations.
+Ask the recurring-work question (step 2, **Recurring work**) here unless step 1 already asked it.
+Ask for approval or
 changes. Approval of the plan is not authorization to execute it — unless the owner says to go,
 stop here.
-
-Ask the recurring-work question here (step 2, **Recurring work**) unless step 1 already asked it.
 
 Commit the plan following the project's rules (usually its own small PR). When the owner wants
 execution, hand over to the `manager` skill.

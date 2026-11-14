@@ -12,10 +12,14 @@ Usage:
 A worker skill is SKILL.md with the marker <!-- self-training-skill v1 --> right after its
 frontmatter, lessons.md beside it, and the records file its "## Record" section names. A trainer
 is SKILL.md with the marker <!-- self-training-trainer v1 --> whose "## Trains" section names one
-worker. A SKILL.md without either marker is not checked.
+worker. A SKILL.md without either marker is not checked; one whose first body line is an HTML
+comment naming self-training, or with a marker further down, is reported.
 
 SKILL_DIR is normally <repo>/.claude/skills/<name>; the repository root is then three folders up,
 or --root gives it. Paths in the files are relative to the repository root.
+
+"Since the last training" means the record rows after the count its last changelog entry gives
+as `records: <n>`, or, for an entry without one, the rows dated strictly after its date.
 
 Only the Python standard library is used (Python 3.8+). Nothing is executed and nothing is sent
 anywhere. Nothing is read through a symlink (on Windows also a junction, with Python 3.12+).
@@ -48,10 +52,16 @@ TOP_TAGS = 10
 
 DATE = r"\d{4}-\d{2}-\d{2}"
 CHANGELOG_LINE = re.compile(r"^- v(\d+) (" + DATE + r"): \S")
+CHANGELOG_RECORDS = re.compile(r"\brecords:\s*(\d+)\b")
+BULLET = re.compile(r"^(?:[-*+]|\d+[.)])\s+")
 LESSON_CITE = re.compile(r"\((L\d+(?:,\s*L\d+)*)\)\s*$")
 OWNER_CITE = re.compile(r"\(owner: \".+\", " + DATE + r"\)\s*$")
 PATH_LINE = re.compile(r"^(Skill|Records|Lessons):\s*`([^`]+)`")
 CELL_SPLIT = re.compile(r"(?<!\\)\|")
+
+
+NEAR_MISS = ("the marker doesn't match: the line right after the frontmatter must be exactly %s "
+             "or %s" % (MARKER, TRAINER_MARKER))
 
 
 class PathError(Exception):
@@ -93,7 +103,8 @@ def read_rel(root, rel):
         raise ValueError("%s is larger than %d bytes" % (rel, MAX_BYTES))
     with open(full, "rb") as fh:
         data = fh.read()
-    return data.replace(b"\r\n", b"\n").decode("utf-8", "replace")
+    text = data.replace(b"\r\n", b"\n").decode("utf-8", "replace")
+    return text[1:] if text.startswith("\ufeff") else text  # a UTF-8 BOM
 
 
 def split_frontmatter(text):
@@ -119,11 +130,18 @@ def split_frontmatter(text):
 
 
 def marker_kind(body):
-    """'skill', 'trainer' or None, from the first non-empty body line."""
-    for line in body:
-        if line.strip():
-            m = MARKER_RE.match(line.strip())
-            return m.group(1) if m else None
+    """'skill', 'trainer', 'near-miss' or None, from the first non-empty body line.
+
+    near-miss: that line is an HTML comment naming self-training without matching a marker, or
+    a marker stands elsewhere in the body."""
+    first = next((ln.strip() for ln in body if ln.strip()), "")
+    m = MARKER_RE.match(first)
+    if m:
+        return m.group(1)
+    if first.startswith("<!--") and "self-training" in first.lower():
+        return "near-miss"
+    if any(MARKER_RE.match(ln.strip()) for ln in body):
+        return "near-miss"
     return None
 
 
@@ -169,37 +187,41 @@ def is_separator(line):
 
 
 def parse_table(text, header):
-    """(header ok, rows as lists of len(header) cells). Rows follow the first table header."""
-    lines = [ln for ln in text.split("\n")]
+    """(header ok, rows as lists of len(header) cells, line numbers of rows that don't parse).
+    Rows follow the first table header, up to the first line that isn't a row or blank."""
+    lines = text.split("\n")
     for i, line in enumerate(lines):
         if not line.strip().startswith("|"):
             continue
         row = cells(line)
         ok = row is not None and tuple(c.lower() for c in row) == header and \
             i + 1 < len(lines) and is_separator(lines[i + 1])
-        rows = []
+        rows, bad = [], []
         if ok:
-            for rest in lines[i + 2:]:
+            for n, rest in enumerate(lines[i + 2:], i + 3):
                 if not rest.strip().startswith("|"):
                     if rest.strip():
                         break
                     continue
                 r = cells(rest)
-                if r is None:
+                if r is None or len(r) < len(header):
+                    bad.append(n)
                     continue
                 if len(r) > len(header):  # an unescaped pipe in the last cell
                     r = r[:len(header) - 1] + [" | ".join(r[len(header) - 1:])]
-                rows.append(r + [""] * (len(header) - len(r)))
-        return ok, rows
-    return False, []
+                rows.append(r)
+        return ok, rows, bad
+    return False, [], []
 
 
 def bullets(lines):
-    """Joined '- ' bullets of a section (continuation lines are indented)."""
+    """Joined bullets ('-', '*', '+' or numbered) of a section (continuation lines are
+    indented)."""
     out = []
     for line in lines:
-        if line.startswith("- "):
-            out.append(line[2:].strip())
+        m = BULLET.match(line)
+        if m:
+            out.append(line[m.end():].strip())
         elif out and line.startswith((" ", "\t")) and line.strip():
             out[-1] += " " + line.strip()
         elif not line.strip():
@@ -218,6 +240,7 @@ class Skill:
         self.root = root
         self.rel_dir = rel_dir
         self.problems = []
+        self.skipped = []  # line numbers of records rows that don't parse
         text = read_rel(root, rel_dir + "/SKILL.md")
         self.meta, self.body = split_frontmatter(text)
         self.kind = marker_kind(self.body)
@@ -257,11 +280,12 @@ def load_records(sk):
     except ValueError as exc:
         sk.problems.append("records: %s" % exc)
         return None
-    ok, rows = parse_table(text, RECORDS_HEADER)
+    ok, rows, bad = parse_table(text, RECORDS_HEADER)
     if not ok:
         sk.problems.append("records: %s lacks the header | %s | and its separator"
                            % (rel, " | ".join(RECORDS_HEADER)))
         return None
+    sk.skipped = ["%s:%d" % (rel, n) for n in bad]
     return rows
 
 
@@ -272,26 +296,34 @@ def load_lessons(sk):
     except ValueError as exc:
         sk.problems.append("lessons: %s" % exc)
         return None
-    ok, rows = parse_table(text, LESSONS_HEADER)
+    ok, rows, bad = parse_table(text, LESSONS_HEADER)
     if not ok:
         sk.problems.append("lessons: %s lacks the header | %s | and its separator"
                            % (rel, " | ".join(LESSONS_HEADER)))
         return None
+    for n in bad:
+        sk.problems.append("lessons: %s:%d is a row that doesn't parse" % (rel, n))
     return {r[0]: r[4] for r in rows}
 
 
 def changelog(sk):
-    """[(version, date, text)] from ## Changelog; problems for bad lines."""
-    out = []
+    """[(version, date, text, records consumed or None)] from ## Changelog; problems for bad
+    lines. Indented continuation lines are joined to their entry."""
+    joined = []
     for line in section(sk.secs, "Changelog") or []:
-        if not line.startswith("- "):
-            continue
+        if line.startswith("- "):
+            joined.append(line.rstrip())
+        elif joined and line.startswith((" ", "\t")) and line.strip():
+            joined[-1] += " " + line.strip()
+    out = []
+    for line in joined:
         m = CHANGELOG_LINE.match(line)
         if not m:
             sk.problems.append("changelog line doesn't match '- v<n> <YYYY-MM-DD>: ...': %s"
-                               % line.strip())
+                               % line.strip()[:80])
             continue
-        out.append((int(m.group(1)), m.group(2), line))
+        r = CHANGELOG_RECORDS.search(line)
+        out.append((int(m.group(1)), m.group(2), line, int(r.group(1)) if r else None))
     return out
 
 
@@ -300,7 +332,9 @@ def check_worker(sk):
     check_order(sk.secs, SECTIONS, sk.problems)
     if len(sk.body) > MAX_BODY_LINES:
         sk.problems.append("body is %d lines (at most %d)" % (len(sk.body), MAX_BODY_LINES))
-    load_records(sk)
+    rows = load_records(sk)
+    for where in sk.skipped:
+        sk.problems.append("records: %s is a row that doesn't parse" % where)
     lessons = load_lessons(sk)
     for b in bullets(section(sk.secs, "Rules") or []):
         m = LESSON_CITE.search(b)
@@ -321,6 +355,13 @@ def check_worker(sk):
         if cur[0] <= prev[0]:
             sk.problems.append("changelog version v%d does not increase after v%d"
                                % (cur[0], prev[0]))
+    counts = [(e[0], e[3]) for e in entries if e[3] is not None]
+    for (pv, pn), (cv, cn) in zip(counts, counts[1:]):
+        if cn < pn:
+            sk.problems.append("changelog v%d records: %d is less than v%d's %d" % (cv, cn, pv, pn))
+    if rows is not None and counts and counts[-1][1] > len(rows):
+        sk.problems.append("changelog v%d records: %d, but the records file has %d rows"
+                           % (counts[-1][0], counts[-1][1], len(rows)))
 
 
 def worker_for_trainer(sk):
@@ -402,7 +443,12 @@ def run_check(root, rel):
     if sk.kind is None:
         print("not a self-training skill")
         return 0
-    (check_trainer if sk.kind == "trainer" else check_worker)(sk)
+    if sk.kind == "near-miss":
+        sk.problems.append(NEAR_MISS)
+    elif sk.kind == "trainer":
+        check_trainer(sk)
+    else:
+        check_worker(sk)
     for p in sk.problems:
         print("%s: %s" % (rel, p))
     if not sk.problems:
@@ -414,6 +460,14 @@ def tags_of(row):
     return [t.strip().lower() for t in row[3].split(",") if t.strip()]
 
 
+def split_at(rows, date, consumed):
+    """(before, after) a changelog entry: by the rows it consumed, else strictly by date."""
+    if consumed is not None:
+        return rows[:consumed], rows[consumed:]
+    dated = [r for r in rows if re.match("^" + DATE + "$", r[0])]
+    return [r for r in dated if r[0] <= date], [r for r in dated if r[0] > date]
+
+
 def measure(sk):
     """A dict of the numbers stats prints, or None with problems recorded."""
     rows = load_records(sk)
@@ -422,9 +476,8 @@ def measure(sk):
         if rows is not None:
             sk.problems.append("changelog has no entry")
         return None
-    rows = [r for r in rows if any(r)]
-    last_v, last_date, _ = entries[-1]
-    since = [r for r in rows if re.match("^" + DATE + "$", r[0]) and r[0] >= last_date]
+    last_v, last_date, _, last_n = entries[-1]
+    since = split_at(rows, last_date, last_n)[1]
     outcomes = {}
     tags = {}
     bad_tags = {}
@@ -440,14 +493,14 @@ def measure(sk):
     pending = sorted(c for c, o in latest.items() if o == "pending-review")
     all_tags = {t for r in rows for t in tags_of(r)}
     effects = []
-    for v, date, line in entries:
-        if date != last_date or "expect:" not in line:
+    changed = [(e[1], e[3]) for e in entries if "expect:" in e[2]]
+    for v, date, line, consumed in entries:
+        # the entries of the latest training that changed something
+        if not changed or (date, consumed) != changed[-1] or "expect:" not in line:
             continue
         expect = line.split("expect:", 1)[1].split("— revert if:", 1)[0].lower()
         words = set(re.findall(r"[a-z0-9][a-z0-9_-]*", expect))
-        dated = [r for r in rows if re.match("^" + DATE + "$", r[0])]
-        before = [r for r in dated if r[0] < date]
-        after = [r for r in dated if r[0] >= date]
+        before, after = split_at(rows, date, consumed)
         counts = [(t, sum(t in tags_of(r) for r in before), sum(t in tags_of(r) for r in after))
                   for t in sorted(all_tags & words)]
         effects.append((v, date, counts, len(before), len(after)))
@@ -459,14 +512,20 @@ def measure(sk):
             reasons.append("tag %s %d times with a bad outcome" % (t, bad_tags[t]))
     return {
         "total": len(rows), "last": (last_v, last_date), "since": len(since),
+        "window": ("after record row %d" % last_n if last_n is not None
+                   else "after %s" % last_date),
         "outcomes": outcomes, "tags": tags, "pending": pending, "effects": effects,
         "owner_since": sum(1 for r in since if r[2] in OWNER_OUTCOMES),
         "owner_total": sum(1 for r in rows if r[2] in OWNER_OUTCOMES), "reasons": reasons,
+        "skipped": sk.skipped,
     }
 
 
 def run_stats(root, rel):
     sk = load(root, rel)
+    if sk.kind == "near-miss":
+        print("%s: %s" % (rel, NEAR_MISS))
+        return 1
     if sk.kind != "skill":
         print("not a self-training skill" if sk.kind is None else
               "a trainer: run stats on the skill it trains")
@@ -479,7 +538,9 @@ def run_stats(root, rel):
     print("skill: %s" % rel)
     print("records: %d" % m["total"])
     print("last training: v%d %s" % m["last"])
-    print("records since (on or after %s): %d" % (m["last"][1], m["since"]))
+    print("records since (%s): %d" % (m["window"], m["since"]))
+    if m["skipped"]:
+        print("skipped rows that don't parse: %s" % ", ".join(m["skipped"]))
     known = [o for o in OUTCOMES if o in m["outcomes"]] + \
         sorted(o for o in m["outcomes"] if o not in OUTCOMES)
     print("outcomes since: %s" % (", ".join("%s %d" % (o, m["outcomes"][o]) for o in known)
@@ -521,6 +582,8 @@ def run_due(root):
         if sk.kind == "trainer":
             worker_dir, _ = worker_for_trainer(sk)
             trainers.setdefault(posixpath.basename(worker_dir or ""), []).append(name)
+        elif sk.kind == "near-miss":
+            workers[name] = "error: %s" % NEAR_MISS
         elif sk.kind == "skill":
             m = measure(sk)
             if m is None:
@@ -529,6 +592,8 @@ def run_due(root):
                 workers[name] = "training due (%s)" % "; ".join(m["reasons"])
             else:
                 workers[name] = "not due (%d records since v%d)" % (m["since"], m["last"][0])
+            if m is not None and m["skipped"]:
+                workers[name] += " (skipped rows that don't parse: %s)" % ", ".join(m["skipped"])
     if not workers and not trainers:
         print("no self-training skills")
     for name in sorted(workers):

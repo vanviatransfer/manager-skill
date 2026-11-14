@@ -267,8 +267,9 @@ class SkilltrainTest(unittest.TestCase):
     def test_stats_counts(self):
         self.edit("- v1 2026-11-01: created — evidence: L1, L2, L3",
                   "- v1 2026-11-01: created — evidence: L1, L2, L3\n"
-                  "- v2 2026-11-10: lead with breaking changes — evidence: L3 — expect: fewer "
-                  "breaking blockers — revert if: breaking blockers again")
+                  "- v2 2026-11-10: lead with breaking changes — evidence: L3 — "
+                  "records: 2 —\n"
+                  "  expect: fewer breaking blockers — revert if: breaking blockers again")
         self.rows(("2026-11-02", "phase P3", "changes-required", "breaking, tone", "missed it"),
                   ("2026-11-04", "phase P4", "changes-required", "breaking", "again"),
                   ("2026-11-10", "phase P5", "pass", "tone", "ok"),
@@ -279,7 +280,7 @@ class SkilltrainTest(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertIn("records: 6\n", out)
         self.assertIn("last training: v2 2026-11-10\n", out)
-        self.assertIn("records since (on or after 2026-11-10): 4\n", out)
+        self.assertIn("records since (after record row 2): 4\n", out)
         self.assertIn("outcomes since: pending-review 1, pass 2, owner-good 1\n", out)
         self.assertIn("top tags since: tone 2, breaking 1, length 1\n", out)
         self.assertIn("pending-review (resolve from git and GitHub): phase P6\n", out)
@@ -287,6 +288,84 @@ class SkilltrainTest(unittest.TestCase):
         self.assertIn("expected effect v2 2026-11-10 (records: 2 before, 4 after): "
                       "breaking 2 before, 1 after\n", out)
         self.assertIn("training due: no\n", out)
+
+    def test_same_day_training_resets(self):
+        # resolved rows keep the use's date; the training on 2026-11-12 consumed all 6 rows
+        self.rows(*[("2026-11-1%d" % d, "phase P%d" % d, "changes-required", "lint", "")
+                    for d in range(0, 3)])
+        self.rows(*[("2026-11-1%d" % d, "phase P%d" % d, "pass", "lint", "resolved")
+                    for d in range(0, 3)])
+        self.assertIn("training due: yes", run("stats", self.dir)[1])
+        self.edit("- v1 2026-11-01: created — evidence: L1, L2, L3",
+                  "- v1 2026-11-01: created — evidence: L1, L2, L3\n"
+                  "- v2 2026-11-12: lint rule — evidence: L3 — records: 6 — expect: no lint "
+                  "blockers — revert if: lint blockers again")
+        self.assertEqual(run("check", self.dir)[0], 0)
+        code, out = run("stats", self.dir)
+        self.assertIn("records since (after record row 6): 0\n", out)
+        self.assertIn("training due: no\n", out)
+        self.assertIn("(records: 6 before, 0 after): lint 6 before, 0 after", out)
+        self.rows(("2026-11-12", "phase P7", "pass", "tone", "same day, after the training"))
+        self.assertIn("records since (after record row 6): 1\n", run("stats", self.dir)[1])
+        self.assertIn("release-notes: not due (1 records since v2)", run("due", self.root)[1])
+
+    def test_no_change_entry_resets(self):
+        self.rows(*[("2026-11-0%d" % d, "phase P%d" % d, "pass", "x", "") for d in range(2, 7)])
+        self.assertIn("training due: yes", run("stats", self.dir)[1])
+        self.edit("- v1 2026-11-01: created — evidence: L1, L2, L3",
+                  "- v1 2026-11-01: created — evidence: L1, L2, L3\n"
+                  "- v2 2026-11-07: no change — records: 5 — reason: owner declined")
+        self.assertEqual(run("check", self.dir)[0], 0)
+        self.assertIn("training due: no\n", run("stats", self.dir)[1])
+
+    def test_records_count_checked(self):
+        self.edit("- v1 2026-11-01: created — evidence: L1, L2, L3",
+                  "- v1 2026-11-01: created — records: 3 — evidence: L1, L2, L3")
+        self.check_fails("but the records file has 0 rows")
+
+    def test_fallback_is_strictly_after_the_date(self):
+        self.rows(("2026-11-01", "phase P1", "pass", "x", "creation day"),
+                  ("2026-11-02", "phase P2", "pass", "x", ""))
+        out = run("stats", self.dir)[1]
+        self.assertIn("records since (after 2026-11-01): 1\n", out)
+
+    def test_wrapped_changelog(self):
+        self.edit("- v1 2026-11-01: created — evidence: L1, L2, L3",
+                  "- v1 2026-11-01: created — evidence: L1, L2, L3\n"
+                  "- v2 2026-11-05: shorter — evidence: L3 — records: 0 —\n"
+                  "  expect: fewer tone tags\n"
+                  "  — revert if: tone again")
+        self.assertEqual(run("check", self.dir)[0], 0)
+        self.assertIn("expected effect v2 2026-11-05", run("stats", self.dir)[1])
+        self.edit("- v1 2026-11-01: created — evidence: L1, L2, L3",
+                  "- v1 2026-11-01: created — evidence: L1, L2, L3\n- v2 Nov 5\n  2026: x")
+        self.check_fails("changelog line doesn't match")
+
+    def test_bad_records_row(self):
+        self.rows(("2026-11-02", "phase P1", "pass", "x", "ok"))
+        self.append("docs/vault/skills/release-notes/records.md",
+                    "| 2026-11-03 | phase P2 | pass | x | no trailing pipe\n")
+        self.check_fails("records.md:6 is a row that doesn't parse")
+        code, out = run("stats", self.dir)
+        self.assertEqual(code, 0, out)
+        self.assertIn("records: 1\n", out)
+        self.assertIn("skipped rows that don't parse: docs/vault/skills/release-notes/records.md:6",
+                      out)
+
+    def test_bom_and_bullet_styles(self):
+        text = SKILL.replace("- Lead with user-visible changes. (L1)",
+                             "* Lead with user-visible changes. (L1)\n1. Numbered rule.")
+        self.write(".claude/skills/release-notes/SKILL.md", "\ufeff" + text)
+        self.check_fails("rule cites no lesson or owner quote: Numbered rule.")
+        self.write(".claude/skills/release-notes/SKILL.md", "\ufeff" + SKILL)
+        self.assertEqual(run("check", self.dir)[0], 0)
+
+    def test_near_miss_marker_reported(self):
+        self.edit("<!-- self-training-skill v1 -->", "<!-- self-training skill v1 -->")
+        self.check_fails("the marker doesn't match")
+        self.assertIn("release-notes: error: the marker doesn't match", run("due", self.root)[1])
+        self.edit("<!-- self-training-skill v1 -->\n", "intro\n<!-- self-training-skill v1 -->\n")
+        self.check_fails("the marker doesn't match")
 
     def test_stats_due(self):
         self.rows(*[("2026-11-0%d" % d, "phase P%d" % d, "pass", "x", "") for d in range(2, 7)])

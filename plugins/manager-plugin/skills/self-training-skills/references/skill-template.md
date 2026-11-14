@@ -52,12 +52,16 @@ or `failed` / `n/a`. In a note, quote the owner's words verbatim.
 
 ## Changelog
 
-- v1 <YYYY-MM-DD>: created — evidence: <seed lesson ids>
+- v1 <YYYY-MM-DD>: created — evidence: <seed lesson ids> — records: 0
 ```
 
 Later changelog entries: `- v<n> <YYYY-MM-DD>: <change> — evidence: <record and lesson ids> —
-expect: <observable effect> — revert if: <signal>`, with versions increasing.
+records: <n> — expect: <observable effect> — revert if: <signal>`, with versions increasing and
+`<n>` the records rows the training consumed (never decreasing). A training the owner declines:
+`- v<n> <YYYY-MM-DD>: no change — records: <n> — reason: owner declined`. An entry may wrap onto
+indented continuation lines.
 
-Each `## Rules` bullet ends with `(L<n>)` (one or more lesson ids in `lessons.md`, none `retired`)
-or `(owner: "<words>", <date>)`. `skilltrain.py check` enforces this, the sections, the marker, the
-records path and header, the lessons header and the changelog format.
+Each `## Rules` bullet (`-`, `*` or numbered) ends with `(L<n>)` (one or more lesson ids in
+`lessons.md`, none `retired`) or `(owner: "<words>", <date>)`. `skilltrain.py check` enforces
+this, the sections, the marker, the records path and header, the lessons header and the changelog
+format.
