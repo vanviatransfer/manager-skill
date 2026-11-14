@@ -269,16 +269,15 @@ dispatch fields; derive its `Integration method` from the project rules and land
 4a step 3. Branch name: `phase/<id>-<slug>`, or the designated branch. Keep the agent id: fix
 rounds go to the same agent.
 
-### 2. Verify the report and the candidate
-The report must have every field in the brief's report format; if any is missing or inconsistent,
-ask the same implementer once for exactly those fields. Then `git fetch origin <branch>` (bounded
-`--depth` if shallow) and check the facts yourself:
-- `gh pr view <n> --json number,state,headRefName,headRefOid,baseRefName,mergeable`;
-- the **candidate SHA** is GitHub's `headRefOid`, never the report's; if they differ, find out why
-  (unpushed or unexpected commits) before review;
-- `git merge-base --is-ancestor <base-sha> <candidate>` holds, and the base ref is the default;
-- `git diff --name-only <base-sha>...<candidate>` stays inside the phase scope (files under the
-  project's vault path pass this check; the reviewer judges whether the diff requires them).
+### 2. Verify the report and the candidate The report must have every field in the brief's report
+format; if any is missing or inconsistent, ask the same implementer once for exactly those fields.
+Then `git fetch origin <branch>` (bounded `--depth` if shallow) and check the facts yourself: - `gh
+pr view <n> --json number,state,headRefName,headRefOid,baseRefName,mergeable`; - the **candidate
+SHA** is GitHub's `headRefOid`, never the report's; if they differ, find out why (unpushed or
+unexpected commits) before review; - `git merge-base --is-ancestor <base-sha> <candidate>` holds,
+and the base ref is the default; - `git diff --name-only <base-sha>...<candidate>` stays inside the
+phase scope (markdown pages under the project's vault path, and the generated code-map pages, pass
+this check; the reviewer judges whether the diff requires them).
 
 After an integration (4a), the base SHA becomes the default head the implementer integrated, once
 `git merge-base --is-ancestor` confirms it is in the candidate.

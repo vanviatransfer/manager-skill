@@ -165,6 +165,8 @@ def code_part(line, state):
     while i < n:
         if state:
             end = line.find(state, i)
+            while end > 0 and (len(line[:end]) - len(line[:end].rstrip("\\"))) % 2 == 1:
+                end = line.find(state, end + 1)
             if end < 0:
                 return "".join(out), state
             i, state = end + 3, None
@@ -195,7 +197,7 @@ def python_info(text):
     Line patterns, not `ast`, so the result doesn't depend on the Python version running it.
     """
     symbols, imports = [], []
-    lines = text.splitlines()
+    lines = text.split("\n")
     state = None
     n = 0
     while n < len(lines):
@@ -234,7 +236,7 @@ def python_info(text):
 
 def pattern_info(text, key):
     symbols, imports = [], []
-    for lineno, line in enumerate(text.splitlines(), 1):
+    for lineno, line in enumerate(text.split("\n"), 1):
         for pat in PATTERNS[key]:
             m = pat.match(line)
             if m:
@@ -496,7 +498,7 @@ def command_label():
 # [[wikilinks]] resolve by file name across the vault (a path-qualified link by path suffix,
 # ties to the shallowest, then first path), [text](page.md) links resolve relative to the page,
 # and inline code spans naming a tracked file are recorded as mentions of that file.
-WIKILINK = re.compile(r"(?<!!)\[\[([^\]|#]+?)(?:\|[^\]]*|#[^\]]*)?\]\]")
+WIKILINK = re.compile(r"\[\[([^\]|#\\]+?)(?:\\?\|[^\]]*|#[^\]]*)?\]\]")
 MD_LINK = re.compile(r"(?<!!)\[[^\]]*\]\(<?([^)\s>]+)>?(?:\s+[^)]*)?\)")
 CODE_SPAN = re.compile(r"`([^`\n]+)`")
 FENCE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
@@ -508,7 +510,7 @@ def nfc(text):
 
 def prose_lines(text):
     fence = None
-    for lineno, line in enumerate(text.splitlines(), 1):
+    for lineno, line in enumerate(text.split("\n"), 1):
         m = FENCE.match(line)
         if fence:
             if m and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence) \
@@ -522,7 +524,7 @@ def prose_lines(text):
 
 
 def page_title(text, page):
-    lines = text.splitlines()
+    lines = text.split("\n")
     if lines and lines[0].strip() == "---":
         for line in lines[1:40]:
             if line.strip() == "---":
@@ -542,6 +544,10 @@ PATH_LIKE = re.compile(r"^[\w.@-]+(?:/[\w.@-]+)*/?$")
 
 def in_vault(path, vault):
     return vault == "." or path.startswith(vault + "/")
+
+
+def is_page(path, vault):
+    return in_vault(path, vault) and path.lower().endswith(".md")
 
 
 def strip_dot_slash(ref):
@@ -567,11 +573,15 @@ def scan_vault(root, vault, files, generated):
         for lineno, line in prose_lines(text):
             for target in WIKILINK.findall(line):
                 target = nfc(target.strip())
-                has_ext = re.search(r"\.[A-Za-z0-9]{1,5}$", target)
-                name = target if has_ext else target + ".md"
-                cands = by_name.get(posixpath.basename(name).lower(), [])
-                if "/" in name:
-                    cands = [c for c in cands if ("/" + nfc(c).lower()).endswith("/" + name.lower())]
+                cands = []
+                for name in (target + ".md", target):  # "Release 1.0" is a page, "a.png" a file
+                    found = by_name.get(posixpath.basename(name).lower(), [])
+                    if "/" in name:
+                        found = [c for c in found
+                                 if ("/" + nfc(c).lower()).endswith("/" + name.lower())]
+                    if found:
+                        cands = found
+                        break
                 cands.sort(key=lambda c: (c.count("/"), c))
                 if cands:
                     links[page].add(cands[0])
@@ -581,16 +591,22 @@ def scan_vault(root, vault, files, generated):
                 target = unquote(target.split("#")[0])
                 if not target or re.match(r"^[a-z][a-z0-9+.-]*:", target, re.I):
                     continue
-                if not target.lower().endswith(".md"):
-                    continue
                 dest = posixpath.normpath(posixpath.join(posixpath.dirname(page), target))
+                if not target.lower().endswith(".md"):
+                    if not dest.startswith("../") and not is_page(dest, vault):
+                        mentions.setdefault(dest, set()).add((page, lineno))
+                    continue
+                rooted = posixpath.normpath(posixpath.join("" if vault == "." else vault,
+                                                           target.lstrip("/")))
                 if dest in known or dest in generated:
                     links[page].add(dest)
+                elif rooted in known or rooted in generated:
+                    links[page].add(rooted)
                 else:
                     broken.append((page, lineno, target))
             for span in CODE_SPAN.findall(line):
                 ref = strip_dot_slash(span.strip().split("::")[0].split(":")[0])
-                if PATH_LIKE.match(ref) and ("/" in ref or "." in ref) and not in_vault(ref, vault):
+                if PATH_LIKE.match(ref) and ("/" in ref or "." in ref) and not is_page(ref, vault):
                     mentions.setdefault(ref, set()).add((page, lineno))
     inbound = {p: 0 for p in pages}
     for page, dests in links.items():
@@ -669,6 +685,17 @@ def safe_rel(value, what):
     return norm
 
 
+def check_map_path(root, out):
+    if not out.lower().endswith(".md"):
+        raise LayoutError("map must be a .md file: %r" % out)
+    existing = read_text(root, out)
+    lines = (existing or "").splitlines()
+    generated = len(lines) > 2 and lines[2].startswith(MARKER + " (format")
+    if os.path.isdir(os.path.join(root, *out.split("/"))) or (existing is not None
+                                                                and not generated):
+        raise LayoutError("map %r is an existing file this tool didn't write" % out)
+
+
 def read_config(root):
     text = read_text(root, CONFIG)
     if not text:
@@ -700,6 +727,7 @@ def resolve_layout(root, files, vault_arg=None, out_arg=None, use_config=True):
     if cfg and vault_arg is None and out_arg is None:
         vault = safe_rel(cfg.get("vault"), "vault")
         out = safe_rel(cfg.get("map"), "map") or default_map(root, vault)
+        check_map_path(root, out)
         return vault, out, CONFIG
     if vault_arg:
         vault, reason = safe_rel(vault_arg, "--vault"), "--vault"

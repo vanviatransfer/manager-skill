@@ -242,6 +242,30 @@ class CodemapTest(unittest.TestCase):
         self.assertIn("| `topics/topic.md` | Konu |", text)
         self.assertIn("0 broken links", text)
 
+    def test_root_vault_mentions_and_link_forms(self):
+        os.makedirs(os.path.join(self.root, ".obsidian"))
+        self.write("Home.md", "`app/util.py` and [code](app/main.py)\n| [[Release 1.0\\|r]] |\n![[pic.png]]\n")
+        self.write("Release 1.0.md", "# Release\n")
+        self.write("pic.png", "x")
+        self.git("add", "-A")
+        out = run("mentions", "app/util.py", "app/main.py", "--root", self.root)[1]
+        self.assertIn("Home.md:1 mentions app/util.py", out)
+        self.assertIn("Home.md:1 mentions app/main.py", out)
+        run("build", "--root", self.root)
+        self.assertIn("0 broken links", self.read("map.md"))
+
+    def test_escaped_triple_quote_and_form_feed(self):
+        text = 'x = """a \\""" b"""\n\x0c\ndef later():\n    pass\n'
+        symbols, _ = codemap.python_info(text)
+        self.assertEqual(symbols, [("later", 3)])
+
+    def test_config_map_cannot_overwrite_other_files(self):
+        for cfg in ('{"map": "app/util.py"}', '{"map": "README.md"}', '{"map": "."}'):
+            self.write("README.md", "hand written\n")
+            self.write(".codemap.json", cfg)
+            self.assertEqual(run("build", "--root", self.root)[0], 2, cfg)
+        self.assertEqual(self.read("README.md"), "hand written\n")
+
     def test_generic_folder_name_needs_wikilinks(self):
         self.write("notes/release-1.md", "# Release 1\n")
         self.write("notes/release-2.md", "# Release 2\n")

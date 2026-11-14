@@ -22,7 +22,7 @@ It is produced by `scripts/codemap.py`, a Python 3.8+ script that uses only the 
   ownership"), it stops with an error instead of guessing;
 - files that may hold secrets (`.env`, keys, `secrets` or `credentials` paths) are never read;
 - vault pages are scanned outside code blocks for `[[links]]`, `[text](page.md)` links, and code
-  spans that name a path (a file, a directory, or one that no longer exists);
+  spans or links that name a path (a file, a directory, or one that no longer exists);
 - it runs no project code and sends nothing anywhere.
 
 ## Where it writes
@@ -45,7 +45,9 @@ Where the map goes:
 The first `build` writes `.codemap.json`. Commit it with the map so every later run, on any
 machine, agrees. `build --redetect` re-detects the layout, for example after a vault is created; it
 rewrites `.codemap.json` and removes the generated map from its old place. A `.codemap.json` that
-isn't an object, or points outside the repository, is an error.
+isn't an object, points outside the repository, or names as `map` anything but a `.md` file this
+tool writes, is an error. `.obsidian/` is often gitignored, so commit `.codemap.json`: detection on
+a fresh clone may differ.
 
 ## Command
 
@@ -69,8 +71,9 @@ agrees in this conversation; if they decline, skip the map (nothing else depends
 `<cmd>` below is `<python> "<script>"`, run from the project root.
 
 - `<cmd> detect`: the vault and map paths, and how they were found.
-- `<cmd> build`: writes the map. Above 150 source files it adds one page per directory group of
-  at most 150 files, splitting large directories by subdirectory, and above 150 vault pages a
+- `<cmd> build`: writes the map. Above 150 source files it adds one page per directory group,
+  splitting directories with more than 150 files by subdirectory (files directly in one folder stay
+  together; a page lists at most 800 files, then points to `query`), and above 150 vault pages a
   separate vault-pages page. It deletes map pages it generated earlier
   that are now gone. It touches no other file except `.codemap.json` on the first run.
 - `<cmd> check`: exit 0 if the map matches the repository, 1 if it is stale. It writes nothing,
@@ -79,9 +82,10 @@ agrees in this conversation; if they decline, skip the map (nothing else depends
   the files that import them, the vault pages that mention them, and vault pages whose path or
   title matches. Use it before a broad `grep` or opening vault pages.
 - `<cmd> mentions --base <sha>` (or `mentions <path>...`): the vault pages that mention, in a code
-  span, any file changed, deleted or renamed since that commit, or a directory holding one. These
-  are the pages to check after a change; also `grep` the vault for symbol names the change
-  renames or removes, since `mentions` sees only paths.
+  span or a link, any file changed, deleted or renamed since that commit (compared with the working
+  tree, so run it at the candidate), or a directory holding one. These are the pages to check
+  after a change; also `grep` the vault for symbol names and plain-text paths the change renames
+  or removes, since `mentions` sees only code spans and links.
 
 ## Setting it up in a repository
 
@@ -105,5 +109,5 @@ reviewers `Code map: <cmd>`:
   plan-only PR), and again after any integration;
 - the reviewer runs `check` as required validation (stale means CHANGES REQUIRED; not for a
   plan-only PR), reads the diff without the map pages, and uses `mentions` plus a grep for
-  renamed or removed symbol names to find the vault pages to check;
+  renamed or removed names and paths to find the vault pages to check;
 - a merge conflict in map pages is resolved by running `build` again, never by hand.
