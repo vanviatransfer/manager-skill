@@ -412,6 +412,24 @@ class CodemapTest(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(self.root, "notes")))
         self.assertTrue(os.path.exists(os.path.join(self.root, "tools", "x", "vault", "map.md")))
 
+    def test_rmdir_failure_is_a_warning(self):
+        self.write(".codemap.json", '{"vault": null, "map": "notes/old/map.md"}')
+        run("build", "--root", self.root)
+        self.git("add", "-A")
+        real = os.rmdir
+
+        def fail(path):
+            raise PermissionError("denied")
+        os.rmdir = fail
+        err = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(err):
+                code = run("build", "--root", self.root, "--redetect")[0]
+        finally:
+            os.rmdir = real
+        self.assertEqual(code, 0)
+        self.assertIn("could not remove empty folder notes/old", err.getvalue())
+
     def test_out_is_normalised(self):
         code, _ = run("build", "--root", self.root, "--out", "x/../../outside/y.txt")
         self.assertEqual(code, 2)

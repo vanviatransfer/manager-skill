@@ -50,13 +50,12 @@ overwritten, and inside the repository nothing is read or written through a syml
 also a junction, with Python 3.12+), `.codemap.json` included. An explicit `--out` outside the
 repository is the caller's choice; there only existing files are protected.
 
-The first `build` writes `.codemap.json`. Commit it with the map so every later run, on any
-machine, agrees. `build --redetect` re-detects the layout, for example after a vault is created; it
-rewrites `.codemap.json` and removes the generated map from its old place, with any folders that
-are then empty. A `.codemap.json` that
-isn't an object, points outside the repository, or names as `map` anything but a `.md` file this
-tool writes, is an error. `.obsidian/` is often gitignored, so commit `.codemap.json`: detection on
-a fresh clone may differ.
+The first `build` writes `.codemap.json`. Commit it with the map so every later run, on any machine,
+agrees. `build --redetect` re-detects the layout, for example after a vault is created; it rewrites
+`.codemap.json` and removes the generated map from its old place, with any folders that are then
+empty. A `.codemap.json` that isn't an object, points outside the repository, or names as `map`
+anything but a `.md` file this tool writes, is an error. `.obsidian/` is often gitignored, so commit
+`.codemap.json`: detection on a fresh clone may differ.
 
 ## Command
 
