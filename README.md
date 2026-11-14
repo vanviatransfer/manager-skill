@@ -97,6 +97,14 @@ restricted plugin agent started with about 10k tokens and `general-purpose` with
 agent a session picks is the model's choice, guided by the agents' descriptions; to make it a
 rule, add a line to your user-level `CLAUDE.md`, e.g. "When delegating, use manager-plugin:worker,
 researcher or reviewer instead of general-purpose".
+
+The plugin also enforces this with a `PreToolUse` hook (`hooks/`), in every session where the plugin
+is enabled: a `general-purpose` spawn is blocked and the model is told which agent to use instead
+(`worker`, `researcher`, `reviewer`, or `implementer` for a manager phase with its brief). A prompt
+containing `[general-purpose: <reason>]` passes, for work that needs a tool the restricted agents
+don't have. The hook writes nothing, touches none of your settings files and goes away with the
+plugin. It is a plain `sh` script (on Windows, Git Bash, which Claude Code uses); if `sh` can't run,
+the hook fails open and general-purpose is allowed.
 Everything runs in one turn with subagents, so it works the same in the Claude desktop app, the
 terminal and cloud sessions.
 
@@ -200,5 +208,6 @@ rules and secret-file patterns follow ideas from
 
 Tests for the code-map script:
 `python3 -m unittest discover -s plugins/manager-plugin/skills/code-map/scripts`.
+Tests for the subagent hook: `python3 -m unittest discover -s plugins/manager-plugin/hooks`.
 Tests for the self-training-skills script:
 `python3 -m unittest discover -s plugins/manager-plugin/skills/self-training-skills/scripts`.
