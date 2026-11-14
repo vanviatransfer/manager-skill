@@ -98,12 +98,12 @@ restricted plugin agent started with about 10k tokens and `general-purpose` with
 A `PreToolUse` hook (`hooks/`) enforces this in every session where the plugin is enabled: a
 `general-purpose` spawn (also one with no agent type, which defaults to it) is blocked, and the
 model is told which agent to use instead (`worker`, `researcher` or `reviewer`; `implementer` is
-only for manager phases, which the manager dispatches with a brief). A request containing `[general-purpose: <reason>]` passes, for
-work that needs a tool the restricted agents don't have; another plugin or skill that dispatches
-`general-purpose` needs one retry with that marker. The hook writes nothing, touches none of your
-settings files and goes away with the plugin. It is a plain `sh` script; on Windows it runs in Git
-Bash, and where Git Bash (or `grep`/`sed`) is missing it fails open (`onFailure: continue`), so
-spawns are allowed and nothing is blocked.
+only for manager phases, which the manager dispatches with a brief). A request containing
+`[general-purpose: <reason>]` passes, for work that needs a tool the restricted agents don't have;
+another plugin or skill that dispatches `general-purpose` needs one retry with that marker. The hook
+writes nothing, touches none of your settings files and goes away with the plugin. It is a plain
+`sh` script; on Windows it runs in Git Bash, and where Git Bash (or `grep`/`sed`) is missing it
+fails open (`onFailure: continue`), so spawns are allowed and nothing is blocked.
 
 Everything runs in one turn with subagents, so it works the same in the Claude desktop app, the
 terminal and cloud sessions.
