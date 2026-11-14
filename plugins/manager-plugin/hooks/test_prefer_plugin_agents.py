@@ -21,8 +21,9 @@ class HookTest(unittest.TestCase):
     def test_general_purpose_is_blocked_with_guidance(self):
         code, err = run(spawn(subagent_type="general-purpose", prompt="fix the bug"))
         self.assertEqual(code, 2)
-        for agent in ("worker", "researcher", "reviewer", "implementer"):
+        for agent in ("worker", "researcher", "reviewer"):
             self.assertIn("manager-plugin:" + agent, err)
+        self.assertNotIn("implementer", err)
 
     def test_missing_type_defaults_to_general_purpose(self):
         self.assertEqual(run(spawn(prompt="x", description="d"))[0], 2)

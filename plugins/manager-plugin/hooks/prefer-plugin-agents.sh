@@ -33,8 +33,7 @@ manager-plugin: general-purpose is blocked here because it loads every skill, MC
 with the agent that fits the task:
 - manager-plugin:worker: a task that changes files (implement, fix, refactor, docs, tests, a PR);
 - manager-plugin:researcher: read-only research or a lookup that ends in a report;
-- manager-plugin:reviewer: an independent review of a change;
-- manager-plugin:implementer: only a manager phase, dispatched with its brief file.
+- manager-plugin:reviewer: an independent review of a change.
 If none can do it (it needs a tool they don't have), add "[general-purpose: <reason>]" to the
 prompt and dispatch general-purpose again.
 MSG
