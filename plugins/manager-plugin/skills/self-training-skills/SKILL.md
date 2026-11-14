@@ -146,7 +146,8 @@ through a symlink.
       <date>: no change — records: <n> — reason: owner declined`, so `due` resets. Run `<cmd>
       check`; with a code map, run its `build` and commit the result.
    8. Land through a PR with an independent reviewer. Dispatch a new `manager-plugin:reviewer`
-      (fallback `general-purpose`) for a manual review: read-only, no subagents, the verdict format
+      (fallback `manager-plugin:fallback` with `Role: reviewer`, else `general-purpose`) for a
+      manual review: read-only, no subagents, the verdict format
       of `${CLAUDE_SKILL_DIR}/../manager/references/reviewer-brief.md` (resolve the path first);
       give it the repo path, the PR number, the base and candidate SHAs and the chosen changes. Its
       checks:

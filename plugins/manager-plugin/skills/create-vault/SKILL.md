@@ -63,11 +63,12 @@ Talk to the owner in their language; write pages in the language the project's d
    session's designated branch), with a code map, run its `build` after the pages are final (the
    vault index holds titles and word counts); commit and open a PR. Follow the project's rules
    first.
-2. Independent review: dispatch a new `manager-plugin:reviewer` (or `general-purpose` if that type
-   isn't available). Tell it this is a manual review of the vault with no brief file; it stays
-   read-only, spawns no subagents and answers in the verdict format of
-   `${CLAUDE_SKILL_DIR}/../manager/references/reviewer-brief.md` (resolve the path first). Give it
-   the repo path, the PR number, the base and candidate SHAs and these checks:
+2. Independent review: dispatch a new `manager-plugin:reviewer` (if that type can't run here,
+   `manager-plugin:fallback` with `Role: reviewer`, else `general-purpose`). Tell it this is a
+   manual review of the vault with no brief file; it stays read-only, spawns no subagents and
+   answers in the verdict format of `${CLAUDE_SKILL_DIR}/../manager/references/reviewer-brief.md`
+   (resolve the path first). Give it the repo path, the PR number, the base and candidate SHAs and
+   these checks:
    - every fact matches the code at the candidate;
    - every source exists;
    - no plan content, status, secrets or personal data;

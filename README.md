@@ -81,7 +81,12 @@ A third one, `manager-plugin:researcher` (read and search tools, web search and 
 its report; staying read-only comes from its instructions), is for research an orchestrating
 session delegates (evaluating a repository or a library, reading docs): use it instead of
 `general-purpose` so the research agent doesn't inherit every skill and MCP tool. The manager loop
-itself doesn't dispatch it.
+itself doesn't dispatch it. A fourth, `manager-plugin:fallback`, replaces `general-purpose` when the
+implementer or reviewer type can't work in an environment (e.g. differently named GitHub MCP
+tools): it inherits the session's tools but drops skills, subagents and the MCP servers no role
+uses (mail, calendar, drive, docs, browser and remote-session tools), so connectors you need in
+other sessions stay on. Only if no plugin agent type is available does the manager use
+`general-purpose`.
 Everything runs in one turn with subagents, so it works the same in the Claude desktop app, the
 terminal and cloud sessions.
 

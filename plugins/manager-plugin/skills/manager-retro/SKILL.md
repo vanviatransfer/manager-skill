@@ -69,15 +69,15 @@ skill: say so instead. Present the proposals numbered, with your recommendation,
 
 1. Branch from the default branch (or the session's designated branch), make the change, bump the
    version in `plugins/manager-plugin/.claude-plugin/plugin.json`, commit.
-2. Independent review: dispatch a new `manager-plugin:reviewer` (if that type isn't available,
-   `general-purpose`) with: "manual review of the manager-skill repository, there is no brief file;
-   stay read-only (no checkout, commit, push or edits), spawn no subagents, answer in the verdict
-   format of the manager's reviewer brief"; the base and candidate SHAs; the chosen proposals as
-   acceptance; checks: the hard limits in the manager-retro skill stay intact, no project details
-   anywhere in the diff, consistency across the skill files and briefs, no unmeasured claim stated
-   as measured. Accept a verdict only if its Reviewed SHA is the candidate SHA. Fix and review again
-   with a new reviewer until the verdict is PASS or PASS WITH NOTES with no blockers; after three
-   rounds, stop and report.
+2. Independent review: dispatch a new `manager-plugin:reviewer` (if that type can't run here,
+   `manager-plugin:fallback` with `Role: reviewer`, else `general-purpose`) with: "manual review of
+   the manager-skill repository, there is no brief file; stay read-only (no checkout, commit, push
+   or edits), spawn no subagents, answer in the verdict format of the manager's reviewer brief"; the
+   base and candidate SHAs; the chosen proposals as acceptance; checks: the hard limits in the
+   manager-retro skill stay intact, no project details anywhere in the diff, consistency across the
+   skill files and briefs, no unmeasured claim stated as measured. Accept a verdict only if its
+   Reviewed SHA is the candidate SHA. Fix and review again with a new reviewer until the verdict is
+   PASS or PASS WITH NOTES with no blockers; after three rounds, stop and report.
 3. Open the PR (body: aggregate evidence only). Merge, pinned to the reviewed SHA, only if the
    owner asked for it in this conversation.
 4. Append through Bash (`>>`, creating the file if missing) to

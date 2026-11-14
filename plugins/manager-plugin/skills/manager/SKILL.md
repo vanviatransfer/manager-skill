@@ -55,10 +55,13 @@ Dispatch with the Agent tool and the `model` / `effort` that the approved **mode
 the role. Use `subagent_type: manager-plugin:implementer` / `manager-plugin:reviewer`, the plugin's
 tool-restricted subagents. Their allowlists narrow the tools available to them (the reviewer gets
 no Edit/Write or GitHub MCP write tools; staying read-only still comes from its brief). Plan-only
-PRs use the same two. If a role's type isn't available, or it reports a missing tool (e.g. the
-GitHub MCP server has another name), use `general-purpose` for every later dispatch of that role
-in this run and note it once for the final report. If `general-purpose` fails the same way, that
-is an environment failure (stop condition). The role instructions live in the brief files; you
+PRs use the same two. If a role's type reports a missing tool (e.g. the GitHub MCP server has
+another name), use `manager-plugin:fallback` for every later dispatch of that role in this run,
+with `Role: implementer | reviewer` as the dispatch's first field: it inherits the session's tools
+minus skills, subagents and MCP servers no role uses, so it costs far less context than
+`general-purpose`. Use `general-purpose` only if no plugin agent type is available at all. Note
+either fallback once for the final report. If the fallback fails the same way, that is an
+environment failure (stop condition). The role instructions live in the brief files; you
 send only the **dispatch fields** listed at the top of each file, prefixed with one line:
 `Read and follow <the role's resolved brief path>.` (If a subagent can't read that path, paste the
 file's instruction block instead.)
@@ -213,7 +216,8 @@ Derive state from durable sources only — never from memory of an earlier conte
    Overhead check (read-only): list what the repo itself enables — `enabledPlugins` in
    `.claude/settings.json` / `settings.local.json`, servers in `.mcp.json`, skills under
    `.claude/skills` — other than this plugin. Never change them. They load into the main session
-   and into any `general-purpose` fallback; user-level settings aren't covered.
+   and into a `general-purpose` fallback (`manager-plugin:fallback` drops skills and the MCP
+   servers it denies); user-level settings aren't covered.
    Session check (read-only; never edit settings yourself): (a) the auto-compact window, from
    `CLAUDE_CODE_AUTO_COMPACT_WINDOW` and the `autoCompactWindow` keys (top level or under
    `modelSettings`) in `~/.claude/settings.json` and the project's settings. If none is set,
@@ -573,10 +577,11 @@ Final report, compact: phases landed (PR, merged SHA); phases blocked and why; t
 used and any model concerns; the plugin version and usage change (if readable); the run record path,
 or why it was skipped; the code map (set up, set up in this run, or not used and why); session-check
 recommendations not already given at the gate; one line on repo-enabled plugins, MCP servers or
-skills found in step 0 (names, "disable for this repo if unneeded") and any `general-purpose`
-fallback dispatch; unresolved risks (including validation the reviewer could not run); decisions
-answered but not yet persisted, if any; non-blocking notes carried forward; the default branch's
-final head SHA; then the numbered batch of unresolved owner decisions.
+skills found in step 0 (names, "disable for this repo if unneeded") and any fallback dispatch
+(`manager-plugin:fallback` or `general-purpose`); unresolved risks (including validation the
+reviewer could not run); decisions answered but not yet persisted, if any; non-blocking notes
+carried forward; the default branch's final head SHA; then the numbered batch of unresolved owner
+decisions.
 
 Self-training skills: when the default branch has marked skills under `.claude/skills/` (`grep -l
 "<!-- self-training-skill v1 -->" .claude/skills/*/SKILL.md`), run `<python>
