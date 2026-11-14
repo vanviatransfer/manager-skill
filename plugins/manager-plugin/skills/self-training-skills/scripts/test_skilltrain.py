@@ -352,6 +352,74 @@ class SkilltrainTest(unittest.TestCase):
         self.assertIn("skipped rows that don't parse: docs/vault/skills/release-notes/records.md:6",
                       out)
 
+    def test_lines_after_the_table_are_reported(self):
+        self.rows(("2026-11-02", "phase P1", "pass", "x", "ok"))
+        self.append("docs/vault/skills/release-notes/records.md",
+                    "2026-11-03 | phase P2 | pass | x | no leading pipe |\n\nA paragraph.\n"
+                    "| 2026-11-04 | phase P3 | pass | x | after the paragraph |\n")
+        code, out = run("check", self.dir)
+        self.assertEqual(code, 1, out)
+        for n in (6, 8, 9):
+            self.assertIn("records.md:%d is a row that doesn't parse" % n, out)
+        out = run("stats", self.dir)[1]
+        self.assertIn("records: 1\n", out)
+        self.assertIn("records.md:6, docs/vault/skills/release-notes/records.md:8, "
+                      "docs/vault/skills/release-notes/records.md:9", out)
+
+    def test_records_count_is_the_dash_segment(self):
+        self.rows(*[("2026-11-0%d" % d, "phase P%d" % d, "pass", "x", "") for d in range(2, 5)])
+        self.edit("- v1 2026-11-01: created — evidence: L1, L2, L3",
+                  "- v1 2026-11-01: created — evidence: L1, L2, L3\n"
+                  "- v2 2026-11-05: keep records: 1 per use — evidence: L3 - records: 3 — "
+                  "expect: x")
+        self.assertIn("records since (after record row 3): 0\n", run("stats", self.dir)[1])
+        self.edit("- v1 2026-11-01: created — evidence: L1, L2, L3",
+                  "- v1 2026-11-01: created — evidence: L1, L2, L3\n"
+                  "- v2 2026-11-05: keep records: 1 per use — evidence: L3")
+        self.assertIn("records since (after 2026-11-05): 0\n", run("stats", self.dir)[1])
+
+    def test_stray_changelog_lines(self):
+        self.edit("- v1 2026-11-01: created — evidence: L1, L2, L3",
+                  "- v1 2026-11-01: created — evidence: L1, L2, L3\n* v2 2026-11-05: star")
+        self.check_fails("changelog line is not a '- v<n> <YYYY-MM-DD>: ...' entry")
+        self.edit("- v1 2026-11-01: created — evidence: L1, L2, L3",
+                  "- v1 2026-11-01: created — evidence: L1, L2, L3\n\nA stray paragraph.")
+        self.check_fails("indented continuation: A stray paragraph.")
+
+    def test_record_values_checked(self):
+        self.rows(("2026-11-02", "phase P1", "passed", "x", ""),
+                  ("2026-13-02", "phase P2", "pass", "x", ""),
+                  ("2 Nov", "phase P3", "pass", "x", ""))
+        code, out = run("check", self.dir)
+        self.assertEqual(code, 1, out)
+        self.assertIn("records.md:5 has an unknown outcome: passed", out)
+        self.assertIn("records.md:6 has a date that isn't YYYY-MM-DD: 2026-13-02", out)
+        self.assertIn("records.md:7 has a date that isn't YYYY-MM-DD: 2 Nov", out)
+
+    def test_folded_description_is_measured(self):
+        self.edit("description: Write the release notes for a tagged release. Not for changelogs "
+                  "of single PRs.\n", "description: >\n" + ("  %s\n" % ("x" * 80)) * 8)
+        self.check_fails("description is 647 characters")
+        self.edit("description: Write the release notes for a tagged release. Not for changelogs "
+                  "of single PRs.\n", "description: |\n  Write the notes.\n  Short.\n")
+        self.assertEqual(run("check", self.dir)[0], 0)
+
+    def test_rules_paragraphs_and_sub_bullets(self):
+        self.edit("- Lead with user-visible changes. (L1)\n",
+                  "These rules apply to every release.\n- Lead with user-visible changes. (L1)\n")
+        self.check_fails("rule without a bullet/citation: These rules apply")
+        self.edit("- Lead with user-visible changes. (L1)\n",
+                  "- Lead with user-visible changes. (L1)\n  - features first\n"
+                  "    and fixes after\n  - then docs\n")
+        code, out = run("check", self.dir)
+        self.assertEqual(code, 0, out)
+
+    def test_sections_in_code_fences_dont_count(self):
+        self.edit("2. Group them by area.\n",
+                  "2. Group them by area.\n\n```markdown\n## Purpose\n## Changelog\n```\n")
+        code, out = run("check", self.dir)
+        self.assertEqual(code, 0, out)
+
     def test_bom_and_bullet_styles(self):
         text = SKILL.replace("- Lead with user-visible changes. (L1)",
                              "* Lead with user-visible changes. (L1)\n1. Numbered rule.")

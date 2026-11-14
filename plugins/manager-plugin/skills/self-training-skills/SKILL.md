@@ -140,11 +140,11 @@ through a symlink.
       from `references/evidence-rules.md`. End the turn.
    7. Apply only what the owner chose: append the resolved records rows, edit the skill, append the
       lessons rows, and add a changelog entry `v<n> <date>: <change> — evidence: <ids> — records:
-      <n> — expect: <observable effect> — revert if: <signal>`, where `<n>` is the records table's
-      row count after the resolved rows (the rows this training consumed). If the owner chose no
-      change, still append the resolved rows and add `v<n> <date>: no change — records: <n> —
-      reason: owner declined`, so `due` resets. Run `<cmd> check`; with a code map, run its `build`
-      and commit the result.
+      <n> — expect: <observable effect> — revert if: <signal>`, where `<n>` is the `records:` total
+      that `<cmd> stats` prints after the resolved rows are appended (the rows this training
+      consumed). If the owner chose no change, still append the resolved rows and add `v<n>
+      <date>: no change — records: <n> — reason: owner declined`, so `due` resets. Run `<cmd>
+      check`; with a code map, run its `build` and commit the result.
    8. Land through a PR with an independent reviewer. Dispatch a new `manager-plugin:reviewer`
       (fallback `general-purpose`) for a manual review: read-only, no subagents, the verdict format
       of `${CLAUDE_SKILL_DIR}/../manager/references/reviewer-brief.md` (resolve the path first);
@@ -155,6 +155,8 @@ through a symlink.
       - no rule contradicts the project rules;
       - `<cmd> check` passes;
       - the size budget;
+      - the last changelog `records:` equals the records row count at the candidate (recheck after
+        any integration);
       - the validation the project rules require for every PR.
 
       Accept only a verdict for the candidate SHA. Run fix rounds with a new reviewer, at most 3,

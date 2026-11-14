@@ -93,9 +93,8 @@ completed phases and decided items, re-plan only what remains, and say what chan
 Show a short summary, not the whole file: goal, number of phases with their titles, the first two
 or three in a line each, and the open decisions with your recommendations.
 Ask the recurring-work question (step 2, **Recurring work**) here unless step 1 already asked it.
-Ask for approval or
-changes. Approval of the plan is not authorization to execute it — unless the owner says to go,
-stop here.
+Ask for approval or changes. Approval of the plan is not authorization to execute it — unless the
+owner says to go, stop here.
 
 Commit the plan following the project's rules (usually its own small PR). When the owner wants
 execution, hand over to the `manager` skill.

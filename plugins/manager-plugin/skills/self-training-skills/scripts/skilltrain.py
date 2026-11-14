@@ -26,6 +26,7 @@ anywhere. Nothing is read through a symlink (on Windows also a junction, with Py
 CRLF files are accepted.
 """
 import argparse
+import datetime
 import os
 import posixpath
 import re
@@ -52,7 +53,9 @@ TOP_TAGS = 10
 
 DATE = r"\d{4}-\d{2}-\d{2}"
 CHANGELOG_LINE = re.compile(r"^- v(\d+) (" + DATE + r"): \S")
-CHANGELOG_RECORDS = re.compile(r"\brecords:\s*(\d+)\b")
+# the "— records: <n>" segment (an em dash or " - " before it); the last one counts
+CHANGELOG_RECORDS = re.compile(r"(?:—|\s-)\s*records:\s*(\d+)\b")
+FENCE = re.compile(r"^\s*(```|~~~)")
 BULLET = re.compile(r"^(?:[-*+]|\d+[.)])\s+")
 LESSON_CITE = re.compile(r"\((L\d+(?:,\s*L\d+)*)\)\s*$")
 OWNER_CITE = re.compile(r"\(owner: \".+\", " + DATE + r"\)\s*$")
@@ -115,13 +118,27 @@ def split_frontmatter(text):
     for i in range(1, len(lines)):
         if lines[i].strip() == "---":
             meta = {}
-            for line in lines[1:i]:
-                m = re.match(r"^([A-Za-z][\w-]*):\s*(.*)$", line)
-                if m:
-                    val = m.group(2).strip()
-                    if len(val) >= 2 and val[0] == val[-1] and val[0] in "\"'":
-                        val = val[1:-1]
-                    meta[m.group(1)] = val
+            fm = lines[1:i]
+            j = 0
+            while j < len(fm):
+                m = re.match(r"^([A-Za-z][\w-]*):\s*(.*)$", fm[j])
+                j += 1
+                if not m:
+                    continue
+                val = m.group(2).strip()
+                more = []
+                while j < len(fm) and (fm[j].startswith((" ", "\t")) or not fm[j].strip()):
+                    more.append(fm[j].strip())
+                    j += 1
+                while more and not more[-1]:
+                    more.pop()
+                if re.match(r"^[>|][+-]?$", val):  # a folded or literal block scalar
+                    val = ("\n" if val[0] == "|" else " ").join(more)
+                elif more:  # a plain scalar continued on indented lines
+                    val = " ".join([val] + [ln for ln in more if ln])
+                if len(val) >= 2 and val[0] == val[-1] and val[0] in "\"'":
+                    val = val[1:-1]
+                meta[m.group(1)] = val
             body = lines[i + 1:]
             if body and body[-1] == "":
                 body = body[:-1]
@@ -146,10 +163,15 @@ def marker_kind(body):
 
 
 def sections(body):
-    """[(title, [lines])] for the '## ' sections, in order."""
+    """[(title, [lines])] for the '## ' sections, in order ('## ' inside a fenced code block
+    doesn't count)."""
     out = []
+    fence = None
     for line in body:
-        if line.startswith("## "):
+        f = FENCE.match(line)
+        if f:
+            fence = None if fence == f.group(1) else (fence or f.group(1))
+        if fence is None and not f and line.startswith("## "):
             out.append((line[3:].strip(), []))
         elif out:
             out[-1][1].append(line)
@@ -187,8 +209,10 @@ def is_separator(line):
 
 
 def parse_table(text, header):
-    """(header ok, rows as lists of len(header) cells, line numbers of rows that don't parse).
-    Rows follow the first table header, up to the first line that isn't a row or blank."""
+    """(header ok, rows as lists of len(header) cells, their line numbers, line numbers of
+    lines that don't parse as rows). Rows follow the first table header; blank lines are
+    allowed. The table ends at the first other line: it and every later non-blank line are
+    reported as rows that don't parse."""
     lines = text.split("\n")
     for i, line in enumerate(lines):
         if not line.strip().startswith("|"):
@@ -196,39 +220,52 @@ def parse_table(text, header):
         row = cells(line)
         ok = row is not None and tuple(c.lower() for c in row) == header and \
             i + 1 < len(lines) and is_separator(lines[i + 1])
-        rows, bad = [], []
+        rows, numbers, bad = [], [], []
         if ok:
+            ended = False
             for n, rest in enumerate(lines[i + 2:], i + 3):
-                if not rest.strip().startswith("|"):
-                    if rest.strip():
-                        break
+                if not rest.strip():
                     continue
-                r = cells(rest)
+                r = None if ended or not rest.strip().startswith("|") else cells(rest)
                 if r is None or len(r) < len(header):
                     bad.append(n)
+                    ended = ended or not rest.strip().startswith("|")
                     continue
                 if len(r) > len(header):  # an unescaped pipe in the last cell
                     r = r[:len(header) - 1] + [" | ".join(r[len(header) - 1:])]
                 rows.append(r)
-        return ok, rows, bad
-    return False, [], []
+                numbers.append(n)
+        return ok, rows, numbers, bad
+    return False, [], [], []
 
 
 def bullets(lines):
-    """Joined bullets ('-', '*', '+' or numbered) of a section (continuation lines are
-    indented)."""
-    out = []
+    """(joined top-level bullets ('-', '*', '+' or numbered), paragraph lines that aren't in a
+    bullet). Indented continuation lines join their bullet; indented sub-bullets, and the
+    lines under them, belong to their parent and are skipped; fenced code is skipped."""
+    out, stray = [], []
+    in_sub = False
+    fence = None
     for line in lines:
+        f = FENCE.match(line)
+        if f or fence:
+            if f:
+                fence = None if fence == f.group(1) else (fence or f.group(1))
+            continue
+        if not line.strip():
+            continue
         m = BULLET.match(line)
         if m:
             out.append(line[m.end():].strip())
-        elif out and line.startswith((" ", "\t")) and line.strip():
-            out[-1] += " " + line.strip()
-        elif not line.strip():
-            continue
+            in_sub = False
+        elif out and line.startswith((" ", "\t")):
+            if BULLET.match(line.strip()):
+                in_sub = True
+            if not in_sub:
+                out[-1] += " " + line.strip()
         else:
-            out.append(None)  # a paragraph line ends the bullet
-    return [b for b in out if b is not None]
+            stray.append(line.strip())
+    return out, stray
 
 
 def section_paths(lines):
@@ -240,7 +277,8 @@ class Skill:
         self.root = root
         self.rel_dir = rel_dir
         self.problems = []
-        self.skipped = []  # line numbers of records rows that don't parse
+        self.skipped = []  # file:line of records lines that don't parse
+        self.record_lines = []  # file:line of each parsed records row
         text = read_rel(root, rel_dir + "/SKILL.md")
         self.meta, self.body = split_frontmatter(text)
         self.kind = marker_kind(self.body)
@@ -280,12 +318,13 @@ def load_records(sk):
     except ValueError as exc:
         sk.problems.append("records: %s" % exc)
         return None
-    ok, rows, bad = parse_table(text, RECORDS_HEADER)
+    ok, rows, numbers, bad = parse_table(text, RECORDS_HEADER)
     if not ok:
         sk.problems.append("records: %s lacks the header | %s | and its separator"
                            % (rel, " | ".join(RECORDS_HEADER)))
         return None
     sk.skipped = ["%s:%d" % (rel, n) for n in bad]
+    sk.record_lines = ["%s:%d" % (rel, n) for n in numbers]
     return rows
 
 
@@ -296,7 +335,7 @@ def load_lessons(sk):
     except ValueError as exc:
         sk.problems.append("lessons: %s" % exc)
         return None
-    ok, rows, bad = parse_table(text, LESSONS_HEADER)
+    ok, rows, _, bad = parse_table(text, LESSONS_HEADER)
     if not ok:
         sk.problems.append("lessons: %s lacks the header | %s | and its separator"
                            % (rel, " | ".join(LESSONS_HEADER)))
@@ -315,6 +354,9 @@ def changelog(sk):
             joined.append(line.rstrip())
         elif joined and line.startswith((" ", "\t")) and line.strip():
             joined[-1] += " " + line.strip()
+        elif line.strip():
+            sk.problems.append("changelog line is not a '- v<n> <YYYY-MM-DD>: ...' entry or an "
+                               "indented continuation: %s" % line.strip()[:80])
     out = []
     for line in joined:
         m = CHANGELOG_LINE.match(line)
@@ -322,9 +364,19 @@ def changelog(sk):
             sk.problems.append("changelog line doesn't match '- v<n> <YYYY-MM-DD>: ...': %s"
                                % line.strip()[:80])
             continue
-        r = CHANGELOG_RECORDS.search(line)
-        out.append((int(m.group(1)), m.group(2), line, int(r.group(1)) if r else None))
+        r = CHANGELOG_RECORDS.findall(line)
+        out.append((int(m.group(1)), m.group(2), line, int(r[-1]) if r else None))
     return out
+
+
+def valid_date(text):
+    if not re.match("^" + DATE + "$", text):
+        return False
+    try:
+        datetime.date(int(text[:4]), int(text[5:7]), int(text[8:]))
+    except ValueError:
+        return False
+    return True
 
 
 def check_worker(sk):
@@ -335,8 +387,17 @@ def check_worker(sk):
     rows = load_records(sk)
     for where in sk.skipped:
         sk.problems.append("records: %s is a row that doesn't parse" % where)
+    for row, where in zip(rows or [], sk.record_lines):
+        if not valid_date(row[0]):
+            sk.problems.append("records: %s has a date that isn't YYYY-MM-DD: %s" % (where, row[0]))
+        if row[2] not in OUTCOMES:
+            sk.problems.append("records: %s has an unknown outcome: %s (one of %s)"
+                               % (where, row[2], ", ".join(OUTCOMES)))
     lessons = load_lessons(sk)
-    for b in bullets(section(sk.secs, "Rules") or []):
+    rules, stray = bullets(section(sk.secs, "Rules") or [])
+    for line in stray:
+        sk.problems.append("rule without a bullet/citation: %s" % line[:80])
+    for b in rules:
         m = LESSON_CITE.search(b)
         if m:
             for lid in re.split(r",\s*", m.group(1)):
