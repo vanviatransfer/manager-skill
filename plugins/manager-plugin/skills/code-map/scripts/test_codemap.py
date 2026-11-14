@@ -370,6 +370,23 @@ class CodemapTest(unittest.TestCase):
         self.assertEqual(run("build", "--root", self.root)[0], 2)
         self.assertTrue(os.path.exists(os.path.join(elsewhere, "old.md")))
 
+    def test_config_symlink_is_never_written_through(self):
+        if not hasattr(os, "symlink"):
+            self.skipTest("no symlinks")
+        victim = self.tmp.name + "-victim"
+        with open(victim, "w") as fh:
+            fh.write("precious")
+        os.symlink(victim, os.path.join(self.root, ".codemap.json"))
+        for args in (("build",), ("build", "--redetect"), ("check",)):
+            self.assertEqual(run(*args, "--root", self.root)[0], 2, args)
+        with open(victim) as fh:
+            self.assertEqual(fh.read(), "precious")
+        os.remove(os.path.join(self.root, ".codemap.json"))
+        dangling = self.tmp.name + "-new.json"
+        os.symlink(dangling, os.path.join(self.root, ".codemap.json"))
+        self.assertEqual(run("build", "--root", self.root)[0], 2)
+        self.assertFalse(os.path.exists(dangling))
+
     def test_out_is_normalised(self):
         code, _ = run("build", "--root", self.root, "--out", "x/../../outside/y.txt")
         self.assertEqual(code, 2)

@@ -90,6 +90,14 @@ TEST_FILE = re.compile(r"(^test_|_test\.|\.test\.|\.spec\.|Tests?\.)")
 ENTRY_NAMES = {"main", "index", "app", "server", "cli", "__main__", "manage", "program"}
 
 
+def is_link(path):
+    """A symlink, or on Windows a junction (Python 3.12+ can tell)."""
+    if os.path.islink(path):
+        return True
+    isjunction = getattr(os.path, "isjunction", None)
+    return bool(isjunction and isjunction(path))
+
+
 class GitError(Exception):
     pass
 
@@ -140,7 +148,7 @@ def skipped(path, out_rel):
 def read_text(root, path):
     full = os.path.join(root, *path.split("/"))
     try:
-        if os.path.islink(full) or os.path.getsize(full) > 2 * MAX_BYTES:
+        if is_link(full) or os.path.getsize(full) > 2 * MAX_BYTES:
             return None
         with open(full, "rb") as fh:
             data = fh.read().replace(b"\r\n", b"\n")
@@ -488,7 +496,7 @@ def generated_pages(root, out_rel):
     found = []
     sub = posixpath.splitext(out_rel)[0]
     folder = os.path.join(root, *sub.split("/"))
-    if os.path.isdir(folder) and not os.path.islink(folder):
+    if os.path.isdir(folder) and not is_link(folder):
         for name in sorted(os.listdir(folder)):
             rel = sub + "/" + name
             if name.endswith(".md") and is_generated(read_text(root, rel)):
@@ -696,7 +704,7 @@ def safe_rel(value, what):
 def foreign_in_map_dir(root, out):
     """Files in the map's page folder that this tool didn't write."""
     folder = os.path.join(root, *posixpath.splitext(out)[0].split("/"))
-    if os.path.islink(folder):
+    if is_link(folder):
         return [posixpath.splitext(out)[0] + " (a symlink)"]
     if not os.path.isdir(folder):
         return []
@@ -714,9 +722,9 @@ def link_in_path(root, rel):
     """True if the path, a folder on the way to it inside the repo, or (for a map) its page
     folder is a symlink."""
     parts = rel.split("/")
-    if any(os.path.islink(os.path.join(root, *parts[:i])) for i in range(1, len(parts) + 1)):
+    if any(is_link(os.path.join(root, *parts[:i])) for i in range(1, len(parts) + 1)):
         return True
-    return rel.lower().endswith(".md") and os.path.islink(
+    return rel.lower().endswith(".md") and is_link(
         os.path.join(root, *posixpath.splitext(rel)[0].split("/")))
 
 
@@ -736,6 +744,8 @@ def check_map_path(root, out):
 
 
 def read_config(root):
+    if is_link(os.path.join(root, CONFIG)):
+        raise LayoutError("%s is a symlink; replace it with a plain file" % CONFIG)
     text = read_text(root, CONFIG)
     if not text:
         return None
@@ -921,7 +931,7 @@ def main(argv=None):
             if is_generated(read_text(root, rel)):
                 os.remove(os.path.join(root, *rel.split("/")))
         old_dir = os.path.join(root, *posixpath.splitext(old[1])[0].split("/"))
-        if os.path.isdir(old_dir) and not os.path.islink(old_dir) and not os.listdir(old_dir):
+        if os.path.isdir(old_dir) and not is_link(old_dir) and not os.listdir(old_dir):
             os.rmdir(old_dir)
     inside = not out_rel.startswith("../")
     if inside and (redetect or (source != CONFIG and not args.out and not read_config(root))):

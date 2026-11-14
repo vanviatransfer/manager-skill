@@ -173,7 +173,9 @@ At step 6 (after the fetch and the plan read), before any dispatch, whatever the
     before any phase: a new implementer and reviewer, each with `Setup: code map`, the command,
     phase `none` and `Branch: setup/code-map` (or the designated branch), through steps 2 to 5
     like a plan-only PR (fix rounds and brakes included; with a designated branch, step 5's
-    reconcile before the next dispatch). Then every dispatch gets the command. If the setup PR
+    reconcile before the next dispatch). It carries `Plan records: none`: pending records ride the
+    next phase or plan-only PR. A remote `setup/code-map` branch with no open PR, or with only a PR
+    closed unmerged, is abandoned: report it and use `setup/code-map-<run-id>`. Then every dispatch gets the command. If the setup PR
     blocks or can't land: on `setup/code-map`, report why, use `Code map: none` and go on with the
     phases; on a single designated branch it occupies the branch (**Sequential phases**): stop
     and report.
@@ -249,7 +251,8 @@ Derive state from durable sources only — never from memory of an earlier conte
      otherwise report it and don't touch it (on a designated branch it occupies the branch: stop,
      as **Sequential phases** says);
    - an open PR that matches no phase → say so; don't touch it.
-6. **Model strategy gate** (above), then the **Code map** check (also above). Everything before this
+6. **Model strategy gate** and **Code map** check (both above; the code-map question is folded into
+   the gate when the gate is asked, so evaluate it first). Everything before this
    point is read-only.
 
 No living plan → the run can't start: hand over to the `living-plan` skill (owner-driven, with its

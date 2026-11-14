@@ -47,21 +47,22 @@ or MCP tools beyond the GitHub backend's.
    `create_pull_request`, tools via ToolSearch; see `github-backends.md`; a tool you need is missing
    → `RESULT: BLOCKED`, Blocker `missing tool <name>`), with the repo's PR template if any and a
    `Run: <run-id>` line. Code-map setup PR (`Setup: code map`, on the dispatch's branch): run `<code
-   map> build` (`build --redetect` if a `.codemap.json` exists without a `map`), add one line for
-   the map to the vault's index page if it has one (never the living plan or a rules file), commit
-   only `.codemap.json`, the generated pages and that line; its validation is `<code map> check`,
-   plus any validation the project rules require for every PR. Plan-only PR: exactly the Plan
-   change, nothing else (a specification: draft from it, adding no scope, decision or acceptance
-   beyond it). Phase PR, in the same PR: mark the phase done (status + PR link); write the Plan
-   records exactly (no other decision, status or model-strategy edit); update later phases and the
-   change log if facts require; never change this phase's objective, scope, risk, acceptance or
-   validation unless a Ruling requires it, then quote the Ruling in the change log. Vault, if any: a
-   fact a page states that this phase changes, or a concept it adds that the index lacks → update
-   that page (or add a page and its index line) in this PR (with a `Code map` command, `<code map>
-   mentions --base <Base SHA>` lists the pages that mention changed paths in code spans or links;
-   also `grep` the vault for the symbol names and paths you rename or remove); correct the fact in
-   place, keep its source (a path), add no status or plan content, and set the page's last line to
-   `Verified: <date>, phase <id>, base <short Base SHA>`.
+   map> build` (`build --redetect`, with `--vault <its vault>` if it names one, when a
+   `.codemap.json` exists without a `map`), add one line for the map to the vault's index page if it
+   has one (never the living plan or a rules file), commit only `.codemap.json`, the generated pages
+   and that line; its validation is `<code map> check`, plus any validation the project rules
+   require for every PR. Plan-only PR: exactly the Plan change, nothing else (a specification: draft
+   from it, adding no scope, decision or acceptance beyond it). Phase PR, in the same PR: mark the
+   phase done (status + PR link); write the Plan records exactly (no other decision, status or
+   model-strategy edit); update later phases and the change log if facts require; never change this
+   phase's objective, scope, risk, acceptance or validation unless a Ruling requires it, then quote
+   the Ruling in the change log. Vault, if any: a fact a page states that this phase changes, or a
+   concept it adds that the index lacks → update that page (or add a page and its index line) in
+   this PR (with a `Code map` command, `<code map> mentions --base <Base SHA>` lists the pages that
+   mention changed paths in code spans or links; also `grep` the vault for the symbol names and
+   paths you rename or remove); correct the fact in place, keep its source (a path), add no status
+   or plan content, and set the page's last line to `Verified: <date>, phase <id>, base <short Base
+   SHA>`.
 5. **Validate.** With a `Code map` command, except in a plan-only PR: run `<code map> build` before
    the final validation and commit what it changes (generated pages: never edit them by hand).
    Develop with focused tests; on your final commit run every required validation command once each

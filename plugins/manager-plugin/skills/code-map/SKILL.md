@@ -46,7 +46,8 @@ wrote, no symlink on the way, and no hand-written file in its page folder):
 - **Without a vault:** `docs/code-map.md`, then `docs/code-map-generated.md`.
 
 If none is free, it stops and asks for a `map` in `.codemap.json`. A hand-written file is never
-overwritten.
+overwritten, and nothing is read or written through a symlink (on Windows also a junction, with
+Python 3.12+), `.codemap.json` included.
 
 The first `build` writes `.codemap.json`. Commit it with the map so every later run, on any
 machine, agrees. `build --redetect` re-detects the layout, for example after a vault is created; it
@@ -113,10 +114,10 @@ made, one the owner had made in another session, or an Obsidian vault.
 ## In the manager
 
 At the start of every run, whatever the model strategy, the manager checks whether the default
-branch has `.codemap.json`. That committed file is the guard: once it exists, the check passes
-silently. Without it, the manager asks whether to set the map up (yes / not this time / never in
-this repo; "never" is recorded as an owner decision in the plan), and on yes lands the setup
-first as its own small, reviewed PR. With the map set up, it gives implementers and reviewers
+branch has `.codemap.json` with a `map`. That committed file is the guard: once it exists, the
+check passes silently. Without it, the manager asks whether to set the map up (yes / not this time
+/ never in this repo; "never" is recorded as an owner decision in the plan), and on yes lands the
+setup first as its own small, reviewed PR. With the map set up, it gives implementers and reviewers
 `Code map: <cmd>`:
 - the implementer runs `build` before its final validation and commits the result (not in a
   plan-only PR), and again after any integration;
