@@ -38,8 +38,8 @@ it, the script detects the vault, trying in order:
 Folders that may hold secrets are never read, not even for detection.
 
 Where the map goes:
-- **With a vault:** `<vault>/map.md` (`map.md` for a root vault). If a hand-written `map.md` is already there, it is never
-  overwritten and the map goes to `<vault>/code-map.md`.
+- **With a vault:** `<vault>/map.md` (`map.md` for a root vault). If a hand-written `map.md` is
+  already there, it is never overwritten and the map goes to `<vault>/code-map.md`.
 - **Without a vault:** `docs/code-map.md`.
 
 The first `build` writes `.codemap.json`. Commit it with the map so every later run, on any
@@ -85,11 +85,11 @@ agrees in this conversation; if they decline, skip the map (nothing else depends
 
 ## Setting it up in a repository
 
-Run `detect` and show the owner the result. If they agree, run `build` and land `.codemap.json`
-with the map through a small PR. After editing vault pages, run `build` again before review:
-the vault index holds word counts and titles. For a vault, also add a `[[map]]` line (or the map's file name)
-to the vault's index page if it has one. This works the same for a vault the `create-vault`
-skill made, one the owner had made in another session, or an Obsidian vault.
+Run `detect` and show the owner the result. If they agree, run `build` and land `.codemap.json` with
+the map through a small PR. After editing vault pages, run `build` again before review: the vault
+index holds word counts and titles. For a vault, also add a `[[map]]` line (or the map's file name)
+to the vault's index page if it has one. This works the same for a vault the `create-vault` skill
+made, one the owner had made in another session, or an Obsidian vault.
 
 ## Rules
 
