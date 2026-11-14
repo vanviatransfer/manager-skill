@@ -120,11 +120,12 @@ Bu çalışma için önerim: <Sonnet | Opus | Karma: standard → Sonnet, critic
 Gerekçe: <tek cümle: doğruluk riski, karmaşıklık, tahmini token tüketimi ve maliyet>.
 [Başlamadan önce önerim: `/autocompact 600k` çalıştırın; cc-plugin-you-should-know'ı kapatın]
 [Kod haritası kurulu değil; kurayım mı? <Python yok: önce `<komut>` ile kurulur.> Evet / Bu sefer hayır / Hayır, bu repoda bir daha sorma]
+[Kod haritası kurulu ama Python yok; kurayım mı? (`<komut>`) Hayır derseniz bu çalışmada harita kullanılmaz.]
 Model tercihiniz hangisi?
 ```
 
-The bracketed lines only when step 0 found something (the session check, a code map not set up),
-with only the items it found. An install answer is carried out right after the gate.
+The bracketed lines only when step 0 found something (the session check, a code map not set up,
+a code map set up but no Python), with only the items it found. An install answer is carried out right after the gate.
 
 Guide for the recommendation: Sonnet for bounded code, docs, tests and ordinary reviews; Opus for
 architecture, numerical or financial correctness, concurrency, security-critical code or hard
@@ -160,18 +161,21 @@ At step 6 (after the fetch and the plan read), before any dispatch, whatever the
   origin/<default>:.codemap.json`). That file is the guard: once it lands, later runs only
   resolve the command and never ask again. Resolve it as the `code-map` skill says (script
   `${CLAUDE_SKILL_DIR}/../code-map/scripts/codemap.py`, a Python 3.8+) and send `Code map: <cmd>`
-  in every dispatch. No Python: offer the install as the code-map question below (`Python yok;
-  kurayım mı?`); declined → `Code map: none` this run, and say in the final report that the map
-  stays stale until a run with Python rebuilds it.
+  in every dispatch. No Python: offer the install in the code-map question's place (its own
+  bracket line in the gate); declined → `Code map: none` this run, and say in the final report
+  that the map stays stale until a run with Python rebuilds it.
 - **Not set up**, and the plan on the default branch has no valid Decided entry declining it: ask
   the code-map question: `Kod haritası kurulu değil (kod ve vault için tek dizin sayfası);
   kurayım mı? [Python yok: önce <komut> ile kurulur.] Evet / Bu sefer hayır / Hayır, bu repoda
   bir daha sorma`.
   - **Evet:** install Python if needed (the skill's command for the OS), then land the setup PR
     before any phase: a new implementer and reviewer, each with `Setup: code map`, the command,
-    phase `none` and `Branch: setup/code-map` (or the designated branch), through steps 2 to 4a
-    like a plan-only PR. Then every dispatch gets the command. If the setup PR blocks or can't
-    land, report why, use `Code map: none` and go on with the phases.
+    phase `none` and `Branch: setup/code-map` (or the designated branch), through steps 2 to 5
+    like a plan-only PR (fix rounds and brakes included; with a designated branch, step 5's
+    reconcile before the next dispatch). Then every dispatch gets the command. If the setup PR
+    blocks or can't land: on `setup/code-map`, report why, use `Code map: none` and go on with the
+    phases; on a single designated branch it occupies the branch (**Sequential phases**): stop
+    and report.
   - **Bu sefer hayır:** `Code map: none` this run; asked again next run.
   - **Bir daha sorma:** record it as a Decided owner decision (owner's words, date) through the
     next landing PR's `Plan records`, or the end-of-run plan-only PR. A valid one stops the
@@ -241,9 +245,10 @@ Derive state from durable sources only — never from memory of an earlier conte
      needed; otherwise report it rather than open a duplicate;
    - an open code-map setup PR (`setup/code-map`, or `Setup: code map` work on the designated
      branch) → resume it like a plan-only PR if the owner says yes to the code-map question again;
-     otherwise report it and don't touch it;
+     otherwise report it and don't touch it (on a designated branch it occupies the branch: stop,
+     as **Sequential phases** says);
    - an open PR that matches no phase → say so; don't touch it.
-6. **Model strategy gate** (above), then the **Code map** check (below). Everything before this
+6. **Model strategy gate** (above), then the **Code map** check (also above). Everything before this
    point is read-only.
 
 No living plan → the run can't start: hand over to the `living-plan` skill (owner-driven, with its

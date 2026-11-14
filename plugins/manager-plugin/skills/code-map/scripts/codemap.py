@@ -488,7 +488,7 @@ def generated_pages(root, out_rel):
     found = []
     sub = posixpath.splitext(out_rel)[0]
     folder = os.path.join(root, *sub.split("/"))
-    if os.path.isdir(folder):
+    if os.path.isdir(folder) and not os.path.islink(folder):
         for name in sorted(os.listdir(folder)):
             rel = sub + "/" + name
             if name.endswith(".md") and is_generated(read_text(root, rel)):
@@ -696,6 +696,8 @@ def safe_rel(value, what):
 def foreign_in_map_dir(root, out):
     """Files in the map's page folder that this tool didn't write."""
     folder = os.path.join(root, *posixpath.splitext(out)[0].split("/"))
+    if os.path.islink(folder):
+        return [posixpath.splitext(out)[0] + " (a symlink)"]
     if not os.path.isdir(folder):
         return []
     sub = posixpath.splitext(out)[0]
@@ -709,9 +711,13 @@ def is_generated(text):
 
 
 def link_in_path(root, rel):
-    """True if the path, or a folder on the way to it inside the repo, is a symlink."""
+    """True if the path, a folder on the way to it inside the repo, or (for a map) its page
+    folder is a symlink."""
     parts = rel.split("/")
-    return any(os.path.islink(os.path.join(root, *parts[:i])) for i in range(1, len(parts) + 1))
+    if any(os.path.islink(os.path.join(root, *parts[:i])) for i in range(1, len(parts) + 1)):
+        return True
+    return rel.lower().endswith(".md") and os.path.islink(
+        os.path.join(root, *posixpath.splitext(rel)[0].split("/")))
 
 
 def check_map_path(root, out):
@@ -915,7 +921,7 @@ def main(argv=None):
             if is_generated(read_text(root, rel)):
                 os.remove(os.path.join(root, *rel.split("/")))
         old_dir = os.path.join(root, *posixpath.splitext(old[1])[0].split("/"))
-        if os.path.isdir(old_dir) and not os.listdir(old_dir):
+        if os.path.isdir(old_dir) and not os.path.islink(old_dir) and not os.listdir(old_dir):
             os.rmdir(old_dir)
     inside = not out_rel.startswith("../")
     if inside and (redetect or (source != CONFIG and not args.out and not read_config(root))):
