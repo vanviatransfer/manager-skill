@@ -816,9 +816,14 @@ def main(argv=None):
         ap.error("no such directory: %s" % args.root)
     out_arg = None
     if args.out:
-        out_arg = posixpath.normpath(
-            os.path.relpath(os.path.abspath(args.out), root).replace(os.sep, "/")
-            if os.path.isabs(args.out) else args.out.replace("\\", "/"))
+        try:
+            out_arg = posixpath.normpath(
+                os.path.relpath(os.path.abspath(args.out), root).replace(os.sep, "/")
+                if os.path.isabs(args.out) else args.out.replace("\\", "/"))
+        except ValueError:  # Windows: a path on another drive has no relative form
+            print("error: --out must be on the repository's drive: %s" % args.out,
+                  file=sys.stderr)
+            return 2
     try:
         tracked = git_files(root)
     except GitError as exc:
@@ -930,9 +935,14 @@ def main(argv=None):
         for rel in [old[1]] + generated_pages(root, old[1]):
             if is_generated(read_text(root, rel)):
                 os.remove(os.path.join(root, *rel.split("/")))
-        old_dir = os.path.join(root, *posixpath.splitext(old[1])[0].split("/"))
-        if os.path.isdir(old_dir) and not is_link(old_dir) and not os.listdir(old_dir):
-            os.rmdir(old_dir)
+        rel_dir = posixpath.splitext(old[1])[0]
+        while rel_dir and rel_dir not in (".", ".."):  # the page folder, then empty parents
+            d = os.path.join(root, *rel_dir.split("/"))
+            if os.path.lexists(d):
+                if not os.path.isdir(d) or is_link(d) or os.listdir(d):
+                    break
+                os.rmdir(d)
+            rel_dir = posixpath.dirname(rel_dir)
     inside = not out_rel.startswith("../")
     if inside and (redetect or (source != CONFIG and not args.out and not read_config(root))):
         with open(os.path.join(root, CONFIG), "w", encoding="utf-8", newline="\n") as fh:

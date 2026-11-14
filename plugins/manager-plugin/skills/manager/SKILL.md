@@ -162,9 +162,11 @@ At step 6 (after the fetch and the plan read), before any dispatch, whatever the
   origin/<default>:.codemap.json`). That file is the guard: once it lands, later runs only
   resolve the command and never ask again. Resolve it as the `code-map` skill says (script
   `${CLAUDE_SKILL_DIR}/../code-map/scripts/codemap.py`, a Python 3.8+) and send `Code map: <cmd>`
-  in every dispatch. No Python: offer the install in the code-map question's place (its own
-  bracket line in the gate); declined → `Code map: none` this run, and say in the final report
-  that the map stays stale until a run with Python rebuilds it.
+  in every dispatch. No Python: offer the install as the code-map question (its own bracket line
+  in the gate, or its own question when the gate isn't asked); declined → `Code map: none` this
+  run, and say in the final report that the map stays stale until a run with Python rebuilds it.
+- **Not a plain file** (`.codemap.json` committed as a symlink): don't ask; use `Code map: none`
+  and report it, so the owner can replace it with a plain file.
 - **Not set up**, and the plan on the default branch has no valid Decided entry declining it: ask
   the code-map question: `Kod haritası kurulu değil (kod ve vault için tek dizin sayfası);
   kurayım mı? [Python yok: önce <komut> ile kurulur.] Evet / Bu sefer hayır / Hayır, bu repoda

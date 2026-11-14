@@ -306,6 +306,7 @@ class CodemapTest(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(self.root, "docs", "code-map.md")))
         self.assertIn('"vault": "docs/vault"', self.read(".codemap.json"))
         self.assertFalse(os.path.exists(os.path.join(self.root, "docs", "code-map")))
+        self.assertFalse(os.path.exists(os.path.join(self.root, "docs", "code-map.md")))
         self.assertEqual(run("check", "--root", self.root)[0], 0)
 
     def test_python_parser_edge_cases(self):
@@ -400,6 +401,17 @@ class CodemapTest(unittest.TestCase):
         shutil.rmtree(os.path.join(self.root, "lib"))
         os.symlink(outside, os.path.join(self.root, "lib"))
         self.assertNotIn("SECRET_OUTSIDE", run("query", "secret", "--root", self.root)[1])
+
+    def test_redetect_removes_empty_parent_folders(self):
+        self.write("tools/x/vault/a.md", "[[b]]\n")
+        self.write("tools/x/vault/b.md", "[[a]]\n")
+        self.write(".codemap.json", '{"vault": null, "map": "notes/old/map.md"}')
+        run("build", "--root", self.root)
+        self.assertTrue(os.path.exists(os.path.join(self.root, "notes", "old", "map.md")))
+        self.git("add", "-A")
+        run("build", "--root", self.root, "--redetect", "--vault", "tools/x/vault")
+        self.assertFalse(os.path.exists(os.path.join(self.root, "notes")))
+        self.assertTrue(os.path.exists(os.path.join(self.root, "tools", "x", "vault", "map.md")))
 
     def test_out_is_normalised(self):
         code, _ = run("build", "--root", self.root, "--out", "x/../../outside/y.txt")
