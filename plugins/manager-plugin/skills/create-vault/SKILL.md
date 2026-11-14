@@ -57,7 +57,9 @@ Talk to the owner in their language; write pages in the language the project's d
 
 1. Check the checkout first: a dirty tree or local commits on no remote ref → never discard them;
    stop and report. Then fetch, branch from the default branch (`vault/<mode>-<date>`, or the
-   session's designated branch), commit and open a PR. Follow the project's rules first.
+   session's designated branch), with a code map, run its `build` after the pages are final (the
+   vault index holds titles and word counts); commit and open a PR. Follow the project's rules
+   first.
 2. Independent review: dispatch a new `manager-plugin:reviewer` (or `general-purpose` if that type
    isn't available). Tell it this is a manual review of the vault with no brief file; it stays
    read-only, spawns no subagents and answers in the verdict format of

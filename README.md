@@ -168,7 +168,9 @@ change them itself):
 ## Credits
 
 The review and planning discipline draws on ideas from
-[obra/superpowers](https://github.com/obra/superpowers) (MIT).
+[obra/superpowers](https://github.com/obra/superpowers) (MIT). The `code-map` script's vault link
+rules and secret-file patterns follow ideas from
+[safishamsi/graphify](https://github.com/safishamsi/graphify) (Apache-2.0); no code was copied.
 
 ## Development
 

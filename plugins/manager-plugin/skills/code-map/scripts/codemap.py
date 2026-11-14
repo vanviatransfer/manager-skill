@@ -2,7 +2,7 @@
 """codemap: a deterministic, dependency-free map of a repository's code.
 
 Usage:
-  codemap.py build [--root DIR] [--out PATH]   write the map (default docs/vault/map.md)
+  codemap.py build [--root DIR] [--redetect]   write the map (where: see below)
   codemap.py check [--root DIR] [--out PATH]   exit 0 if the map is current, 1 if stale
   codemap.py query TERM [--root DIR]           where TERM is defined, which paths match it,
                                                who imports them, which vault pages mention them
@@ -16,9 +16,10 @@ pages with [[wikilinks]]); the first build writes .codemap.json so later runs ag
 hand-written map.md is never overwritten: the map then goes to code-map.md.
 
 Only the Python standard library is used (Python 3.8+). Files come from `git ls-files`, so
-ignored files are skipped. Symbols are top-level definitions found with the `ast` module for
-Python and with line patterns for other languages (approximate). Nothing is executed and
-nothing is sent anywhere.
+ignored files and symlinks are skipped. Symbols are top-level definitions found with line
+patterns for every language (approximate, and the same on every Python version). Nothing is
+executed and nothing is sent anywhere. The vault link rules and the secret-file patterns follow
+ideas from graphify (Apache-2.0); no code was copied.
 """
 import argparse
 import json
@@ -28,13 +29,14 @@ import re
 import subprocess
 import sys
 import unicodedata
+from urllib.parse import unquote
 
 FORMAT = 1
 CONFIG = ".codemap.json"
 NO_VAULT_MAP = "docs/code-map.md"
 KNOWN_VAULTS = ("docs/vault", "vault", "docs/knowledge", "knowledge", "docs/wiki", "wiki",
                 "docs/notes", "notes", "kb", "docs/kb")
-MAX_VAULT_ROWS = 400
+STRONG_VAULT_NAMES = {"docs/vault", "vault"}  # other names count only with [[wikilinks]]
 MAX_BYTES = 512 * 1024
 MAX_SYMBOLS = 6
 SPLIT_ABOVE = 150
@@ -47,7 +49,7 @@ SKIP_DIRS = {
     ".next", ".nuxt", "coverage",
 }
 SKIP_SUFFIXES = (".min.js", ".min.css", ".map", ".lock", ".snap")
-# Files that may hold secrets are never read (patterns after graphify's detect.py).
+# Files that may hold secrets are never read.
 SENSITIVE = re.compile(r"(^|/)(\.env(\..*)?|\.envrc|id_(rsa|dsa|ecdsa|ed25519)(\.pub)?|\.netrc|"
                        r"\.npmrc|\.pypirc|\.git-credentials)$|\.(pem|key|p12|pfx|crt|der|p8)$|"
                        r"(^|/)(secrets?|credentials?)(/|\.)", re.IGNORECASE)
@@ -105,8 +107,13 @@ def in_git_repo(root):
 
 def git_files(root):
     try:
-        out = subprocess.run(["git", "-C", root, "ls-files", "-z"], capture_output=True, check=True)
-        files = [f for f in out.stdout.decode("utf-8", "replace").split("\0") if f]
+        out = subprocess.run(["git", "-C", root, "ls-files", "-s", "-z"], capture_output=True,
+                             check=True)
+        files = []
+        for entry in out.stdout.decode("utf-8", "replace").split("\0"):
+            meta, _, path = entry.partition("\t")
+            if path and not meta.startswith("120000"):  # symlinks are skipped on every OS
+                files.append(path)
     except (OSError, subprocess.CalledProcessError) as exc:
         if in_git_repo(root):
             detail = getattr(exc, "stderr", b"") or b""
@@ -149,41 +156,72 @@ PY_IMPORT = re.compile(r"^import\s+(.+)")
 PY_FROM = re.compile(r"^from\s+(\.*)([\w.]*)\s+import\s+(.+)")
 
 
+def code_part(line, state):
+    """(code of the line outside strings and comments, string state after the line).
+
+    state is None or the open triple quote. Single-line strings and comments are blanked.
+    """
+    out, i, n = [], 0, len(line)
+    while i < n:
+        if state:
+            end = line.find(state, i)
+            if end < 0:
+                return "".join(out), state
+            i, state = end + 3, None
+            out.append(" ")
+            continue
+        c = line[i]
+        if c == "#":
+            break
+        if line.startswith('"""', i) or line.startswith("'''", i):
+            state = line[i:i + 3]
+            i += 3
+            continue
+        if c in "'\"":
+            j = i + 1
+            while j < n and line[j] != c:
+                j += 2 if line[j] == "\\" else 1
+            out.append('""')
+            i = j + 1
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out), state
+
+
 def python_info(text):
-    """Top-level defs and imports from column-0 lines, outside triple-quoted strings.
+    """Top-level defs and imports from column-0 code, outside strings and comments.
 
     Line patterns, not `ast`, so the result doesn't depend on the Python version running it.
     """
     symbols, imports = [], []
     lines = text.splitlines()
-    in_string = None
+    state = None
     n = 0
     while n < len(lines):
-        line = lines[n]
+        raw = lines[n]
         n += 1
-        if in_string:
-            if line.count(in_string) % 2 == 1:
-                in_string = None
+        starts_in_string = state is not None
+        code, state = code_part(raw, state)
+        if starts_in_string or not code.strip() or raw[0].isspace():
             continue
-        for quote in ('"""', "'''"):
-            if line.count(quote) % 2 == 1:
-                in_string = quote
-        if in_string or not line or line[0].isspace() or line.startswith("#"):
-            continue
-        m = PY_DEF.match(line)
+        m = PY_DEF.match(code)
         if m:
             if not m.group(1).startswith("_"):
                 symbols.append((m.group(1), n))
             continue
-        m = PY_FROM.match(line) or PY_IMPORT.match(line)
+        while code.rstrip().endswith("\\") and n < len(lines):
+            more, state = code_part(lines[n], state)
+            code, n = code.rstrip()[:-1] + " " + more, n + 1
+        m = PY_FROM.match(code) or PY_IMPORT.match(code)
         if not m:
             continue
         names = m.group(m.lastindex)
         if names.strip().startswith("(") and ")" not in names:
             while n < len(lines) and ")" not in names:
-                names += " " + lines[n]
-                n += 1
-        names = [x.split(" as ")[0].strip(" ()\\") for x in names.split("#")[0].split(",")]
+                more, state = code_part(lines[n], state)
+                names, n = names + " " + more, n + 1
+        names = [x.split(" as ")[0].strip(" ()\\") for x in names.split(",")]
         names = [x for x in names if x and x != "*"]
         if m.re is PY_IMPORT:
             imports.extend((0, x) for x in names)
@@ -249,6 +287,8 @@ def package_entries(root, known):
         try:
             pkg = json.loads(text)
         except ValueError:
+            pkg = {}
+        if not isinstance(pkg, dict):
             pkg = {}
         vals = [pkg.get("main")]
         b = pkg.get("bin")
@@ -325,9 +365,12 @@ RESERVED = re.compile(r"^(con|prn|aux|nul|com[0-9]|lpt[0-9])$", re.IGNORECASE)
 IMPORT_LANGS = {"Python", "JavaScript", "TypeScript"}
 
 
+VAULT_PAGES = "_vault-pages"
+
+
 def page_names(groups):
     """Group path -> page file name: no two equal ignoring case, none a reserved Windows name."""
-    names, used = {}, set()
+    names, used = {}, {VAULT_PAGES.lower()}
     for g in sorted(groups):
         base = "_root" if g == "." else re.sub(r"[^A-Za-z0-9._-]", "_", g.replace("/", "__"))
         if RESERVED.match(base.split(".")[0]):
@@ -407,13 +450,11 @@ def render(info, importers, entries, cmd, out_rel, vault=None):
         rows = ["| Page | Title | Words | Linked from |", "|---|---|---|---|"]
         rows += ["| `%s` | %s | %d | %d |" % (pg, vault["meta"][pg][0], vault["meta"][pg][1],
                                               vault["inbound"][pg])
-                 for pg in vault["pages"][:MAX_VAULT_ROWS]]
-        if len(vault["pages"]) > MAX_VAULT_ROWS:
-            rows.append("| (%d more) | | | |" % (len(vault["pages"]) - MAX_VAULT_ROWS))
+                 for pg in vault["pages"]]
         if len(vault["pages"]) > SPLIT_ABOVE:
-            pages_name = sub + "/vault-pages.md"
-            lines += ["", "Vault pages with titles: [vault pages](%s/vault-pages.md)."
-                      % posixpath.basename(sub)]
+            pages_name = "%s/%s.md" % (sub, VAULT_PAGES)
+            lines += ["", "Vault pages with titles: [vault pages](%s/%s.md); `query` also finds"
+                      " pages by path or title." % (posixpath.basename(sub), VAULT_PAGES)]
             vault_page = header("Code map: vault pages", cmd) + [""] + rows
         else:
             lines += ["", "### Vault pages", ""] + rows
@@ -496,33 +537,51 @@ def page_title(text, page):
     return posixpath.splitext(posixpath.basename(page))[0]
 
 
+PATH_LIKE = re.compile(r"^[\w.@-]+(?:/[\w.@-]+)*/?$")
+
+
+def in_vault(path, vault):
+    return vault == "." or path.startswith(vault + "/")
+
+
+def strip_dot_slash(ref):
+    while ref.startswith("./"):
+        ref = ref[2:]
+    return ref
+
+
 def scan_vault(root, vault, files, generated):
     if not vault:
         return None
-    pages = sorted(f for f in files if f.startswith(vault + "/") and f.endswith(".md")
-                   and f not in generated)
-    by_name = {}
-    for page in pages + sorted(generated):
-        by_name.setdefault(nfc(posixpath.basename(page)).lower(), []).append(page)
+    pages = sorted(f for f in files if in_vault(f, vault) and f.lower().endswith(".md")
+                   and f not in generated and not skipped(f, ""))
     known = set(files)
+    by_name = {}
+    for f in sorted(known | set(generated)):
+        if in_vault(f, vault):
+            by_name.setdefault(nfc(posixpath.basename(f)).lower(), []).append(f)
     links, broken, mentions, meta = {p: set() for p in pages}, [], {}, {}
     for page in pages:
         text = read_text(root, page) or ""
-        meta[page] = (page_title(text, page).replace("|", "/"), len(text.split()))
+        meta[page] = (page_title(text, page).replace("|", "/")[:60], len(text.split()))
         for lineno, line in prose_lines(text):
             for target in WIKILINK.findall(line):
                 target = nfc(target.strip())
-                name = target if target.lower().endswith(".md") else target + ".md"
+                has_ext = re.search(r"\.[A-Za-z0-9]{1,5}$", target)
+                name = target if has_ext else target + ".md"
                 cands = by_name.get(posixpath.basename(name).lower(), [])
                 if "/" in name:
-                    cands = [c for c in cands if nfc(c).lower().endswith("/" + name.lower())]
+                    cands = [c for c in cands if ("/" + nfc(c).lower()).endswith("/" + name.lower())]
                 cands.sort(key=lambda c: (c.count("/"), c))
                 if cands:
                     links[page].add(cands[0])
                 else:
                     broken.append((page, lineno, "[[%s]]" % target))
             for target in MD_LINK.findall(line):
-                if re.match(r"^[a-z][a-z0-9+.-]*:|^#", target, re.I) or not target.endswith(".md"):
+                target = unquote(target.split("#")[0])
+                if not target or re.match(r"^[a-z][a-z0-9+.-]*:", target, re.I):
+                    continue
+                if not target.lower().endswith(".md"):
                     continue
                 dest = posixpath.normpath(posixpath.join(posixpath.dirname(page), target))
                 if dest in known or dest in generated:
@@ -530,8 +589,8 @@ def scan_vault(root, vault, files, generated):
                 else:
                     broken.append((page, lineno, target))
             for span in CODE_SPAN.findall(line):
-                ref = span.strip().split("::")[0].split(":")[0].lstrip("./")
-                if ref in known and not ref.startswith(vault + "/"):
+                ref = strip_dot_slash(span.strip().split("::")[0].split(":")[0])
+                if PATH_LIKE.match(ref) and ("/" in ref or "." in ref) and not in_vault(ref, vault):
                     mentions.setdefault(ref, set()).add((page, lineno))
     inbound = {p: 0 for p in pages}
     for page, dests in links.items():
@@ -543,24 +602,42 @@ def scan_vault(root, vault, files, generated):
             "mentions": mentions, "meta": meta, "inbound": inbound}
 
 
+def mentions_of(mentions, path):
+    """Vault references to a path: the path itself, or a directory that contains it."""
+    found = set(mentions.get(path, ()))
+    for ref, where in mentions.items():
+        if ref.endswith("/") and path.startswith(ref):
+            found |= where
+        elif ref != path and path.startswith(ref + "/"):
+            found |= where
+    return sorted(found)
+
+
+def wikilinked(root, f):
+    text = read_text(root, f) or ""
+    return any(WIKILINK.search(line) for _, line in prose_lines(text))
+
+
 def detect_vault(root, files):
     """(vault dir or None, reason). Deterministic: the same files give the same answer."""
-    md = [f for f in files if f.lower().endswith(".md")]
+    md = [f for f in files if f.lower().endswith(".md") and not skipped(f, "")]
+    if not md:
+        return None, "no markdown files"
+    if os.path.isdir(os.path.join(root, ".obsidian")):
+        return ".", "has .obsidian/ at the root"
     dirs = sorted({posixpath.dirname(f) for f in md if posixpath.dirname(f)})
     prefixes = {"/".join(d.split("/")[:i]) for d in dirs
                 for i in range(1, min(3, d.count("/") + 1) + 1)}
-    tops = sorted(prefixes, key=lambda d: (d.count("/"), d))
-    for d in tops:
+    for d in sorted(prefixes, key=lambda d: (d.count("/"), d)):
         if os.path.isdir(os.path.join(root, *d.split("/"), ".obsidian")):
             return d, "has .obsidian/"
     for d in KNOWN_VAULTS:
-        if any(f.startswith(d + "/") for f in md):
+        inside = [f for f in md if f.startswith(d + "/")]
+        if d in STRONG_VAULT_NAMES and inside:
             return d, "known vault folder name"
-    linked = []
-    for f in md:
-        text = read_text(root, f) or ""
-        if any(WIKILINK.search(line) for _, line in prose_lines(text)):
-            linked.append(f)
+        if len(inside) >= 3 and any(wikilinked(root, f) for f in inside):
+            return d, "known folder name with [[wikilinks]]"
+    linked = [f for f in md if wikilinked(root, f)]
     if len(linked) >= 5:
         counts = {}
         for f in linked:
@@ -574,29 +651,61 @@ def detect_vault(root, files):
     return None, "no vault found"
 
 
-def resolve_layout(root, files, vault_arg=None, out_arg=None):
-    """(vault, map path, source). Config wins, then arguments, then detection."""
-    cfg = {}
+class LayoutError(Exception):
+    pass
+
+
+def safe_rel(value, what):
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise LayoutError("%s in %s must be a string" % (what, CONFIG))
+    value = value.replace("\\", "/").strip()
+    norm = posixpath.normpath(value) if value else ""
+    if not norm or norm.startswith("/") or re.match(r"^[A-Za-z]:", norm) or \
+            norm == ".." or norm.startswith("../"):
+        if norm != ".":
+            raise LayoutError("%s must be a path inside the repository: %r" % (what, value))
+    return norm
+
+
+def read_config(root):
     text = read_text(root, CONFIG)
-    if text:
-        try:
-            cfg = json.loads(text)
-        except ValueError:
-            cfg = {}
-    if cfg and vault_arg is None and out_arg is None:
-        return cfg.get("vault"), cfg.get("map") or NO_VAULT_MAP, CONFIG
-    vault, reason = (vault_arg.strip("/"), "--vault") if vault_arg else detect_vault(root, files)
-    if out_arg:
-        return vault, out_arg, reason
+    if not text:
+        return None
+    try:
+        cfg = json.loads(text)
+    except ValueError:
+        raise LayoutError("%s is not valid JSON" % CONFIG)
+    if not isinstance(cfg, dict):
+        raise LayoutError("%s must hold an object" % CONFIG)
+    return cfg
+
+
+def default_map(root, vault):
     if not vault:
-        return None, NO_VAULT_MAP, reason
+        return NO_VAULT_MAP
+    base = "" if vault == "." else vault + "/"
     for name in ("map.md", "code-map.md", "code-map-generated.md"):
-        rel = vault + "/" + name
-        existing = read_text(root, rel)
+        existing = read_text(root, base + name)
         lines = (existing or "").splitlines()
         if existing is None or (len(lines) > 2 and lines[2].startswith(MARKER + " (format")):
-            return vault, rel, reason
-    return vault, vault + "/code-map-generated.md", reason
+            return base + name
+    return base + "code-map-generated.md"
+
+
+def resolve_layout(root, files, vault_arg=None, out_arg=None, use_config=True):
+    """(vault, map path, source). Config wins, then arguments, then detection."""
+    cfg = read_config(root) if use_config else None
+    if cfg and vault_arg is None and out_arg is None:
+        vault = safe_rel(cfg.get("vault"), "vault")
+        out = safe_rel(cfg.get("map"), "map") or default_map(root, vault)
+        return vault, out, CONFIG
+    if vault_arg:
+        vault, reason = safe_rel(vault_arg, "--vault"), "--vault"
+    else:
+        vault, reason = detect_vault(root, files)
+    return vault, out_arg or default_map(root, vault), reason
 
 
 def changed_files(root, base):
@@ -615,10 +724,11 @@ def main(argv=None):
     ap.add_argument("--redetect", action="store_true", help="build: ignore and rewrite %s" % CONFIG)
     ap.add_argument("--base", help="mentions: use the files changed since this commit")
     args = ap.parse_args(argv)
-    try:
-        sys.stdout.reconfigure(errors="backslashreplace")
-    except AttributeError:
-        pass
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="backslashreplace")
+        except AttributeError:
+            pass
     root = os.path.abspath(args.root)
     if not os.path.isdir(root):
         ap.error("no such directory: %s" % args.root)
@@ -631,12 +741,14 @@ def main(argv=None):
     except GitError as exc:
         print("error: %s" % exc, file=sys.stderr)
         return 2
-    if args.redetect and args.action == "build":
-        tracked = [f for f in tracked if f != CONFIG]
-        cfg_path = os.path.join(root, CONFIG)
-        if os.path.exists(cfg_path):
-            os.remove(cfg_path)
-    vault_dir, out_rel, source = resolve_layout(root, tracked, args.vault, out_arg)
+    redetect = args.redetect and args.action == "build"
+    try:
+        old = None if not redetect else resolve_layout(root, tracked)
+        vault_dir, out_rel, source = resolve_layout(root, tracked, args.vault, out_arg,
+                                                    use_config=not redetect)
+    except LayoutError as exc:
+        print("error: %s" % exc, file=sys.stderr)
+        return 2
     if args.action == "detect":
         print("vault: %s (%s)" % (vault_dir or "none", source))
         print("map: %s" % out_rel)
@@ -669,10 +781,19 @@ def main(argv=None):
                 print("  %s (imports not parsed for %s)" % (p, info[p]["lang"]))
             for u in users[:20]:
                 print("    <- %s" % u)
-            for page, ln in sorted(mentions.get(p, ()))[:20]:
+            for page, ln in mentions_of(mentions, p)[:20]:
                 print("    mentioned in %s:%d" % (page, ln))
         if len(paths) > 50:
             print("  (%d more)" % (len(paths) - 50))
+        if vault:
+            vp = [pg for pg in vault["pages"]
+                  if term in pg.lower() or term in vault["meta"][pg][0].lower()]
+            print("vault pages:" if vp else "vault pages: none")
+            for pg in vp[:50]:
+                print("  %s — %s (%d words, linked from %d)" % (pg, vault["meta"][pg][0],
+                      vault["meta"][pg][1], vault["inbound"][pg]))
+            if len(vp) > 50:
+                print("  (%d more)" % (len(vp) - 50))
         return 0
 
     if args.action == "mentions":
@@ -683,8 +804,8 @@ def main(argv=None):
             except (OSError, subprocess.CalledProcessError):
                 ap.error("cannot diff against %s" % args.base)
         found = 0
-        for t in sorted(set(x.replace("\\", "/").lstrip("./") for x in targets)):
-            for page, ln in sorted(mentions.get(t, ())):
+        for t in sorted(set(strip_dot_slash(x.replace("\\", "/")) for x in targets)):
+            for page, ln in mentions_of(mentions, t):
                 print("%s:%d mentions %s" % (page, ln, t))
                 found += 1
         if not found:
@@ -709,7 +830,13 @@ def main(argv=None):
         return 0
     for rel in stale_extra:
         os.remove(os.path.join(root, *rel.split("/")))
-    if source != CONFIG and not args.out and not os.path.exists(os.path.join(root, CONFIG)):
+    if redetect and old and old[1] != out_rel:
+        for rel in [old[1]] + generated_pages(root, old[1]):
+            lines = (read_text(root, rel) or "").splitlines()
+            if len(lines) > 2 and lines[2].startswith(MARKER + " (format"):
+                os.remove(os.path.join(root, *rel.split("/")))
+    inside = not out_rel.startswith("../")
+    if inside and (redetect or (source != CONFIG and not args.out and not read_config(root))):
         with open(os.path.join(root, CONFIG), "w", encoding="utf-8", newline="\n") as fh:
             fh.write(json.dumps({"vault": vault_dir, "map": out_rel}, indent=2) + "\n")
         print("wrote %s (vault: %s, %s)" % (CONFIG, vault_dir or "none", source))

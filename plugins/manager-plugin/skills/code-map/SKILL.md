@@ -13,7 +13,8 @@ targeted `grep` instead of exploring. It contains:
   right one.
 
 It is produced by `scripts/codemap.py`, a Python 3.8+ script that uses only the standard library:
-- files come from `git ls-files`;
+- files come from `git ls-files` (symlinks and tracked third-party or output folders such as
+  `node_modules`, `vendor`, `third_party`, `dist`, `coverage` and `.venv` are skipped);
 - symbols are top-level definitions from line patterns, the same on every Python version
   (approximate); none are listed for tests;
 - imports are local and parsed only for Python, JavaScript and TypeScript;
@@ -21,25 +22,30 @@ It is produced by `scripts/codemap.py`, a Python 3.8+ script that uses only the 
   ownership"), it stops with an error instead of guessing;
 - files that may hold secrets (`.env`, keys, `secrets` or `credentials` paths) are never read;
 - vault pages are scanned outside code blocks for `[[links]]`, `[text](page.md)` links, and code
-  spans that name a tracked file;
+  spans that name a path (a file, a directory, or one that no longer exists);
 - it runs no project code and sends nothing anywhere.
 
 ## Where it writes
 
 `.codemap.json` at the repository root (`{"vault": ..., "map": ...}`) fixes the layout. Without
 it, the script detects the vault, trying in order:
-1. a folder holding `.obsidian/`;
-2. a known name: `docs/vault`, `vault`, `docs/knowledge`, `knowledge`, `docs/wiki`, `wiki`,
-   `docs/notes`, `notes`, `kb`;
+1. a `.obsidian/` folder: at the repository root (the whole repository is the vault), else the
+   shallowest folder holding one;
+2. `docs/vault` or `vault`; or `docs/knowledge`, `knowledge`, `docs/wiki`, `wiki`, `docs/notes`,
+   `notes`, `kb` or `docs/kb` when it has at least 3 pages and uses `[[wikilinks]]`;
 3. the folder holding most of the pages with `[[wikilinks]]` (at least 5).
 
+Folders that may hold secrets are never read, not even for detection.
+
 Where the map goes:
-- **With a vault:** `<vault>/map.md`. If a hand-written `map.md` is already there, it is never
+- **With a vault:** `<vault>/map.md` (`map.md` for a root vault). If a hand-written `map.md` is already there, it is never
   overwritten and the map goes to `<vault>/code-map.md`.
 - **Without a vault:** `docs/code-map.md`.
 
 The first `build` writes `.codemap.json`. Commit it with the map so every later run, on any
-machine, agrees. `build --redetect` re-detects the layout, for example after a vault is created.
+machine, agrees. `build --redetect` re-detects the layout, for example after a vault is created; it
+rewrites `.codemap.json` and removes the generated map from its old place. A `.codemap.json` that
+isn't an object, or points outside the repository, is an error.
 
 ## Command
 
@@ -70,15 +76,18 @@ agrees in this conversation; if they decline, skip the map (nothing else depends
 - `<cmd> check`: exit 0 if the map matches the repository, 1 if it is stale. It writes nothing,
   so it is safe on a shared checkout. It also prints broken vault links as warnings.
 - `<cmd> query <term>`: definitions whose names contain the term (`file:line`), matching paths,
-  the files that import them, and the vault pages that mention them. Use it before a broad
-  `grep`.
+  the files that import them, the vault pages that mention them, and vault pages whose path or
+  title matches. Use it before a broad `grep` or opening vault pages.
 - `<cmd> mentions --base <sha>` (or `mentions <path>...`): the vault pages that mention, in a code
-  span, any file changed since that commit. These are the pages to check after a change.
+  span, any file changed, deleted or renamed since that commit, or a directory holding one. These
+  are the pages to check after a change; also `grep` the vault for symbol names the change
+  renames or removes, since `mentions` sees only paths.
 
 ## Setting it up in a repository
 
 Run `detect` and show the owner the result. If they agree, run `build` and land `.codemap.json`
-with the map through a small PR. For a vault, also add a `[[map]]` line (or the map's file name)
+with the map through a small PR. After editing vault pages, run `build` again before review:
+the vault index holds word counts and titles. For a vault, also add a `[[map]]` line (or the map's file name)
 to the vault's index page if it has one. This works the same for a vault the `create-vault`
 skill made, one the owner had made in another session, or an Obsidian vault.
 
@@ -94,6 +103,7 @@ When the project has `.codemap.json` and Python is available, the manager gives 
 reviewers `Code map: <cmd>`:
 - the implementer runs `build` before its final validation and commits the result (not in a
   plan-only PR), and again after any integration;
-- the reviewer runs `check` as required validation (stale means CHANGES REQUIRED), reads the diff
-  without the map pages, and uses `mentions` to find the vault pages to check;
+- the reviewer runs `check` as required validation (stale means CHANGES REQUIRED; not for a
+  plan-only PR), reads the diff without the map pages, and uses `mentions` plus a grep for
+  renamed or removed symbol names to find the vault pages to check;
 - a merge conflict in map pages is resolved by running `build` again, never by hand.

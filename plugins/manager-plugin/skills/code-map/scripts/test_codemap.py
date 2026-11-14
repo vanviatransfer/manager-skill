@@ -195,6 +195,92 @@ class CodemapTest(unittest.TestCase):
         finally:
             del os.environ["GIT_DIR"]
 
+    def git(self, *args):
+        return subprocess.run(["git", "-C", self.root, "-c", "user.name=t", "-c", "user.email=t@t"]
+                              + list(args), capture_output=True, check=True).stdout.decode().strip()
+
+    def test_mentions_cover_deleted_renamed_and_dot_paths(self):
+        self.write("app/old.py", "def gone():\n    pass\n")
+        self.write(".github/ci.yml", "on: push\n")
+        self.write("docs/vault/index.md", "- [[ops]]\n")
+        self.write("docs/vault/ops.md", "`app/old.py`, `./.github/ci.yml`, `web/` and `app/util.py:3`\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "base")
+        base = self.git("rev-parse", "HEAD")
+        self.git("rm", "-q", "app/old.py")
+        self.git("mv", "app/util.py", "app/helpers.py")
+        self.write(".github/ci.yml", "on: [push]\n")
+        self.write("web/lib.ts", "export const y = 2;\n")
+        out = run("mentions", "--base", base, "--root", self.root)[1]
+        for path in ("app/old.py", ".github/ci.yml", "web/lib.ts", "app/util.py"):
+            self.assertIn("mentions " + path, out)
+
+    def test_symlinks_are_skipped_from_git_modes(self):
+        if not hasattr(os, "symlink"):
+            self.skipTest("no symlinks")
+        os.symlink("util.py", os.path.join(self.root, "app", "alias.py"))
+        self.git("add", "-A")
+        run("build", "--root", self.root)
+        self.assertNotIn("alias.py", self.read("docs/code-map.md"))
+
+    def test_detection_never_reads_secret_folders(self):
+        for i in range(5):
+            self.write("secrets/x%d.md" % i, "[[x%d]]\n" % i)
+        self.git("add", "-A")
+        self.assertIn("vault: none", run("detect", "--root", self.root)[1])
+
+    def test_vault_at_repository_root(self):
+        os.makedirs(os.path.join(self.root, ".obsidian"))
+        self.write("index.md", "[[topic]]\n")
+        self.write("topics/topic.md", "# Konu\n")
+        self.git("add", "-A")
+        out = run("detect", "--root", self.root)[1]
+        self.assertIn("vault: . (has .obsidian/ at the root)", out)
+        self.assertIn("map: map.md", out)
+        run("build", "--root", self.root)
+        text = self.read("map.md")
+        self.assertIn("| `topics/topic.md` | Konu |", text)
+        self.assertIn("0 broken links", text)
+
+    def test_generic_folder_name_needs_wikilinks(self):
+        self.write("notes/release-1.md", "# Release 1\n")
+        self.write("notes/release-2.md", "# Release 2\n")
+        self.write("notes/release-3.md", "# Release 3\n")
+        self.git("add", "-A")
+        self.assertIn("vault: none", run("detect", "--root", self.root)[1])
+
+    def test_bad_config_is_an_error_not_a_crash(self):
+        for cfg in ("[]", '{"map": "../escape.md"}', '{"vault": "/abs"}', "{nope"):
+            self.write(".codemap.json", cfg)
+            self.assertEqual(run("build", "--root", self.root)[0], 2, cfg)
+        self.assertFalse(os.path.exists(os.path.join(self.root, "..", "escape.md")))
+        self.write(".codemap.json", "{}")
+        self.write("package.json", "[]")
+        self.git("add", "-A")
+        self.assertEqual(run("build", "--root", self.root)[0], 0)
+
+    def test_redetect_moves_the_map_and_rewrites_the_config(self):
+        run("build", "--root", self.root)
+        self.write("docs/vault/a.md", "[[b]]\n")
+        self.write("docs/vault/b.md", "[[a]]\n")
+        self.git("add", "-A")
+        run("build", "--root", self.root, "--redetect")
+        self.assertFalse(os.path.exists(os.path.join(self.root, "docs", "code-map.md")))
+        self.assertIn('"vault": "docs/vault"', self.read(".codemap.json"))
+        self.assertEqual(run("check", "--root", self.root)[0], 0)
+
+    def test_python_parser_edge_cases(self):
+        text = ('X = \'"""\'  # not a docstring\n'
+                "def after_quote_string():\n    pass\n"
+                "from pkg import (\n    alpha,  # c\n    beta,\n)\n"
+                "import os, \\\n    json\n"
+                "@decorator\ndef decorated():\n    pass\n"
+                'if __name__ == "__main__":\n    def hidden():\n        pass\n')
+        symbols, imports = codemap.python_info(text)
+        self.assertEqual([n for n, _ in symbols], ["after_quote_string", "decorated"])
+        for mod in ("pkg.alpha", "pkg.beta", "os", "json"):
+            self.assertIn(mod, [m for _, m in imports])
+
     def test_query(self):
         code, out = run("query", "helper", "--root", self.root)
         self.assertEqual(code, 0)

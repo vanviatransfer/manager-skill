@@ -119,7 +119,7 @@ Bu çalışma için önerim: <Sonnet | Opus | Karma: standard → Sonnet, critic
 Gerekçe: <tek cümle: doğruluk riski, karmaşıklık, tahmini token tüketimi ve maliyet>.
 [Başlamadan önce önerim: `/autocompact 600k` çalıştırın; cc-plugin-you-should-know'ı kapatın]
 [Kod haritası için Python yok; kurayım mı? (`<komut>`) Hayır derseniz harita atlanır.]
-[Bu repoda vault var ama kod haritası yok; kurayım mı? (vault okuması daha az token)]
+[Bu repoda vault var ama kod haritası yok; kurayım mı? (kod ve vault için tek dizin sayfası)]
 Model tercihiniz hangisi?
 ```
 

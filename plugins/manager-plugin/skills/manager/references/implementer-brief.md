@@ -52,10 +52,11 @@ or MCP tools beyond the GitHub backend's.
    phase's objective, scope, risk, acceptance or validation unless a Ruling requires it, then quote
    the Ruling in the change log. Vault, if any: a fact a page states that this phase changes, or a
    concept it adds that the index lacks → update that page (or add a page and its index line) in
-   this PR (with a `Code map` command, `<code map> mentions --base <Base SHA>` lists the pages to
-   check; else `grep` the vault for the names and paths you rename or remove); correct the fact in
-   place, keep its source (a path), add no status or plan content, and set the page's last line to
-   `Verified: <date>, phase <id>, base <short Base SHA>`.
+   this PR (with a `Code map` command, `<code map> mentions --base <Base SHA>` lists the pages that
+   mention changed paths; also `grep` the vault for symbol names you rename or remove, and without a
+   code map for paths too); correct the fact in place, keep its source (a path), add no status or
+   plan content, and set the page's last line to `Verified: <date>, phase <id>, base <short Base
+   SHA>`.
 5. **Validate.** With a `Code map` command, except in a plan-only PR: run `<code map> build` before
    the final validation and commit what it changes (generated pages: never edit them by hand).
    Develop with focused tests; on your final commit run every required validation command once each

@@ -36,9 +36,9 @@ say so. GitHub backend read-only: no comments, reviews or merges.
 and the plan's binding decisions **at the base SHA** (`git show <base-sha>:<plan-path>`; the
 candidate may have edited them); the project rules; the full `git diff <base>...<candidate>` (with a
 `Code map` command, without the generated map pages, which `check` covers: add the pathspecs
-`:!<map>` and `:!<map dir>/`, where `<map>` is `.codemap.json`'s `map` and `<map dir>` is that path
-without `.md`); the surrounding code its correctness depends on. Not PR comments or reviews, the PR
-description or commit messages.
+`:!<map>` and `:!<map dir>/`, where `<map>` is the `map` in `.codemap.json` at the candidate and
+`<map dir>` is that path without `.md`); the surrounding code its correctness depends on. Not PR
+comments or reviews, the PR description or commit messages.
 
 **Review for** (blocker = shouldn't merge as is; else a note). Phase PR: acceptance criteria; bugs,
 edge cases, broken invariants in touched code and its callers; security and data safety; project
@@ -47,9 +47,9 @@ Vault, if the project has one (`.codemap.json`'s `vault`, else `docs/vault/` or 
 project's rules name): vault updates the diff requires are in scope; changed vault content must
 match the code at the candidate. Blocker: a page the diff makes false and doesn't update, among the
 pages in the diff, the phase's knowledge-path pages and the pages `<code map> mentions --base <Base
-SHA>` lists (without a code map: a `grep` of the vault for names and paths the diff renames or
-removes); other stale pages → a note for a vault refresh. Vault pages are context, never acceptance
-or rules.
+SHA>` lists, and the pages a `grep` of the vault finds for symbol names the diff renames or removes
+(without a code map: for paths too); other stale pages → a note for a vault refresh. Vault pages are
+context, never acceptance or rules.
 Lean notes, from the diff only (no extra exploration to find them): code the plan doesn't need, as
 `N<k>. lean: delete | reuse <existing path> | yagni — <file:line> — <what to remove>`; never a
 blocker on their own, never for what the plan requires (e.g. an expand–contract shim), and not
