@@ -46,8 +46,9 @@ wrote, no symlink on the way, and no hand-written file in its page folder):
 - **Without a vault:** `docs/code-map.md`, then `docs/code-map-generated.md`.
 
 If none is free, it stops and asks for a `map` in `.codemap.json`. A hand-written file is never
-overwritten, and nothing is read or written through a symlink (on Windows also a junction, with
-Python 3.12+), `.codemap.json` included.
+overwritten, and inside the repository nothing is read or written through a symlink (on Windows
+also a junction, with Python 3.12+), `.codemap.json` included. An explicit `--out` outside the
+repository is the caller's choice; there only existing files are protected.
 
 The first `build` writes `.codemap.json`. Commit it with the map so every later run, on any
 machine, agrees. `build --redetect` re-detects the layout, for example after a vault is created; it

@@ -387,6 +387,20 @@ class CodemapTest(unittest.TestCase):
         self.assertEqual(run("build", "--root", self.root)[0], 2)
         self.assertFalse(os.path.exists(dangling))
 
+    def test_files_under_a_symlinked_folder_are_not_read(self):
+        if not hasattr(os, "symlink"):
+            self.skipTest("no symlinks")
+        outside = self.tmp.name + "-src"
+        os.makedirs(outside)
+        with open(os.path.join(outside, "a.py"), "w") as fh:
+            fh.write("def SECRET_OUTSIDE():\n    pass\n")
+        self.write("lib/a.py", "def inside():\n    pass\n")
+        self.git("add", "-A")
+        import shutil
+        shutil.rmtree(os.path.join(self.root, "lib"))
+        os.symlink(outside, os.path.join(self.root, "lib"))
+        self.assertNotIn("SECRET_OUTSIDE", run("query", "secret", "--root", self.root)[1])
+
     def test_out_is_normalised(self):
         code, _ = run("build", "--root", self.root, "--out", "x/../../outside/y.txt")
         self.assertEqual(code, 2)

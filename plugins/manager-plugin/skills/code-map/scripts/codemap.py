@@ -148,7 +148,7 @@ def skipped(path, out_rel):
 def read_text(root, path):
     full = os.path.join(root, *path.split("/"))
     try:
-        if is_link(full) or os.path.getsize(full) > 2 * MAX_BYTES:
+        if link_in_path(root, path) or os.path.getsize(full) > 2 * MAX_BYTES:
             return None
         with open(full, "rb") as fh:
             data = fh.read().replace(b"\r\n", b"\n")
