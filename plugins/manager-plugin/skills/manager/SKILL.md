@@ -229,14 +229,14 @@ Derive state from durable sources only — never from memory of an earlier conte
    built-in command, and a `--autocompact` flag isn't visible to you); a different value set there
    is the owner's choice: leave it. (b) Whether `cc-plugin-you-should-know@builtin` is enabled
    (`true`) in an `enabledPlugins` of those files: its side checks are extra requests to the same
-   model and its notes wait for a human at the prompt, so recommend disabling it for the run.
-   (c) The MCP servers and connectors this session shows (names from its deferred-tool list and
-   MCP server instruction blocks): each loads into the main session every turn, while the plugin's
-   subagents don't get them. From the plan's remaining phases and the project rules, name the ones
-   this project's work won't use and recommend `/mcp disable <name>` for each: it turns the server
-   off for this project only, from the next session on, and `/mcp enable <name>` turns it back on.
-   Never recommend the GitHub backend's server or any server the plan or project rules use; when
-   unsure, leave it out. You can't run these commands; the owner types them. Put these
+   model and its notes wait for a human at the prompt, so recommend disabling it for the run. (c)
+   The MCP servers and connectors this session shows (names from its deferred-tool list and MCP
+   server instruction blocks): each loads into the main session every turn, while the restricted
+   plugin agents don't get them. From the plan's remaining phases and the project rules, name the
+   ones this project's work won't use and recommend `/mcp disable <name>` for each: it turns the
+   server off for this project only, from the next session on, and `/mcp enable <name>` turns it
+   back on. Never recommend the GitHub backend's server or any server the plan or project rules use;
+   when unsure, leave it out. You can't run these commands; the owner types them. Put these
    recommendations in the model-strategy question when you ask it, otherwise in the final report,
    once per run.
 4. **Reconcile decisions** (`references/owner-decisions.md`): a decision is decided only if the
