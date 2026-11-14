@@ -57,6 +57,8 @@ CHANGELOG_LINE = re.compile(r"^- v(\d+) (" + DATE + r"): \S")
 CHANGELOG_RECORDS = re.compile(r"(?:—|\s-)\s*records:\s*(\d+)\b")
 FENCE = re.compile(r"^\s*(```|~~~)")
 BULLET = re.compile(r"^(?:[-*+]|\d+[.)])\s+")
+# Inside a bullet, only these start a sub-bullet (CommonMark: "3." can't interrupt a paragraph).
+SUB_BULLET = re.compile(r"^(?:[-*+]|1[.)])\s+")
 LESSON_CITE = re.compile(r"\((L\d+(?:,\s*L\d+)*)\)\s*$")
 OWNER_CITE = re.compile(r"\(owner: \".+\", " + DATE + r"\)\s*$")
 PATH_LINE = re.compile(r"^(Skill|Records|Lessons):\s*`([^`]+)`")
@@ -259,7 +261,7 @@ def bullets(lines):
             out.append(line[m.end():].strip())
             in_sub = False
         elif out and line.startswith((" ", "\t")):
-            if BULLET.match(line.strip()):
+            if SUB_BULLET.match(line.strip()):
                 in_sub = True
             if not in_sub:
                 out[-1] += " " + line.strip()

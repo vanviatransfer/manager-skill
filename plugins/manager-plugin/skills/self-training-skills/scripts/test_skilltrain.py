@@ -179,6 +179,14 @@ class SkilltrainTest(unittest.TestCase):
         self.assertIn("sample: not due (0 records since v1) [trainer: sample-trainer]",
                       run("due", self.root)[1])
 
+    def test_wrapped_rule_starting_with_a_number_is_not_a_sub_bullet(self):
+        rules, stray = skilltrain.bullets(["- Keep the summary to at most",
+                                           "  3. lines, as the owner asked. (L1)",
+                                           "- Parent rule (L1)", "  - sub detail"])
+        self.assertEqual(stray, [])
+        self.assertEqual(rules[0], "Keep the summary to at most 3. lines, as the owner asked. (L1)")
+        self.assertEqual(rules[1], "Parent rule (L1)")
+
     def test_unmarked_skill_is_skipped(self):
         self.edit("<!-- self-training-skill v1 -->\n", "")
         code, out = run("check", self.dir)
