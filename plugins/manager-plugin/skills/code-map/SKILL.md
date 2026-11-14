@@ -13,8 +13,9 @@ targeted `grep` instead of exploring. It contains:
   right one.
 
 It is produced by `scripts/codemap.py`, a Python 3.8+ script that uses only the standard library:
-- files come from `git ls-files` (symlinks and tracked third-party or output folders such as
-  `node_modules`, `vendor`, `third_party`, `dist`, `coverage` and `.venv` are skipped);
+- files come from `git ls-files` (outside a git repository, from the folder tree; symlinks and
+  tracked third-party or output folders such as `node_modules`, `vendor`, `third_party`, `dist`,
+  `coverage` and `.venv` are skipped);
 - symbols are top-level definitions from line patterns, the same on every Python version
   (approximate); none are listed for tests;
 - imports are local and parsed only for Python, JavaScript and TypeScript;
@@ -39,9 +40,12 @@ it, the script detects the vault, trying in order:
 Folders that may hold secrets are never read, not even for detection.
 
 Where the map goes:
-- **With a vault:** `<vault>/map.md` (`map.md` for a root vault). If a hand-written `map.md` is
+- **With a vault:** `<vault>/map.md` (`map.md` for a root vault); if that file or its page
+  folder (`<vault>/map/`) holds anything this tool didn't write, `code-map.md`, then
+  `code-map-generated.md`. If a hand-written `map.md` is
   already there, it is never overwritten and the map goes to `<vault>/code-map.md`.
-- **Without a vault:** `docs/code-map.md`.
+- **Without a vault:** `docs/code-map.md`, else `docs/code-map-generated.md` the same way. If no
+  name is free, it stops and asks for a `map` in `.codemap.json`.
 
 The first `build` writes `.codemap.json`. Commit it with the map so every later run, on any
 machine, agrees. `build --redetect` re-detects the layout, for example after a vault is created; it
@@ -79,8 +83,9 @@ agrees in this conversation; if they decline, skip the map (nothing else depends
   that are now gone. It touches no other file except `.codemap.json` on the first run, and it
   refuses (exit 2, nothing written) to overwrite a file it didn't write, including a hand-written
   page in the map's page folder.
-- `<cmd> check`: exit 0 if the map matches the repository, 1 if it is stale. It writes nothing,
-  so it is safe on a shared checkout. It also prints broken vault links as warnings.
+- `<cmd> check`: exit 0 if the map matches the repository, 1 if it is stale, 2 if the layout is
+  invalid (for example a hand-written file in the map's page folder) or git fails. It writes
+  nothing, so it is safe on a shared checkout. It also prints broken vault links as warnings.
 - `<cmd> query <term>`: definitions whose names contain the term (`file:line`), matching paths,
   the files that import them, the vault pages that mention them, and vault pages whose path or
   title matches. Use it before a broad `grep` or opening vault pages.
@@ -106,8 +111,12 @@ made, one the owner had made in another session, or an Obsidian vault.
 
 ## In the manager
 
-When the project has `.codemap.json` and Python is available, the manager gives implementers and
-reviewers `Code map: <cmd>`:
+At the start of every run, whatever the model strategy, the manager checks whether the default
+branch has `.codemap.json`. That committed file is the guard: once it exists, the check passes
+silently. Without it, the manager asks whether to set the map up (yes / not this time / never in
+this repo; "never" is recorded as an owner decision in the plan), and on yes lands the setup
+first as its own small, reviewed PR. With the map set up, it gives implementers and reviewers
+`Code map: <cmd>`:
 - the implementer runs `build` before its final validation and commits the result (not in a
   plan-only PR), and again after any integration;
 - the reviewer runs `check` as required validation (stale means CHANGES REQUIRED; not for a

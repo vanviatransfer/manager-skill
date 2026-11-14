@@ -639,7 +639,7 @@ def mentions_of(mentions, path):
 
 def wikilinked(root, f):
     text = read_text(root, f) or ""
-    return any(WIKILINK.search(line) for _, line in prose_lines(text))
+    return any(WIKILINK.search(CODE_SPAN.sub(" ", line)) for _, line in prose_lines(text))
 
 
 def detect_vault(root, files):
@@ -708,12 +708,24 @@ def is_generated(text):
     return len(lines) > 2 and lines[2].startswith(MARKER + " (format")
 
 
+def link_in_path(root, rel):
+    """True if the path, or a folder on the way to it inside the repo, is a symlink."""
+    parts = rel.split("/")
+    return any(os.path.islink(os.path.join(root, *parts[:i])) for i in range(1, len(parts) + 1))
+
+
 def check_map_path(root, out):
     if not out.lower().endswith(".md"):
         raise LayoutError("map must be a .md file: %r" % out)
+    full = os.path.join(root, *out.split("/"))
+    if link_in_path(root, out):
+        raise LayoutError("map %r is, or lies under, a symlink" % out)
+    foreign = foreign_in_map_dir(root, out)
+    if foreign:
+        raise LayoutError("the map's page folder holds files this tool didn't write: %s"
+                          % ", ".join(foreign))
     existing = read_text(root, out)
-    if os.path.isdir(os.path.join(root, *out.split("/"))) or foreign_in_map_dir(root, out) or (
-            existing is not None and not is_generated(existing)):
+    if os.path.isdir(full) or (os.path.lexists(full) and not is_generated(existing)):
         raise LayoutError("map %r is an existing file this tool didn't write" % out)
 
 
@@ -732,13 +744,17 @@ def read_config(root):
 
 def default_map(root, vault):
     if not vault:
-        return NO_VAULT_MAP
-    base = "" if vault == "." else vault + "/"
-    for name in ("map.md", "code-map.md", "code-map-generated.md"):
-        existing = read_text(root, base + name)
-        if (existing is None or is_generated(existing)) and not foreign_in_map_dir(root, base + name):
-            return base + name
-    return base + "code-map-generated.md"
+        names = (NO_VAULT_MAP, "docs/code-map-generated.md")
+    else:
+        base = "" if vault == "." else vault + "/"
+        names = tuple(base + n for n in ("map.md", "code-map.md", "code-map-generated.md"))
+    for rel in names:
+        existing = read_text(root, rel)
+        free = existing is None and not os.path.lexists(os.path.join(root, *rel.split("/")))
+        if (free or is_generated(existing)) and not foreign_in_map_dir(root, rel):
+            return rel
+    raise LayoutError("no free map location (%s are taken by files this tool didn't write); "
+                      "set \"map\" in %s" % (", ".join(names), CONFIG))
 
 
 def resolve_layout(root, files, vault_arg=None, out_arg=None, use_config=True):
@@ -794,6 +810,11 @@ def main(argv=None):
         old = None if not redetect else resolve_layout(root, tracked)
         vault_dir, out_rel, source = resolve_layout(root, tracked, args.vault, out_arg,
                                                     use_config=not redetect)
+        if out_arg is not None and args.action in ("build", "check"):
+            if not out_rel.lower().endswith(".md"):
+                raise LayoutError("--out must be a .md file: %r" % out_rel)
+            if not out_rel.startswith("../"):
+                check_map_path(root, out_rel)
     except LayoutError as exc:
         print("error: %s" % exc, file=sys.stderr)
         return 2
@@ -877,8 +898,9 @@ def main(argv=None):
         print("current: %s" % out_rel)
         return 0
     foreign = [rel for rel in sorted(pages)
-               if os.path.exists(os.path.join(root, *rel.split("/")))
-               and not is_generated(read_text(root, rel))]
+               if (not rel.startswith("../") and link_in_path(root, rel))
+               or (os.path.lexists(os.path.join(root, *rel.split("/")))
+                   and not is_generated(read_text(root, rel)))]
     if foreign:
         print("error: refusing to overwrite files this tool didn't write: %s" % ", ".join(foreign),
               file=sys.stderr)
@@ -889,6 +911,9 @@ def main(argv=None):
         for rel in [old[1]] + generated_pages(root, old[1]):
             if is_generated(read_text(root, rel)):
                 os.remove(os.path.join(root, *rel.split("/")))
+        old_dir = os.path.join(root, *posixpath.splitext(old[1])[0].split("/"))
+        if os.path.isdir(old_dir) and not os.listdir(old_dir):
+            os.rmdir(old_dir)
     inside = not out_rel.startswith("../")
     if inside and (redetect or (source != CONFIG and not args.out and not read_config(root))):
         with open(os.path.join(root, CONFIG), "w", encoding="utf-8", newline="\n") as fh:

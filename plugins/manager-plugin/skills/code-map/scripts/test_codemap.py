@@ -305,6 +305,7 @@ class CodemapTest(unittest.TestCase):
         run("build", "--root", self.root, "--redetect")
         self.assertFalse(os.path.exists(os.path.join(self.root, "docs", "code-map.md")))
         self.assertIn('"vault": "docs/vault"', self.read(".codemap.json"))
+        self.assertFalse(os.path.exists(os.path.join(self.root, "docs", "code-map")))
         self.assertEqual(run("check", "--root", self.root)[0], 0)
 
     def test_python_parser_edge_cases(self):
@@ -318,6 +319,36 @@ class CodemapTest(unittest.TestCase):
         self.assertEqual([n for n, _ in symbols], ["after_quote_string", "decorated"])
         for mod in ("pkg.alpha", "pkg.beta", "os", "json"):
             self.assertIn(mod, [m for _, m in imports])
+
+    def test_foreign_file_in_map_folder_fails_check(self):
+        run("build", "--root", self.root)
+        self.write("docs/code-map/notes.md", "hand-written\n")
+        code, out = run("check", "--root", self.root)
+        self.assertEqual(code, 2)
+
+    def test_no_vault_default_skips_a_taken_folder(self):
+        self.write("docs/code-map/notes.md", "hand-written\n")
+        self.git("add", "-A")
+        self.assertIn("map: docs/code-map-generated.md", run("detect", "--root", self.root)[1])
+        self.assertEqual(run("build", "--root", self.root)[0], 0)
+        self.assertEqual(run("check", "--root", self.root)[0], 0)
+        self.assertEqual(self.read("docs/code-map/notes.md"), "hand-written\n")
+
+    def test_dangling_symlink_is_never_written_through(self):
+        if not hasattr(os, "symlink"):
+            self.skipTest("no symlinks")
+        outside = os.path.join(self.tmp.name + "-outside.md")
+        os.makedirs(os.path.join(self.root, "docs"), exist_ok=True)
+        os.symlink(outside, os.path.join(self.root, "docs", "code-map.md"))
+        self.assertEqual(run("build", "--root", self.root, "--out", "docs/code-map.md")[0], 2)
+        self.assertFalse(os.path.exists(outside))
+        self.assertIn("map: docs/code-map-generated.md", run("detect", "--root", self.root)[1])
+
+    def test_wikilinks_in_code_spans_do_not_make_a_vault(self):
+        for i in range(6):
+            self.write("guide/p%d.md" % i, "Use `[[page]]` syntax.\n")
+        self.git("add", "-A")
+        self.assertIn("vault: none", run("detect", "--root", self.root)[1])
 
     def test_query(self):
         code, out = run("query", "helper", "--root", self.root)

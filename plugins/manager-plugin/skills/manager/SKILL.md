@@ -14,7 +14,8 @@ because the next step depends on the result. If the harness runs a dispatch in t
 anyway, wait for its completion notification: a pending subagent is not a result and not a reason
 to end the turn, and an interim notice (e.g. it is waiting on its own background work) is not its
 report. End the turn only for a question to the owner that blocks all work (the
-model-strategy gate, the plan's location, approval of a new plan) or at a stop condition.
+model-strategy gate, the code-map question, the plan's location, approval of a new plan) or at a
+stop condition.
 
 ## Ground rules
 
@@ -118,14 +119,12 @@ don't read source. Recommend Sonnet, Opus or a mixed strategy, ask in Turkish, a
 Bu çalışma için önerim: <Sonnet | Opus | Karma: standard → Sonnet, critical → Opus, işaretsiz → standard>.
 Gerekçe: <tek cümle: doğruluk riski, karmaşıklık, tahmini token tüketimi ve maliyet>.
 [Başlamadan önce önerim: `/autocompact 600k` çalıştırın; cc-plugin-you-should-know'ı kapatın]
-[Kod haritası için Python yok; kurayım mı? (`<komut>`) Hayır derseniz harita atlanır.]
-[Bu repoda vault var ama kod haritası yok; kurayım mı? (kod ve vault için tek dizin sayfası)]
+[Kod haritası kurulu değil; kurayım mı? <Python yok: önce `<komut>` ile kurulur.> Evet / Bu sefer hayır / Hayır, bu repoda bir daha sorma]
 Model tercihiniz hangisi?
 ```
 
-The bracketed lines only when step 0 found something (the session check, a code map without Python,
-a vault without a map), with only the items it found. An install answer is carried out right after
-the gate.
+The bracketed lines only when step 0 found something (the session check, a code map not set up),
+with only the items it found. An install answer is carried out right after the gate.
 
 Guide for the recommendation: Sonnet for bounded code, docs, tests and ordinary reviews; Opus for
 architecture, numerical or financial correctness, concurrency, security-critical code or hard
@@ -154,6 +153,29 @@ and the owner's words don't settle for a phase (e.g. "Opus if it handles CSP inp
 model decision too: block that phase on it, pick neither model, ask in the final batch, and keep
 running the other phases.
 
+## Code map — checked every run
+
+After step 0's read-only part, before any dispatch, whatever the model strategy:
+- **Set up** = the default branch has `.codemap.json` with a `map` (`git show
+  origin/<default>:.codemap.json`). That file is the guard: once it lands, later runs only
+  resolve the command and never ask again. Resolve it as the `code-map` skill says (script
+  `${CLAUDE_SKILL_DIR}/../code-map/scripts/codemap.py`, a Python 3.8+) and send `Code map: <cmd>`
+  in every dispatch. No Python: offer the install once at run start; declined → `Code map: none`
+  this run, and say in the final report that the map stays stale until a run with Python
+  rebuilds it.
+- **Not set up**, and the plan on the default branch has no valid Decided entry declining it: ask
+  at run start, in the model-strategy question when it is asked, else as its own question (it ends
+  the turn like the gate): `Kod haritası kurulu değil (kod ve vault için tek dizin sayfası);
+  kurayım mı? [Python yok: önce <komut> ile kurulur.] Evet / Bu sefer hayır / Hayır,
+  bu repoda bir daha sorma`.
+  - **Evet:** install Python if needed (the skill's command for the OS), then land the setup PR
+    before any phase: a new implementer and reviewer, each with `Setup: code map`, the command and
+    phase `none`, through steps 2 to 4a like a plan-only PR. Then every dispatch gets the command.
+  - **Bu sefer hayır:** `Code map: none` this run; asked again next run.
+  - **Bir daha sorma:** record it as a Decided owner decision (owner's words, date) through the
+    next landing PR's `Plan records`, or the end-of-run plan-only PR. A valid one stops the
+    question in later runs; the owner can still ask for the map with the `code-map` skill.
+
 ## 0. Establish state (also how you resume after compaction or in a new session)
 
 Derive state from durable sources only — never from memory of an earlier context:
@@ -165,13 +187,7 @@ Derive state from durable sources only — never from memory of an earlier conte
    the final report; otherwise skip this. Resolve the two brief files once,
    `${CLAUDE_SKILL_DIR}/references/implementer-brief.md` and `reviewer-brief.md`, and check that
    both exist: a missing one means an incomplete plugin copy (environment failure: report it). Use
-   these absolute paths in every dispatch. Code map: if the default branch has `.codemap.json` (`git
-   show origin/<default>:.codemap.json` after step 2's fetch), resolve the command as the `code-map`
-   skill says (`${CLAUDE_SKILL_DIR}/../code-map/scripts/codemap.py` and a Python 3.8+) and send it
-   as `Code map:` in every dispatch. No Python: offer the install in the model-strategy question
-   (the skill's command for the OS); `none` if declined. A vault but no `.codemap.json` (the skill's
-   detection, or a vault folder you see): offer in that question to set the map up, landed first as
-   its own small PR (an implementer runs `build` and commits; a reviewer runs `check`).
+   these absolute paths in every dispatch. Then the code map: see **Code map — checked every run**.
 2. `git fetch origin`; record the default branch head.
 3. Read the project rules and the living plan **as on the default branch** (`git show
    origin/<default>:<path>`, not the working tree, which may hold an unmerged phase branch). Ask
@@ -278,8 +294,9 @@ ask the same implementer once for exactly those fields. Then `git fetch origin <
   (unpushed or unexpected commits) before review;
 - `git merge-base --is-ancestor <base-sha> <candidate>` holds, and the base ref is the default;
 - `git diff --name-only <base-sha>...<candidate>` stays inside the phase scope (vault pages and
-  the generated code-map pages pass this check, never the living plan; the reviewer judges
-  whether the diff requires them).
+  the generated code-map pages pass this check, never the living plan or the project rules files
+  such as `CLAUDE.md` and `AGENTS.md`; the reviewer judges whether the diff requires them; a
+  code-map setup PR: only `.codemap.json`, the generated pages and one vault index line).
 
 After an integration (4a), the base SHA becomes the default head the implementer integrated, once
 `git merge-base --is-ancestor` confirms it is in the candidate.
@@ -521,8 +538,9 @@ owner's words.
 
 ## Stop conditions
 
-End the turn only for a question that blocks all work (the model-strategy gate, the plan's
-location, a new plan's approval), or when no ready phase is left, and say which holds:
+End the turn only for a question that blocks all work (the model-strategy gate, the code-map
+question, the plan's location, a new plan's approval), or when no ready phase is left, and say which
+holds:
 - the plan is complete;
 - every remaining phase is blocked (owner decisions, tripped brakes, refused landings);
 - the environment is persistently broken after one repair attempt, or the shared checkout holds
