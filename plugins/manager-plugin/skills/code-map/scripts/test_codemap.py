@@ -83,10 +83,13 @@ class CodemapTest(unittest.TestCase):
             self.assertEqual(run("check", "--root", self.root)[0], 1)
             run("build", "--root", self.root)
             self.assertFalse(os.path.exists(os.path.join(self.root, "docs/code-map/gone.md")))
-            self.write("docs/code-map/notes.md", "hand-written page\n")
-            run("build", "--root", self.root)
-            self.assertTrue(os.path.exists(os.path.join(self.root, "docs/code-map/notes.md")))
             self.assertEqual(run("check", "--root", self.root)[0], 0)
+            self.write("docs/code-map/app.md", "hand-written page\n")
+            self.assertEqual(run("build", "--root", self.root)[0], 2)
+            self.assertEqual(self.read("docs/code-map/app.md"), "hand-written page\n")
+            self.write("README.md", "readme\n")
+            self.assertEqual(run("build", "--root", self.root, "--out", "README.md")[0], 2)
+            self.assertEqual(self.read("README.md"), "readme\n")
         finally:
             codemap.SPLIT_ABOVE = old
 
@@ -254,10 +257,21 @@ class CodemapTest(unittest.TestCase):
         run("build", "--root", self.root)
         self.assertIn("0 broken links", self.read("map.md"))
 
+    def test_links_in_code_spans_and_angle_targets(self):
+        self.write("docs/vault/index.md", "`[[not-a-link]]` and [p](<my page.md>)\n")
+        self.write("docs/vault/my page.md", "# P\n")
+        self.write("docs/vault/README.md", "entry page, nobody links here\n")
+        self.git("add", "-A")
+        run("build", "--root", self.root)
+        text = self.read("docs/vault/map.md")
+        self.assertIn("0 broken links; 0 orphan pages", text)
+
     def test_escaped_triple_quote_and_form_feed(self):
         text = 'x = """a \\""" b"""\n\x0c\ndef later():\n    pass\n'
         symbols, _ = codemap.python_info(text)
         self.assertEqual(symbols, [("later", 3)])
+        symbols, _ = codemap.python_info("\x0cdef fed():\n    pass\n")
+        self.assertEqual(symbols, [("fed", 1)])
 
     def test_config_map_cannot_overwrite_other_files(self):
         for cfg in ('{"map": "app/util.py"}', '{"map": "README.md"}', '{"map": "."}'):

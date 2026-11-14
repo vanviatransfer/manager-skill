@@ -204,6 +204,7 @@ def python_info(text):
         raw = lines[n]
         n += 1
         starts_in_string = state is not None
+        raw = raw.lstrip("\x0c")
         code, state = code_part(raw, state)
         if starts_in_string or not code.strip() or raw[0].isspace():
             continue
@@ -386,7 +387,8 @@ def page_names(groups):
 
 
 def make_groups(paths, prefix):
-    """Split a directory into groups of at most SPLIT_ABOVE files, by subdirectory."""
+    """Split a directory of more than SPLIT_ABOVE files by subdirectory; files directly in a
+    folder stay together in one group."""
     if len(paths) <= SPLIT_ABOVE:
         return {prefix: paths}
     direct, children = [], {}
@@ -448,7 +450,12 @@ def render(info, importers, entries, cmd, out_rel, vault=None):
                   "%d pages; %d broken links; %d orphan pages (no page links to them)."
                   % (len(vault["pages"]), len(vault["broken"]), len(vault["orphans"]))]
         lines += ["- broken: `%s:%d` → %s" % b for b in vault["broken"][:50]]
-        lines += ["- orphan: `%s`" % o for o in vault["orphans"][:50]]
+        if len(vault["broken"]) > 50:
+            lines.append("- (%d more broken links)" % (len(vault["broken"]) - 50))
+        lines += ["- orphan: `%s`" % o for o in vault["orphans"][:20]]
+        if len(vault["orphans"]) > 20:
+            lines.append("- (%d more orphan pages; the vault-pages table shows each page's "
+                         "\"Linked from\" count)" % (len(vault["orphans"]) - 20))
         rows = ["| Page | Title | Words | Linked from |", "|---|---|---|---|"]
         rows += ["| `%s` | %s | %d | %d |" % (pg, vault["meta"][pg][0], vault["meta"][pg][1],
                                               vault["inbound"][pg])
@@ -484,8 +491,7 @@ def generated_pages(root, out_rel):
     if os.path.isdir(folder):
         for name in sorted(os.listdir(folder)):
             rel = sub + "/" + name
-            lines = (read_text(root, rel) or "").splitlines()
-            if name.endswith(".md") and len(lines) > 2 and lines[2].startswith(MARKER + " (format"):
+            if name.endswith(".md") and is_generated(read_text(root, rel)):
                 found.append(rel)
     return found
 
@@ -499,7 +505,7 @@ def command_label():
 # ties to the shallowest, then first path), [text](page.md) links resolve relative to the page,
 # and inline code spans naming a tracked file are recorded as mentions of that file.
 WIKILINK = re.compile(r"\[\[([^\]|#\\]+?)(?:\\?\|[^\]]*|#[^\]]*)?\]\]")
-MD_LINK = re.compile(r"(?<!!)\[[^\]]*\]\(<?([^)\s>]+)>?(?:\s+[^)]*)?\)")
+MD_LINK = re.compile(r"(?<!!)\[[^\]]*\]\(\s*(?:<([^<>\n]+)>|([^)\s]+))(?:\s+[^)]*)?\)")
 CODE_SPAN = re.compile(r"`([^`\n]+)`")
 FENCE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
 
@@ -570,7 +576,8 @@ def scan_vault(root, vault, files, generated):
     for page in pages:
         text = read_text(root, page) or ""
         meta[page] = (page_title(text, page).replace("|", "/")[:60], len(text.split()))
-        for lineno, line in prose_lines(text):
+        for lineno, full_line in prose_lines(text):
+            line = CODE_SPAN.sub(" ", full_line)
             for target in WIKILINK.findall(line):
                 target = nfc(target.strip())
                 cands = []
@@ -587,8 +594,8 @@ def scan_vault(root, vault, files, generated):
                     links[page].add(cands[0])
                 else:
                     broken.append((page, lineno, "[[%s]]" % target))
-            for target in MD_LINK.findall(line):
-                target = unquote(target.split("#")[0])
+            for angled, bare in MD_LINK.findall(line):
+                target = unquote((angled or bare).split("#")[0])
                 if not target or re.match(r"^[a-z][a-z0-9+.-]*:", target, re.I):
                     continue
                 dest = posixpath.normpath(posixpath.join(posixpath.dirname(page), target))
@@ -604,7 +611,7 @@ def scan_vault(root, vault, files, generated):
                     links[page].add(rooted)
                 else:
                     broken.append((page, lineno, target))
-            for span in CODE_SPAN.findall(line):
+            for span in CODE_SPAN.findall(full_line):
                 ref = strip_dot_slash(span.strip().split("::")[0].split(":")[0])
                 if PATH_LIKE.match(ref) and ("/" in ref or "." in ref) and not is_page(ref, vault):
                     mentions.setdefault(ref, set()).add((page, lineno))
@@ -613,7 +620,8 @@ def scan_vault(root, vault, files, generated):
         for d in dests:
             if d in inbound and d != page:
                 inbound[d] += 1
-    orphans = [p for p in pages if not inbound[p] and posixpath.basename(p) != "index.md"]
+    entry = {"index.md", "readme.md", "home.md", "_index.md"}
+    orphans = [p for p in pages if not inbound[p] and posixpath.basename(p).lower() not in entry]
     return {"dir": vault, "pages": pages, "broken": broken, "orphans": orphans,
             "mentions": mentions, "meta": meta, "inbound": inbound}
 
@@ -685,14 +693,27 @@ def safe_rel(value, what):
     return norm
 
 
+def foreign_in_map_dir(root, out):
+    """Files in the map's page folder that this tool didn't write."""
+    folder = os.path.join(root, *posixpath.splitext(out)[0].split("/"))
+    if not os.path.isdir(folder):
+        return []
+    sub = posixpath.splitext(out)[0]
+    return [sub + "/" + n for n in sorted(os.listdir(folder))
+            if not (n.endswith(".md") and is_generated(read_text(root, sub + "/" + n)))]
+
+
+def is_generated(text):
+    lines = (text or "").splitlines()
+    return len(lines) > 2 and lines[2].startswith(MARKER + " (format")
+
+
 def check_map_path(root, out):
     if not out.lower().endswith(".md"):
         raise LayoutError("map must be a .md file: %r" % out)
     existing = read_text(root, out)
-    lines = (existing or "").splitlines()
-    generated = len(lines) > 2 and lines[2].startswith(MARKER + " (format")
-    if os.path.isdir(os.path.join(root, *out.split("/"))) or (existing is not None
-                                                                and not generated):
+    if os.path.isdir(os.path.join(root, *out.split("/"))) or foreign_in_map_dir(root, out) or (
+            existing is not None and not is_generated(existing)):
         raise LayoutError("map %r is an existing file this tool didn't write" % out)
 
 
@@ -715,8 +736,7 @@ def default_map(root, vault):
     base = "" if vault == "." else vault + "/"
     for name in ("map.md", "code-map.md", "code-map-generated.md"):
         existing = read_text(root, base + name)
-        lines = (existing or "").splitlines()
-        if existing is None or (len(lines) > 2 and lines[2].startswith(MARKER + " (format")):
+        if (existing is None or is_generated(existing)) and not foreign_in_map_dir(root, base + name):
             return base + name
     return base + "code-map-generated.md"
 
@@ -856,12 +876,18 @@ def main(argv=None):
             return 1
         print("current: %s" % out_rel)
         return 0
+    foreign = [rel for rel in sorted(pages)
+               if os.path.exists(os.path.join(root, *rel.split("/")))
+               and not is_generated(read_text(root, rel))]
+    if foreign:
+        print("error: refusing to overwrite files this tool didn't write: %s" % ", ".join(foreign),
+              file=sys.stderr)
+        return 2
     for rel in stale_extra:
         os.remove(os.path.join(root, *rel.split("/")))
     if redetect and old and old[1] != out_rel:
         for rel in [old[1]] + generated_pages(root, old[1]):
-            lines = (read_text(root, rel) or "").splitlines()
-            if len(lines) > 2 and lines[2].startswith(MARKER + " (format"):
+            if is_generated(read_text(root, rel)):
                 os.remove(os.path.join(root, *rel.split("/")))
     inside = not out_rel.startswith("../")
     if inside and (redetect or (source != CONFIG and not args.out and not read_config(root))):

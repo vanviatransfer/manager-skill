@@ -30,10 +30,11 @@ It is produced by `scripts/codemap.py`, a Python 3.8+ script that uses only the 
 `.codemap.json` at the repository root (`{"vault": ..., "map": ...}`) fixes the layout. Without
 it, the script detects the vault, trying in order:
 1. a `.obsidian/` folder: at the repository root (the whole repository is the vault), else the
-   shallowest folder holding one;
+   shallowest folder holding one, up to three levels deep;
 2. `docs/vault` or `vault`; or `docs/knowledge`, `knowledge`, `docs/wiki`, `wiki`, `docs/notes`,
    `notes`, `kb` or `docs/kb` when it has at least 3 pages and uses `[[wikilinks]]`;
-3. the folder holding most of the pages with `[[wikilinks]]` (at least 5).
+3. the deepest folder holding at least 80% of the pages with `[[wikilinks]]` (at least 5 such
+   pages).
 
 Folders that may hold secrets are never read, not even for detection.
 
@@ -75,7 +76,9 @@ agrees in this conversation; if they decline, skip the map (nothing else depends
   splitting directories with more than 150 files by subdirectory (files directly in one folder stay
   together; a page lists at most 800 files, then points to `query`), and above 150 vault pages a
   separate vault-pages page. It deletes map pages it generated earlier
-  that are now gone. It touches no other file except `.codemap.json` on the first run.
+  that are now gone. It touches no other file except `.codemap.json` on the first run, and it
+  refuses (exit 2, nothing written) to overwrite a file it didn't write, including a hand-written
+  page in the map's page folder.
 - `<cmd> check`: exit 0 if the map matches the repository, 1 if it is stale. It writes nothing,
   so it is safe on a shared checkout. It also prints broken vault links as warnings.
 - `<cmd> query <term>`: definitions whose names contain the term (`file:line`), matching paths,
