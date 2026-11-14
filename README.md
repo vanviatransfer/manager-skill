@@ -1,6 +1,6 @@
 # manager-skill
 
-A Claude Code plugin with five skills:
+A Claude Code plugin with six skills:
 
 - **`living-plan`** — writes a project's living plan: goal, scope, binding decisions, phases sized
   for one PR each (with acceptance criteria and validation), and open owner decisions.
@@ -22,6 +22,14 @@ A Claude Code plugin with five skills:
   (the committed `.codemap.json` is the guard) and offers to set it up if not; once it is,
   implementers regenerate the map in every phase PR and reviewers run its `check`. Without Python it
   offers the install command and skips the map only if you decline.
+- **`self-training-skills`** — writes skills for work that repeats in a project (offered when a
+  living plan has recurring work): a worker skill in `.claude/skills/<name>/`, per-use records (in
+  the vault if there is one) and a labelled lessons table, plus an optional trainer skill for work
+  the owner judges in conversation. On request it trains a skill from that evidence: it measures
+  the records, proposes at most three changes, and lands the owner's choice through a reviewed PR.
+  A skill can never override the project rules, the plan or the manager's review and owner-authority
+  rules. Its `skilltrain.py` (standard-library Python) checks the files and tells the manager which
+  skills are due for training.
 
 ## Learning from runs
 
@@ -177,3 +185,5 @@ rules and secret-file patterns follow ideas from
 
 Tests for the code-map script:
 `python3 -m unittest discover -s plugins/manager-plugin/skills/code-map/scripts`.
+Tests for the self-training-skills script:
+`python3 -m unittest discover -s plugins/manager-plugin/skills/self-training-skills/scripts`.
