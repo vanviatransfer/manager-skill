@@ -1,6 +1,6 @@
 # Implementer brief
 
-## Dispatch fields (the orchestrator sends only these)
+## Dispatch fields (the orchestrator sends only these, plus a `Role:` line for a fallback agent)
 
 ```
 Read and follow <this file's path>.

@@ -79,6 +79,6 @@ MCP results are facts from GitHub just like `gh` output; a subagent's prose is s
   missing rather than `--unshallow`.
 - **Subagents:** the plugin's `implementer` / `reviewer` agents list only the tools they need,
   including specific `mcp__github__*` tools (a reviewer gets read tools only);
-  `manager-plugin:fallback` inherits the session's tools minus skills, subagents and the MCP servers
-  no role uses; a `general-purpose` fallback inherits everything. Tell them which backend to use
-  and, for MCP, that the tools may need loading via ToolSearch first.
+  `manager-plugin:fallback` inherits the session's tools minus skills, subagents and the known MCP
+  servers no role uses; a `general-purpose` fallback inherits everything. Tell them which backend to
+  use and, for MCP, that the tools may need loading via ToolSearch first.

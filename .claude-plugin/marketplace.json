@@ -8,7 +8,7 @@
     {
       "name": "manager-plugin",
       "source": "./plugins/manager-plugin",
-      "description": "living-plan: write a phased living plan. manager: run it to completion, one phase per PR, with fresh implementer and independent exact-SHA reviewer subagents, a braked fix loop and batched owner decisions. create-vault: a project knowledge vault the implementers keep current. code-map: a generated code map and query, dependency-free. self-training-skills: skills for recurring project work that improve from their own records, through reviewed PRs. manager-retro: improve the skill from recorded runs, through a reviewed PR. Plus a researcher agent for delegated read-only research."
+      "description": "living-plan: write a phased living plan. manager: run it to completion, one phase per PR, with fresh implementer and independent exact-SHA reviewer subagents, a braked fix loop and batched owner decisions. create-vault: a project knowledge vault the implementers keep current. code-map: a generated code map and query, dependency-free. self-training-skills: skills for recurring project work that improve from their own records, through reviewed PRs. manager-retro: improve the skill from recorded runs, through a reviewed PR. Plus restricted worker, researcher and reviewer agents to delegate to instead of general-purpose, and a lean fallback agent."
     }
   ]
 }

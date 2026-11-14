@@ -83,8 +83,9 @@ session delegates (evaluating a repository or a library, reading docs): use it i
 `general-purpose` so the research agent doesn't inherit every skill and MCP tool. The manager loop
 itself doesn't dispatch it. A fourth, `manager-plugin:fallback`, replaces `general-purpose` when the
 implementer or reviewer type can't work in an environment (e.g. differently named GitHub MCP
-tools): it inherits the session's tools but drops skills, subagents and the MCP servers no role
-uses (mail, calendar, drive, docs, browser and remote-session tools), so connectors you need in
+tools): it inherits the session's tools but drops skills, subagents and the known MCP servers no
+role uses (mail, calendar, drive, docs, browser and remote-session tools; other connectors you add
+are still inherited, though its instructions forbid using them), so connectors you need in
 other sessions stay on. Only if no plugin agent type is available does the manager use
 `general-purpose`.
 
