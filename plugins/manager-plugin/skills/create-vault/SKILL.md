@@ -37,6 +37,9 @@ Talk to the owner in their language; write pages in the language the project's d
 - `map.md` (and `map/<dir>.md` in large repos): the generated code map, built with the `code-map`
   skill (it offers to install Python 3.8+ if it is missing; skipped only if the owner declines);
   listed in the index, never edited by hand, no `Verified` line (its `check` is its review).
+- `skills/<name>/records.md`: a self-training skill's per-use records (the `self-training-skills`
+  skill), evidence, not knowledge. The index lists it in one line, it has no `Verified` line, and a
+  refresh never rewrites it.
 - Links are `[[page]]`. No page repeats another's content; it links to it.
 
 ## Modes

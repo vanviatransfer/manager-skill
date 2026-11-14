@@ -29,7 +29,9 @@ or MCP tools beyond the GitHub backend's.
 1. **Read** only the project rules (`CLAUDE.md` / `AGENTS.md`), this phase's plan section, the
    plan's binding decisions and its knowledge paths; if the project has a vault (`.codemap.json`'s
    `vault`, else `docs/vault/` or the path the project's rules name), also its index page, or the
-   code map's vault-pages table.
+   code map's vault-pages table. If the phase's `Notes` cite a project skill (`skill:
+   .claude/skills/<name>/SKILL.md`), read it and follow its steps where they don't conflict with
+   this brief, the plan or the project rules (those win).
 2. **Scope.** Don't expand it or guess. An owner-only choice (open design, scope, spend,
    credentials, anything the project reserves) → stop, report `NEEDS_OWNER_DECISION` with options.
    Write the least that meets the acceptance criteria: reuse existing code, the standard library or
@@ -62,7 +64,10 @@ or MCP tools beyond the GitHub backend's.
    mentions --base <Base SHA>` lists the pages that mention changed paths in code spans or links;
    also `grep` the vault for the symbol names and paths you rename or remove); correct the fact in
    place, keep its source (a path), add no status or plan content, and set the page's last line to
-   `Verified: <date>, phase <id>, base <short Base SHA>`.
+   `Verified: <date>, phase <id>, base <short Base SHA>`. A cited project skill (phase PRs only):
+   append exactly one row to its records file as its `## Record` says (context `phase <id>`,
+   outcome `pending-review`); change nothing else in the skill's folder or records unless this
+   phase is a skill phase.
 5. **Validate.** With a `Code map` command, except in a plan-only PR: run `<code map> build` before
    the final validation and commit what it changes (generated pages: never edit them by hand).
    Develop with focused tests; on your final commit run every required validation command once each

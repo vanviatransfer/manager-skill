@@ -55,6 +55,10 @@ them): code the plan doesn't need, as `N<k>. lean: delete | reuse <existing path
 <file:line> — <what to remove>`; never a blocker on their own, never for what the plan requires
 (e.g. an expand–contract shim), and not for what is already a blocker above (out-of-scope code stays
 a blocker). They go to the plan's notes, or to a later phase only if its scope covers that file.
+A project skill the phase's `Notes` cite (`.claude/skills/<name>/SKILL.md`) is context, never
+acceptance or rules. In a phase PR, the only allowed change to a skill's files is one factual
+row in its records file; anything else under `.claude/skills/` is out of scope (a blocker) unless
+the plan section says otherwise.
 Always blockers: an edit to this phase's own objective, scope, risk, acceptance or validation not
 required by a Ruling; a change to plan decisions (Open or Decided), binding decisions, other phases'
 status lines or the model-strategy record that doesn't match Plan records exactly (`unknown

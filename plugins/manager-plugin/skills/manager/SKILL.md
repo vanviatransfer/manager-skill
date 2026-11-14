@@ -318,7 +318,8 @@ ask the same implementer once for exactly those fields. Then `git fetch origin <
 - `git diff --name-only <base-sha>...<candidate>` stays inside the phase scope (vault pages and
   the generated code-map pages pass this check, never the living plan or the project rules files
   such as `CLAUDE.md` and `AGENTS.md`; the reviewer judges whether the diff requires them; a
-  code-map setup PR: only `.codemap.json`, the generated pages and one vault index line).
+  code-map setup PR: only `.codemap.json`, the generated pages and one vault index line). One
+  records row in the records file of a skill the phase's `Notes` cite passes too.
 
 After an integration (4a), the base SHA becomes the default head the implementer integrated, once
 `git merge-base --is-ancestor` confirms it is in the candidate.
@@ -576,3 +577,10 @@ skills found in step 0 (names, "disable for this repo if unneeded") and any `gen
 fallback dispatch; unresolved risks (including validation the reviewer could not run); decisions
 answered but not yet persisted, if any; non-blocking notes carried forward; the default branch's
 final head SHA; then the numbered batch of unresolved owner decisions.
+
+Self-training skills: when the default branch has marked skills under `.claude/skills/` (`grep -l
+"<!-- self-training-skill v1 -->" .claude/skills/*/SKILL.md`), run `<python>
+"${CLAUDE_SKILL_DIR}/../self-training-skills/scripts/skilltrain.py" due <repo root>` (the Python
+as the code-map skill's rule picks it) and list, before the decision batch, each skill due for
+training with `"<skill> için eğitim zamanı: 'skill'i eğit <skill>' deyin"`. Without Python, skip
+this and say so in the report.
