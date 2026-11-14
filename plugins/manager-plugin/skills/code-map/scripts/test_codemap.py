@@ -344,6 +344,20 @@ class CodemapTest(unittest.TestCase):
         self.assertFalse(os.path.exists(outside))
         self.assertIn("map: docs/code-map-generated.md", run("detect", "--root", self.root)[1])
 
+    def test_symlinked_folder_is_skipped_for_the_map(self):
+        if not hasattr(os, "symlink"):
+            self.skipTest("no symlinks")
+        elsewhere = self.tmp.name + "-docs"
+        os.makedirs(elsewhere)
+        os.symlink(elsewhere, os.path.join(self.root, "docs"))
+        out = run("detect", "--root", self.root)
+        self.assertEqual(out[0], 2)
+        self.assertEqual(os.listdir(elsewhere), [])
+
+    def test_out_is_normalised(self):
+        code, _ = run("build", "--root", self.root, "--out", "x/../../outside/y.txt")
+        self.assertEqual(code, 2)
+
     def test_wikilinks_in_code_spans_do_not_make_a_vault(self):
         for i in range(6):
             self.write("guide/p%d.md" % i, "Use `[[page]]` syntax.\n")

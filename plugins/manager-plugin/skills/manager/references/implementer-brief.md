@@ -46,9 +46,10 @@ or MCP tools beyond the GitHub backend's.
 4. **PR** against the default branch, or update the one open for the branch (`gh pr create` / MCP
    `create_pull_request`, tools via ToolSearch; see `github-backends.md`; a tool you need is missing
    → `RESULT: BLOCKED`, Blocker `missing tool <name>`), with the repo's PR template if any and a
-   `Run: <run-id>` line. Code-map setup PR (`Setup: code map`, branch `setup/code-map`): run `<code
-   map> build`, add one line for the map to the vault's index page if it has one, commit only
-   `.codemap.json`, the generated pages and that line; its only validation is `<code map> check`.
+   `Run: <run-id>` line. Code-map setup PR (`Setup: code map`, on the dispatch's branch): run `<code
+   map> build`, add one line for the map to the vault's index page if it has one (never the living
+   plan or a rules file), commit only `.codemap.json`, the generated pages and that line; its
+   validation is `<code map> check`, plus any validation the project rules require for every PR.
    Plan-only PR: exactly the Plan change, nothing else (a specification: draft from it, adding no
    scope, decision or acceptance beyond it). Phase PR, in the same PR: mark the phase done (status +
    PR link); write the Plan records exactly (no other decision, status or model-strategy edit);

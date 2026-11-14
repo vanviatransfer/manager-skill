@@ -59,10 +59,11 @@ Always blockers: an edit to this phase's own objective, scope, risk, acceptance 
 required by a Ruling; a change to plan decisions (Open or Decided), binding decisions, other phases'
 status lines or the model-strategy record that doesn't match Plan records exactly (`unknown
 (resumed)`: any such change). Code-map setup PR (`Setup: code map`), **instead**: blocker if the
-diff holds anything but `.codemap.json`, generated map pages and one vault index line, or if `<code
-map> check` fails; its only required validation is that `check`. Plan-only PR, **instead**: blocker
-if the diff isn't exactly the Plan change (a specification: the draft doesn't realize it, adds
-scope, decisions or acceptance beyond it, lacks a phase's objective, scope, `Depends on`, risk,
+diff holds anything but `.codemap.json`, generated map pages and one vault index line (never in the
+living plan or a rules file), or if `<code map> check` fails; its required validation is that
+`check`, plus any validation the project rules require for every PR. Plan-only PR, **instead**:
+blocker if the diff isn't exactly the Plan change (a specification: the draft doesn't realize it,
+adds scope, decisions or acceptance beyond it, lacks a phase's objective, scope, `Depends on`, risk,
 acceptance or validation, or the specification holds content with no source in the plan or the
 owner's words), touches anything else, or contradicts the plan's goal, scope or binding decisions.
 

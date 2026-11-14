@@ -751,10 +751,12 @@ def default_map(root, vault):
     for rel in names:
         existing = read_text(root, rel)
         free = existing is None and not os.path.lexists(os.path.join(root, *rel.split("/")))
-        if (free or is_generated(existing)) and not foreign_in_map_dir(root, rel):
+        if (free or is_generated(existing)) and not foreign_in_map_dir(root, rel) \
+                and not link_in_path(root, rel):
             return rel
-    raise LayoutError("no free map location (%s are taken by files this tool didn't write); "
-                      "set \"map\" in %s" % (", ".join(names), CONFIG))
+    raise LayoutError("no free map location: %s each hold a file this tool didn't write, a "
+                      "symlink, or hand-written pages; set \"map\" in %s"
+                      % (", ".join(names), CONFIG))
 
 
 def resolve_layout(root, files, vault_arg=None, out_arg=None, use_config=True):
@@ -798,8 +800,9 @@ def main(argv=None):
         ap.error("no such directory: %s" % args.root)
     out_arg = None
     if args.out:
-        out_arg = (os.path.relpath(os.path.abspath(args.out), root).replace(os.sep, "/")
-                   if os.path.isabs(args.out) else args.out.replace("\\", "/"))
+        out_arg = posixpath.normpath(
+            os.path.relpath(os.path.abspath(args.out), root).replace(os.sep, "/")
+            if os.path.isabs(args.out) else args.out.replace("\\", "/"))
     try:
         tracked = git_files(root)
     except GitError as exc:

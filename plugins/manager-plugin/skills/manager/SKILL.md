@@ -155,26 +155,32 @@ running the other phases.
 
 ## Code map — checked every run
 
-After step 0's read-only part, before any dispatch, whatever the model strategy:
+At step 6 (after the fetch and the plan read), before any dispatch, whatever the model strategy:
 - **Set up** = the default branch has `.codemap.json` with a `map` (`git show
   origin/<default>:.codemap.json`). That file is the guard: once it lands, later runs only
   resolve the command and never ask again. Resolve it as the `code-map` skill says (script
   `${CLAUDE_SKILL_DIR}/../code-map/scripts/codemap.py`, a Python 3.8+) and send `Code map: <cmd>`
-  in every dispatch. No Python: offer the install once at run start; declined → `Code map: none`
-  this run, and say in the final report that the map stays stale until a run with Python
-  rebuilds it.
+  in every dispatch. No Python: offer the install as the code-map question below (`Python yok;
+  kurayım mı?`); declined → `Code map: none` this run, and say in the final report that the map
+  stays stale until a run with Python rebuilds it.
 - **Not set up**, and the plan on the default branch has no valid Decided entry declining it: ask
-  at run start, in the model-strategy question when it is asked, else as its own question (it ends
-  the turn like the gate): `Kod haritası kurulu değil (kod ve vault için tek dizin sayfası);
-  kurayım mı? [Python yok: önce <komut> ile kurulur.] Evet / Bu sefer hayır / Hayır,
-  bu repoda bir daha sorma`.
+  the code-map question: `Kod haritası kurulu değil (kod ve vault için tek dizin sayfası);
+  kurayım mı? [Python yok: önce <komut> ile kurulur.] Evet / Bu sefer hayır / Hayır, bu repoda
+  bir daha sorma`.
   - **Evet:** install Python if needed (the skill's command for the OS), then land the setup PR
-    before any phase: a new implementer and reviewer, each with `Setup: code map`, the command and
-    phase `none`, through steps 2 to 4a like a plan-only PR. Then every dispatch gets the command.
+    before any phase: a new implementer and reviewer, each with `Setup: code map`, the command,
+    phase `none` and `Branch: setup/code-map` (or the designated branch), through steps 2 to 4a
+    like a plan-only PR. Then every dispatch gets the command. If the setup PR blocks or can't
+    land, report why, use `Code map: none` and go on with the phases.
   - **Bu sefer hayır:** `Code map: none` this run; asked again next run.
   - **Bir daha sorma:** record it as a Decided owner decision (owner's words, date) through the
     next landing PR's `Plan records`, or the end-of-run plan-only PR. A valid one stops the
     question in later runs; the owner can still ask for the map with the `code-map` skill.
+
+The code-map question goes into the model-strategy question when that is asked; otherwise it is a
+question of its own that ends the turn, asked once per run. Keep the answer as one working-notes
+line, `Run <id>: code map <set up | setup PR #<n> | none (owner: "<quote>")>`, so a compaction
+neither asks again nor loses it.
 
 ## 0. Establish state (also how you resume after compaction or in a new session)
 
@@ -187,7 +193,7 @@ Derive state from durable sources only — never from memory of an earlier conte
    the final report; otherwise skip this. Resolve the two brief files once,
    `${CLAUDE_SKILL_DIR}/references/implementer-brief.md` and `reviewer-brief.md`, and check that
    both exist: a missing one means an incomplete plugin copy (environment failure: report it). Use
-   these absolute paths in every dispatch. Then the code map: see **Code map — checked every run**.
+   these absolute paths in every dispatch.
 2. `git fetch origin`; record the default branch head.
 3. Read the project rules and the living plan **as on the default branch** (`git show
    origin/<default>:<path>`, not the working tree, which may hold an unmerged phase branch). Ask
@@ -233,8 +239,12 @@ Derive state from durable sources only — never from memory of an earlier conte
    - PRs merged but the phase not marked done → mark it done in the next PR;
    - an open plan-only PR (`phase/plan-*`) → resume it like a phase if its Plan change is still
      needed; otherwise report it rather than open a duplicate;
+   - an open code-map setup PR (`setup/code-map`, or `Setup: code map` work on the designated
+     branch) → resume it like a plan-only PR if the owner says yes to the code-map question again;
+     otherwise report it and don't touch it;
    - an open PR that matches no phase → say so; don't touch it.
-6. **Model strategy gate** (above). Everything before this point is read-only.
+6. **Model strategy gate** (above), then the **Code map** check (below). Everything before this
+   point is read-only.
 
 No living plan → the run can't start: hand over to the `living-plan` skill (owner-driven, with its
 own approval), then begin this skill again from step 0.

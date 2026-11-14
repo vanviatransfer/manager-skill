@@ -39,13 +39,14 @@ it, the script detects the vault, trying in order:
 
 Folders that may hold secrets are never read, not even for detection.
 
-Where the map goes:
-- **With a vault:** `<vault>/map.md` (`map.md` for a root vault); if that file or its page
-  folder (`<vault>/map/`) holds anything this tool didn't write, `code-map.md`, then
-  `code-map-generated.md`. If a hand-written `map.md` is
-  already there, it is never overwritten and the map goes to `<vault>/code-map.md`.
-- **Without a vault:** `docs/code-map.md`, else `docs/code-map-generated.md` the same way. If no
-  name is free, it stops and asks for a `map` in `.codemap.json`.
+Where the map goes, taking the first location that is free (no file there, or one this tool
+wrote, no symlink on the way, and no hand-written file in its page folder):
+- **With a vault:** `<vault>/map.md` (`map.md` for a root vault), then `<vault>/code-map.md`, then
+  `<vault>/code-map-generated.md`.
+- **Without a vault:** `docs/code-map.md`, then `docs/code-map-generated.md`.
+
+If none is free, it stops and asks for a `map` in `.codemap.json`. A hand-written file is never
+overwritten.
 
 The first `build` writes `.codemap.json`. Commit it with the map so every later run, on any
 machine, agrees. `build --redetect` re-detects the layout, for example after a vault is created; it
