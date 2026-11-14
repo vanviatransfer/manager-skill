@@ -70,30 +70,32 @@ what depends on it, and everything else keeps running; the open decisions are as
 the end. Every subagent report and verdict is checked against `git`/GitHub facts (PR head, ancestry,
 changed files, reviewed SHA) before anything lands. Owner answers are recorded in the plan with
 their exact words and unblock dependent phases, so they are never asked twice. Fix rounds have
-brakes, and state lives in the living plan, `git` and
-GitHub (plus one review-ledger comment per review), so a run survives compaction and can be resumed
-by a new session without redoing work.
-The implementer and reviewer are the plugin's own tool-restricted subagents (`agents/`): their
+brakes, and state lives in the living plan, `git` and GitHub (plus one review-ledger comment per
+review), so a run survives compaction and can be resumed by a new session without redoing work. The
+implementer and reviewer are the plugin's own tool-restricted subagents (`agents/`): their
 allowlists narrow the tools available to them instead of inheriting every tool, plugin and MCP
 server (the reviewer gets no Edit/Write or GitHub MCP write tools; staying read-only still comes
-from its brief). Whether this lowers startup tokens is to be measured, not assumed.
-A third one, `manager-plugin:researcher` (read and search tools, web search and fetch, Write for
-its report; staying read-only comes from its instructions), is for research an orchestrating
-session delegates (evaluating a repository or a library, reading docs): use it instead of
-`general-purpose` so the research agent doesn't inherit every skill and MCP tool. The manager loop
-itself doesn't dispatch it. A fourth, `manager-plugin:fallback`, replaces `general-purpose` when the
-implementer or reviewer type can't work in an environment (e.g. differently named GitHub MCP
-tools): it inherits the session's tools but drops skills, subagents and the known MCP servers no
-role uses (mail, calendar, drive, docs, browser and remote-session tools; other connectors you add
-are still inherited, though its instructions forbid using them), so connectors you need in
-other sessions stay on. Only if no plugin agent type is available does the manager use
-`general-purpose`.
+from its brief). Measured once, this lowers their start tokens to about a seventh of
+general-purpose's (numbers below). A third one, `manager-plugin:researcher` (read and search tools,
+web search and fetch, Write for its report; staying read-only comes from its instructions), is for
+research an orchestrating session delegates (evaluating a repository or a library, reading docs):
+use it instead of `general-purpose` so the research agent doesn't inherit every skill and MCP tool.
+The manager loop itself doesn't dispatch it. A fourth, `manager-plugin:fallback`, replaces
+`general-purpose` when the implementer or reviewer type can't work in an environment (e.g.
+differently named GitHub MCP tools): it inherits the session's tools but drops skills, subagents and
+the known MCP servers no role uses (mail, calendar, drive, docs, browser and remote-session tools;
+other connectors you add are still inherited, though its instructions forbid using them), so
+connectors you need in other sessions stay on. Only if no plugin agent type is available does the
+manager use `general-purpose`. Unused MCP servers still load into the main session: at a run's start
+the manager names the ones the project won't use and gives you `/mcp disable <name>` for each (this
+project only; `/mcp enable <name>` undoes it).
 
 Outside the manager loop too, with or without a living plan: when a session sends an agent, the
 plugin's restricted agents replace `general-purpose` — `manager-plugin:worker` for a task that
 changes files (implement, fix, refactor, docs, tests, a PR), `manager-plugin:researcher` for
-read-only research, `manager-plugin:reviewer` for an independent review. In one session a
-restricted plugin agent started with about 10k tokens and `general-purpose` with about 77k.
+read-only research, `manager-plugin:reviewer` for an independent review. Measured once in one
+session: `worker` started with about 9k tokens, `reviewer` about 10k, `fallback` about 14k and
+`general-purpose` about 77k.
 
 A `PreToolUse` hook (`hooks/`) enforces this in every session where the plugin is enabled: a
 `general-purpose` spawn (also one with no agent type, which defaults to it) is blocked, and the
