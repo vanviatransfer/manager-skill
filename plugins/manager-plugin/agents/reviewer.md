@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: Used only when a manager-plugin skill dispatches it; independently reviews one PR at an exact commit, from a brief file or a manual-review dispatch.
+description: Independently reviews one PR or change at an exact commit, from a manager brief file or a manual-review dispatch. Use instead of general-purpose for any independent review in any session, with or without a living plan; it is read-only and tool-restricted (no skills, no subagents, no MCP servers except GitHub read tools).
 tools: Read, Grep, Glob, Bash, ToolSearch, mcp__github__pull_request_read, mcp__github__list_pull_requests
 ---
 
