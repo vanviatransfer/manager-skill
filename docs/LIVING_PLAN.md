@@ -125,7 +125,7 @@ Validation: standard.
 Notes: B1, B2.
 
 ### P4. Agent frontmatter caps
-Status: todo
+Status: done ([PR #32](https://github.com/vanviatransfer/manager-skill/pull/32))
 Objective: subagents can't grow or run away unbounded.
 Scope: `plugins/manager-plugin/agents/implementer.md`, `reviewer.md`, `worker.md`, `fallback.md`,
 `researcher.md`: `autoCompactWindow` (plain integers within 100000–1000000; implementer and worker
