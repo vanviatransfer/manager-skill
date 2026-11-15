@@ -7,7 +7,7 @@ description: Run a project's living plan to completion autonomously, one phase p
 
 You are the **orchestrator**. You schedule, dispatch, verify and land. You do not implement, debug
 or review: every phase gets a fresh implementer subagent, every candidate SHA a fresh independent
-reviewer subagent. Their work stays in their context, so yours stays small across many phases.
+reviewer subagent.
 
 Stay in one continuous turn: dispatch subagents in the foreground (`run_in_background: false`),
 because the next step depends on the result. If the harness runs a dispatch in the background
@@ -70,9 +70,8 @@ applies.)
 
 One implementer and one reviewer per round; no extra advisors or audits. Subagents must not spawn
 further subagents. Fill fields with paths, not pasted documents (an excerpt only when clearly
-better); an undecided question is an owner decision, never a placeholder in a field. Use the brief
-paths resolved in step 0 in every dispatch. The dispatch fields are the block at the top of each
-brief file, never rebuilt from the transcript. Keep the
+better); an undecided question is an owner decision, never a placeholder in a field. The dispatch
+fields are the block at the top of each brief file, never rebuilt from the transcript. Keep the
 project-specific Rulings you add to every dispatch as one working-notes line.
 
 **Ignored-data guard.** Before each dispatch, note one line for the shared checkout: the number of
@@ -183,7 +182,7 @@ Derive state from durable sources only — never from memory of an earlier conte
 
 1. Choose the GitHub backend; note whether the session has a designated push branch. Note the plugin
    version (`version` in `${CLAUDE_SKILL_DIR}/../../.claude-plugin/plugin.json`, if it resolves) for
-   the final report: a stale cached copy then shows up. If the environment exposes the account's
+   the final report. If the environment exposes the account's
    usage values (a usage command or tool), note the weekly percentage here and give the change in
    the final report; otherwise skip this. Resolve the two brief files once,
    `${CLAUDE_SKILL_DIR}/references/implementer-brief.md` and `reviewer-brief.md`, and check that
@@ -262,7 +261,7 @@ implementer in sequence: once one lands (step 5), resume it (SendMessage) with t
 dispatch fields, Base SHA = the default head then, its own branch and PR. Each PR still gets its
 own fresh reviewer, exact-SHA verdict and landing; never one verdict for several PRs. **Rotation**
 counts run across the series, which stops at a rotation trigger, a phase that blocks or an owner
-decision (a CHANGES REQUIRED review doesn't).
+decision (a CHANGES REQUIRED review doesn't). Keep the series' PRs as one working-notes line.
 
 ## The loop, per phase
 
@@ -402,9 +401,10 @@ as a separate section, checks the previous blockers, which it receives by title 
 **Rotation.** After 3 resumed rounds of one implementer (its fix or integration rounds, counted
 from the ledger; send-backs for fields or verification and the Handoff request don't count), or
 once its `subagent_tokens` (cumulative usage, not context size) reach about 400k, the next round
-goes to a fresh implementer with the `Fix round` field (an integration: Base SHA = the default
-head to integrate) and `Handoff: <path>`, never a transcript. First ask the current one for the
-brief's **Handoff** note, at a path outside every repository.
+goes to a fresh implementer with the `Fix round` field (an integration: `blockers: none
+(integration)`, Base SHA = the default head to integrate) and `Handoff: <path>`, never a
+transcript. First ask the current one for the brief's **Handoff** note, at a path outside every
+repository. Keep `<phase>: rotated at round <k>` as a working-notes line.
 
 ### Brakes
 - **Fix rounds:** at most 5 per phase (the plan or project may set another number; a project
@@ -415,8 +415,8 @@ brief's **Handoff** note, at a path outside every repository.
   last attempt: (1) same approach with a sharper brief, or (2) a materially different approach
   inside the approved design — each at most once per phase, within the model strategy (see "Not
   enough model"); (3) a design change is an owner decision.
-- Environment, permission or tooling failures (network, auth, disk, a tool not allowed) are not
-  evidence against the approach: repair once or report; never abandon a sound approach over them.
+- Environment, permission or tooling failures (network, auth, disk) are not evidence against the
+  approach: repair once or report; never abandon a sound approach over them.
 
 ### 5. Close the phase
 The implementer's PR marks the phase done in the plan, so the merge records it. With a designated
@@ -468,6 +468,8 @@ holds:
 - the environment is persistently broken after one repair attempt, or the shared checkout holds
   uncommitted or unpushed work after an agent ended with no report.
 
+Before the final report, read the Risks section of each phase's report file (the short return
+omits it).
 Final report, compact: phases landed (PR, merged SHA); phases blocked and why; the model strategy
 used and any model concerns; the plugin version and usage change (if readable); the run record path,
 or why it was skipped; the code map (set up, set up in this run, or not used and why); session-check

@@ -56,10 +56,37 @@ The main session becomes a thin orchestrator that runs the plan one phase per PR
 
 1. a fresh **implementer** subagent implements the phase and opens a PR;
 2. a fresh, independent **reviewer** subagent reviews that PR at its exact head SHA;
-3. on CHANGES REQUIRED, the same implementer fixes and a new reviewer re-reviews;
+3. on CHANGES REQUIRED, the same implementer fixes (until it rotates, below) and a new reviewer
+   re-reviews;
 4. on PASS, the manager merges, pinned to the reviewed commit, and moves to the next phase. If the
    default branch moved and the candidate doesn't contain it, the candidate is integrated,
    re-validated and re-reviewed first; only a reviewed tree lands.
+
+Limits that keep a run's tokens down (the thresholds are design choices still to be checked
+against run records, not measurements):
+
+- **Fix rounds:** at most 5 per phase by default (a plan's or project's own limit wins); fix,
+  integration and retry rounds all count. At the third round the manager asks whether the approach
+  is wrong rather than the last attempt.
+- **Rotation:** after 3 resumed rounds of one implementer, or once its `subagent_tokens` reach about
+  400k, the next round goes to a fresh implementer with a short `Handoff:` note (PR, branch,
+  candidate SHA, blockers fixed and open, next step), never a transcript. `subagent_tokens` is
+  cumulative usage over the agent's rounds, not its current context size, so 400k is a rough proxy.
+- **Series mode:** up to 3 ready, independent, same-shape `standard` phases may run on one
+  implementer one after another, each from the default head on its own branch and PR. Every PR
+  still gets its own fresh reviewer, exact-SHA verdict and landing, never one verdict for several.
+  The series stops at a rotation trigger, a blocked phase or an owner decision.
+- **Short returns and split briefs:** the implementer writes its full report to a file outside the
+  repository and returns only what the manager checks (result, PR, branch, base and candidate SHA,
+  a one-line validation summary, any blocker, the report path); the manager reads from the file
+  only what a decision needs and still checks every fact against `git` and GitHub. Rare cases in
+  the skill and the briefs live in reference files read only when their trigger applies.
+- **Agent caps:** the plugin's agents set `autoCompactWindow` (implementer and worker 300000;
+  reviewer, fallback and researcher 200000) and `maxTurns` (implementer, worker and fallback 500;
+  reviewer and researcher 300). The window is a ceiling: when the parent session's window is
+  smaller, the smaller one wins. `maxTurns` caps one run of an agent: each resume (a fix round sent
+  with SendMessage) starts with a fresh budget, so it bounds a run, not a whole phase. Claude
+  Code's plugin-agent loader accepts both fields; their effect on real runs is unmeasured.
 
 Before a new run starts, the manager recommends a model strategy (Sonnet, Opus or a mix, with a
 one-line reason) and waits for the owner's choice, unless the owner set a standing policy; it never
@@ -192,9 +219,10 @@ something it can't fix blocks the run.
 Before a long run, two settings help (the manager reminds you if they're missing, since it can't
 change them itself):
 
-- `/autocompact 600k`: sets the main session's auto-compact window to 600k tokens, saved per model
-  in your user settings. Claude Code caps it at the model's context window; on a large-window model
-  it can make compaction happen earlier than the model's default window, if that is larger.
+- `/autocompact 250k`: sets the main session's auto-compact window to 250k tokens, saved per model
+  in your user settings (when none is set, the manager recommends 200–300k; a value you set is left
+  alone). Claude Code caps it at the model's context window. It covers the main session only; the
+  subagents' windows come from their own caps (above).
 - Keep the built-in `cc-plugin-you-should-know` off (`/plugin disable
   cc-plugin-you-should-know@builtin`): while on, it rereads the conversation from time to time in a
   separate request to the same model and shows notes above the prompt for you to answer.

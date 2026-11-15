@@ -144,7 +144,9 @@ Status: todo
 Objective: the documentation matches the new behaviour.
 Scope: `README.md`, `docs/TODO.md`, `plugins/manager-plugin/.claude-plugin/plugin.json` (0.7.0),
 `.claude-plugin/marketplace.json` description if it changes, and
-`plugins/manager-plugin/skills/living-plan/references/plan-template.md` (fix-round limit 12 → 5).
+`plugins/manager-plugin/skills/living-plan/references/plan-template.md` (fix-round limit 12 → 5),
+and three small `plugins/manager-plugin/skills/manager/SKILL.md` fixes from P3's review (change
+log).
 Depends on: P1, P2, P3, P4
 Risk: standard — docs only.
 Acceptance: no stale mention of 600k or 12 rounds anywhere in the repository outside this plan;
@@ -164,6 +166,11 @@ Notes: B2.
   The installed CLI's plugin-agent loader accepts both (a value outside 100000–1000000 or not a
   positive integer is warned about and ignored), the agent's window is a ceiling over the parent's
   (the smaller wins) and `maxTurns` ends the subagent's loop; not run against a live session.
+- 2026-11-15: P5 scope also includes three small SKILL.md fixes from P3's review: (a) record
+  rotations and the series' PRs in the working notes (e.g. `rotated at round <k>` and the series PR
+  list) so the rotation count and the series survive a compaction; (b) before the final report,
+  read the Risks section of each phase's report file (the short return omits it); (c) when rotating
+  during an integration round, the `Fix round` field says `blockers: none (integration)`.
 
 ## How to keep this plan alive
 - A phase PR updates its own status line and links itself; other status lines only to correct facts.
