@@ -38,8 +38,7 @@ Out (deliberately not doing now):
   other phases don't conflict there.
 
 ## Model strategy
-Model strategy: Opus for both roles — scope: run R2026-11-15-0000 — owner, 2026-11-15:
-"sonnet kullanma opus kullan"
+Model strategy: Opus — scope: run R2026-11-15-0000 — owner: "sonnet kullanma opus kullan"
 
 ## Binding decisions
 - B1. Every rule text that encodes an invariant is moved, never reworded weaker: exact-SHA review,
@@ -112,9 +111,9 @@ Scope: `plugins/manager-plugin/skills/manager/SKILL.md` and the references from 
 - every dispatch states `model` (and `effort` when the strategy sets one) explicitly;
 - the session check recommends an orchestrator window of 200–300k (`/autocompact 250k`) instead of
   600k, leaves an owner's own value alone, and doesn't claim it covers subagents;
-- step 0 reads the plan's headings, remaining phases, binding decisions and open and decided owner
-  decisions (always, at the default branch), and the rest only when needed; the overhead and
-  session checks run once per run;
+- step 0 reads the plan's headings, remaining phases, binding decisions, open and decided owner
+  decisions, the model-strategy record and the fix-round limit (always, at the default branch),
+  and the rest only when needed; the overhead and session checks run once per run;
 - after a compaction, re-read the dispatch-field block, the ledger and the working-notes lines;
 - the orchestrator side of P2's short return (report path field; facts still checked from git).
 Depends on: P1, P2
@@ -147,8 +146,9 @@ Scope: `README.md`, `docs/TODO.md`, `plugins/manager-plugin/.claude-plugin/plugi
 `plugins/manager-plugin/skills/living-plan/references/plan-template.md` (fix-round limit 12 → 5).
 Depends on: P1, P2, P3, P4
 Risk: standard — docs only.
-Acceptance: no stale mention of 600k or 12 rounds; rotation, series mode, caps and short returns
-described with their limits (`subagent_tokens` is cumulative; the caps' effect is unmeasured).
+Acceptance: no stale mention of 600k or 12 rounds anywhere in the repository outside this plan;
+rotation, series mode, caps and short returns described with their limits (`subagent_tokens` is
+cumulative; the caps' effect is unmeasured).
 Validation: standard.
 Notes: B2.
 
