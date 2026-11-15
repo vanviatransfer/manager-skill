@@ -76,7 +76,7 @@ Validation: standard.
 Notes: B1. Keep step numbering and section headings that other files cite.
 
 ### P2. Slim and split the briefs; short implementer return
-Status: todo
+Status: done ([PR #30](https://github.com/vanviatransfer/manager-skill/pull/30))
 Objective: each subagent loads only the brief parts its dispatch needs; the implementer returns a
 short report and writes the full one to a file.
 Scope: `plugins/manager-plugin/skills/manager/references/implementer-brief.md`,
@@ -115,7 +115,8 @@ Scope: `plugins/manager-plugin/skills/manager/SKILL.md` and the references from 
   decisions, the model-strategy record and the fix-round limit (always, at the default branch),
   and the rest only when needed; the overhead and session checks run once per run;
 - after a compaction, re-read the dispatch-field block, the ledger and the working-notes lines;
-- the orchestrator side of P2's short return (report path field; facts still checked from git).
+- the orchestrator side of P2's short return (the implementer's `Report file` dispatch field;
+  facts still checked from git).
 Depends on: P1, P2
 Risk: critical — changes the loop and its brakes.
 Acceptance: each rule stated once; no invariant text weakened (B1); the 600k recommendation is gone
@@ -154,6 +155,8 @@ Notes: B2.
 
 ## Change log
 - 2026-11-15: plan created from a docs/binary study, a GitHub study and a repository audit.
+- 2026-11-15: P2 names the report path field `Report file` (absent or `none` → the full report is
+  returned) and moves the implementer's integration steps to `brief-integration.md`; P3 uses both.
 
 ## How to keep this plan alive
 - A phase PR updates its own status line and links itself; other status lines only to correct facts.

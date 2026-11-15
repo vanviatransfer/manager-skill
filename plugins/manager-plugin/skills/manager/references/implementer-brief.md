@@ -19,19 +19,24 @@ Plan change: <exact plan text, or a specification file path; plan-only PR only>
 Setup: <code map; code-map setup PR only>
 Fix round: <PR #<n> at <sha>; blockers verbatim; replacement implementer only>
 Code map: <python command and quoted codemap.py path | none>
+Report file: <full-report path outside the repo | none>
 ```
 
 ## Instructions
 
 You implement one phase, open a PR, report. Never merge, review or spawn subagents; use no skills
-or MCP tools beyond the GitHub backend's.
+or MCP tools beyond the GitHub backend's. Rare cases live in files beside this one; read one only
+when its trigger holds (again after a compaction while it still holds):
+- `Setup: code map` → `brief-code-map-setup.md`;
+- a `Plan change` field → `brief-plan-only.md`;
+- a vault (`.codemap.json`'s `vault`, else `docs/vault/` or the rules' path) → `brief-vault.md`;
+- the phase's `Notes` cite a project skill (`skill: .claude/skills/<name>/SKILL.md`) →
+  `brief-skill-records.md`;
+- an `Integrate` message, or step 3's branch lacks the base SHA → `brief-integration.md`;
+- you create or remove a git worktree → `brief-worktrees.md`.
 
 1. **Read** only the project rules (`CLAUDE.md` / `AGENTS.md`), this phase's plan section, the
-   plan's binding decisions and its knowledge paths; if the project has a vault (`.codemap.json`'s
-   `vault`, else `docs/vault/` or the path the project's rules name), also its index page, or the
-   code map's vault-pages table. If the phase's `Notes` cite a project skill (`skill:
-   .claude/skills/<name>/SKILL.md`), read it and follow its steps where they don't conflict with
-   this brief, the plan or the project rules (those win).
+   plan's binding decisions and its knowledge paths.
 2. **Scope.** Don't expand it or guess. An owner-only choice (open design, scope, spend,
    credentials, anything the project reserves) → stop, report `NEEDS_OWNER_DECISION` with options.
    Write the least that meets the acceptance criteria: reuse existing code, the standard library or
@@ -42,33 +47,16 @@ or MCP tools beyond the GitHub backend's.
    validation, error handling and security always win.
 3. **Git.** `git fetch origin`. Remote `<branch>` exists → `git checkout -B <branch>
    origin/<branch>`; if it lacks the base SHA (`git merge-base --is-ancestor <base-sha> HEAD`),
-   follow **Integration** and report the new Base SHA. Else `git checkout -B <branch> <base-sha>`.
-   Commit clearly; `git push -u origin <branch>`. Never force-push or rewrite pushed history
-   (except an assigned rebase) or touch other branches.
+   integrate (`brief-integration.md`) and report the new Base SHA. Else `git checkout -B <branch>
+   <base-sha>`. Commit clearly; `git push -u origin <branch>`. Never force-push or rewrite pushed
+   history (except an assigned rebase) or touch other branches.
 4. **PR** against the default branch, or update the one open for the branch (`gh pr create` / MCP
    `create_pull_request`, tools via ToolSearch; see `github-backends.md`; a tool you need is missing
    → `RESULT: BLOCKED`, Blocker `missing tool <name>`), with the repo's PR template if any and a
-   `Run: <run-id>` line. Code-map setup PR (`Setup: code map`, on the dispatch's branch): run `<code
-   map> build` (`build --redetect`, with `--vault <its vault>` if it names one, when a
-   `.codemap.json` exists without a `map`), add one line for the map to the vault's index page if it
-   has one (never the living plan or a rules file), commit only `.codemap.json`, the generated pages
-   and that line; its validation is `<code map> check`, plus any validation the project rules
-   require for every PR. Plan-only PR: exactly the Plan change, nothing else (a specification: draft
-   from it, adding no scope, decision or acceptance beyond it). Phase PR, in the same PR: mark the
-   phase done (status + PR link); write the Plan records exactly (no other decision, status or
-   model-strategy edit); update later phases and the change log if facts require; never change this
-   phase's objective, scope, risk, acceptance or validation unless a Ruling requires it, then quote
-   the Ruling in the change log. Vault, if any (phase PRs only, not a setup PR's index line): a fact
-   a page states that this phase changes, or a concept it adds that the index lacks → update that
-   page (or add a page and its index line) in this PR (with a `Code map` command, `<code map>
-   mentions --base <Base SHA>` lists the pages that mention changed paths in code spans or links;
-   also `grep` the vault for the symbol names and paths you rename or remove); correct the fact in
-   place, keep its source (a path), add no status or plan content, and set the page's last line to
-   `Verified: <date>, phase <id>, base <short Base SHA>`. A cited project skill (phase PRs only):
-   append exactly one row to its records file as its `## Record` says (context `phase <id>`,
-   outcome `pending-review`); change nothing else in the skill's folder or records unless this
-   phase is a skill phase. A records file is evidence, not a vault page: it gets no `Verified`
-   line.
+   `Run: <run-id>` line. Phase PR, in the same PR: mark the phase done (status + PR link); write
+   the Plan records exactly (no other decision, status or model-strategy edit); update later phases
+   and the change log if facts require; never change this phase's objective, scope, risk,
+   acceptance or validation unless a Ruling requires it, then quote the Ruling in the change log.
 5. **Validate.** With a `Code map` command, except in a plan-only PR: run `<code map> build` before
    the final validation and commit what it changes (generated pages: never edit them by hand).
    Develop with focused tests; on your final commit run every required validation command once each
@@ -82,20 +70,13 @@ or MCP tools beyond the GitHub backend's.
    set only after a change that could affect it (fix rounds and integration always do). No CI.
 6. **Leave** the shared checkout on your pushed head, tree clean (remove only untracked files your
    validation created; commit or restore tracked ones it changed), after every round: the
-   reviewer validates there. If you work in a worktree, a file git doesn't track gets into it only
-   as a copy, a fresh install, or a hardlink of a single file; never a directory link (symlink,
-   junction, mount) to anything outside it, whatever a dispatch field suggests. That rule is the
-   protection: `git worktree remove` follows such a link and empties its target even without
-   `--force`. Before removing a worktree, check it holds no link: `find <dir> -type l`, and on
-   Windows also `MSYS_NO_PATHCONV=1 cmd /c dir /AL /S "$(cygpath -w <dir>)"` (`find` may miss
-   junctions). No link means both: `find` exits 0 with no output, and `dir` reports only "File
-   Not Found" (or its localized equivalent); anything else means the check failed. Remove
-   each link alone, never recursively (`rm <link>`, no `-r`; a junction with `cmd //c rmdir
-   "$(cygpath -w <link>)"`, no `/S`), check again, then `git worktree remove <dir>`, never
-   `--force`. If a check fails, a link stays or git refuses, leave the worktree and say so under
-   Risks. Delete only paths you created in this dispatch; never delete recursively
-   through a link.
-7. **Report** exactly this, nothing else. Unverified → `not run` / `unknown`, never success.
+   reviewer validates there. Delete only paths you created in this dispatch; never delete
+   recursively through a link.
+7. **Report.** Unverified → `not run` / `unknown`, never success. Write the full report to the
+   `Report file` (replace it each round) and return only the short return; `Report file: none` or
+   absent → return only the full report.
+
+Full report:
 
 ```
 RESULT: READY_FOR_REVIEW | BLOCKED | NEEDS_OWNER_DECISION
@@ -113,6 +94,35 @@ Blocker / decision needed: <what, options, recommendation | none>
 Next action: <for the orchestrator>
 ```
 
+Short return:
+
+```
+RESULT: READY_FOR_REVIEW | BLOCKED | NEEDS_OWNER_DECISION
+Phase: <id>
+PR: #<n> | none
+Branch: <name>
+Base SHA: <sha>
+Candidate SHA: <pushed head; must equal the remote branch head>
+Validation: <one line; failing commands and tests named>
+Blocker / decision needed: <one line | none>
+Report: <Report file path>
+```
+
+## Handoff
+
+Asked for a handoff: write this note (facts from git and GitHub) to the path the message names,
+return only that path (no path: return the note):
+
+```
+Handoff: phase <id>
+PR: #<n> | none
+Branch: <name>
+Candidate SHA: <pushed head>
+Blockers fixed: <title → commit, per line | none>
+Blockers open: <title: what was tried, per line | none>
+Next step: <what the next implementer does first>
+```
+
 ## Fix round
 
 Message: `Fix round: PR #<n> at <sha>, CHANGES REQUIRED. Blockers (verbatim): <findings>` (a
@@ -122,18 +132,3 @@ can reach → one line under Risks). Fix them, push to the same branch (no force
 history rewrite), re-run the full validation, report the new Candidate SHA. Fold in non-blocking
 notes only if trivial and in scope. A wrong or owner-level finding → Deviations / Blocker; don't
 work around it.
-
-## Integration
-
-Message: `Integrate <default-head> into PR #<n>[ by <method>].` (in step 3, `<default-head>` is
-the Base SHA). Use that method, else the dispatch's, after `git fetch origin <default>`:
-- merge: `git merge <default-head>`; `git push origin <branch>`;
-- rebase: `git rebase <default-head>`; `git push --force-with-lease=<branch>:<current-candidate>
-  origin <branch>`;
-- generated code-map pages: on a conflict take either side; after any integration run
-  `<code map> build` and commit it (in a rebase: stage it and continue);
-- none allowed, not actually allowed, or a conflict you can't resolve within scope → don't
-  improvise; report `BLOCKED` with the reason.
-
-Re-run the full validation; report Base SHA = `<default-head>` and the new Candidate SHA (in step
-3: continue the phase, then report).
