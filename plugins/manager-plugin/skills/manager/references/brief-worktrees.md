@@ -1,6 +1,6 @@
 # Worktrees and cleanup
 
-Read when you create or remove a git worktree.
+Read when you create, work in or remove a git worktree.
 
 A file git doesn't track (dependencies, local data) gets into a worktree only as a copy, a fresh
 install, or a hardlink of a single file; never a directory link (symlink, junction, mount) to

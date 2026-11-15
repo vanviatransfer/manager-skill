@@ -1,7 +1,7 @@
 # Run record
 
 Read by the manager skill before the run record's first write in a run, and again after a
-compaction. Bold section names are the manager skill's.
+compaction.
 
 So that runs can be compared and the skill improved from evidence (`manager-retro` skill), keep a
 compact record of each run in the owner's home directory, shared by all projects on this machine and

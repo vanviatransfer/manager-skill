@@ -2,8 +2,7 @@
 
 Read by the manager skill at loop step 4a when the landing keeps the branch's commits (rebase
 merge, fast-forward push), when no integration method is permitted, when the project lands by
-fast-forward only, or when the landed tree differs from the reviewed one. Bold section names and
-step numbers are the manager skill's.
+fast-forward only, or when the landed tree differs from the reviewed one.
 
 - **Linear history** (step 3, before Yes/No). When the landing keeps the branch's commits (rebase
   merge, fast-forward push) and the project requires linear history or merges by rebase, the

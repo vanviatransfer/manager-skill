@@ -1,8 +1,7 @@
 # Code map check
 
 Read by the manager skill at step 6 of every run (**Code map**), and again after a compaction while
-the check or a setup PR is still open. Bold section names, step numbers and `${CLAUDE_SKILL_DIR}`
-are the manager skill's.
+the check or a setup PR is still open.
 
 - **Set up** = the default branch has `.codemap.json` with a `map` (`git show
   origin/<default>:.codemap.json`). That file is the guard: once it lands, later runs only
