@@ -96,7 +96,7 @@ Validation: standard.
 Notes: B1.
 
 ### P3. Loop rules for tokens
-Status: todo
+Status: done ([PR #31](https://github.com/vanviatransfer/manager-skill/pull/31))
 Objective: the orchestrator spends fewer rounds and smaller contexts.
 Scope: `plugins/manager-plugin/skills/manager/SKILL.md` and the references from P1/P2:
 - default fix-round limit 5 (plan or project limits still win), with the approach question at
@@ -157,6 +157,8 @@ Notes: B2.
 - 2026-11-15: plan created from a docs/binary study, a GitHub study and a repository audit.
 - 2026-11-15: P2 names the report path field `Report file` (absent or `none` → the full report is
   returned) and moves the implementer's integration steps to `brief-integration.md`; P3 uses both.
+- 2026-11-15: P3 adds a `Handoff:` dispatch field to the implementer brief (the rotation note's
+  path); P5 describes it with rotation.
 
 ## How to keep this plan alive
 - A phase PR updates its own status line and links itself; other status lines only to correct facts.
