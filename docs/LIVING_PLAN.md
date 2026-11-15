@@ -38,7 +38,8 @@ Out (deliberately not doing now):
   other phases don't conflict there.
 
 ## Model strategy
-Model strategy: Opus for both roles — scope: run R2026-11-15-0000 — owner: "sonnet kullanma opus kullan" (2026-11-15)
+Model strategy: Opus for both roles — scope: run R2026-11-15-0000 — owner, 2026-11-15:
+"sonnet kullanma opus kullan"
 
 ## Binding decisions
 - B1. Every rule text that encodes an invariant is moved, never reworded weaker: exact-SHA review,
@@ -128,9 +129,9 @@ Status: todo
 Objective: subagents can't grow or run away unbounded.
 Scope: `plugins/manager-plugin/agents/implementer.md`, `reviewer.md`, `worker.md`, `fallback.md`,
 `researcher.md`: `autoCompactWindow` (plain integers within 100000–1000000; implementer and worker
-300000, reviewer, fallback and researcher 200000) and a generous `maxTurns` safety cap that a normal phase never reaches. No
-default `model` in frontmatter (the dispatch sets it). One line in each body: state lives in git and
-the plan; after a compaction re-derive it from them.
+300000, reviewer, fallback and researcher 200000) and a generous `maxTurns` safety cap that a
+normal phase never reaches. No default `model` in frontmatter (the dispatch sets it). One line in
+each body: state lives in git and the plan; after a compaction re-derive it from them.
 Depends on: none
 Risk: critical — a wrong cap can break phases.
 Acceptance: `claude plugin validate` passes; the fields are confirmed honoured for plugin agents
