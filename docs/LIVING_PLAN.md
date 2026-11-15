@@ -125,7 +125,7 @@ Validation: standard.
 Notes: B1, B2.
 
 ### P4. Agent frontmatter caps
-Status: todo
+Status: done ([PR #32](https://github.com/vanviatransfer/manager-skill/pull/32))
 Objective: subagents can't grow or run away unbounded.
 Scope: `plugins/manager-plugin/agents/implementer.md`, `reviewer.md`, `worker.md`, `fallback.md`,
 `researcher.md`: `autoCompactWindow` (plain integers within 100000–1000000; implementer and worker
@@ -159,6 +159,11 @@ Notes: B2.
   returned) and moves the implementer's integration steps to `brief-integration.md`; P3 uses both.
 - 2026-11-15: P3 adds a `Handoff:` dispatch field to the implementer brief (the rotation note's
   path); P5 describes it with rotation.
+- 2026-11-15: P4 caps: `autoCompactWindow` implementer and worker 300000, reviewer, fallback and
+  researcher 200000; `maxTurns` implementer, worker and fallback 500, reviewer and researcher 300.
+  The installed CLI's plugin-agent loader accepts both (a value outside 100000–1000000 or not a
+  positive integer is warned about and ignored), the agent's window is a ceiling over the parent's
+  (the smaller wins) and `maxTurns` ends the subagent's loop; not run against a live session.
 
 ## How to keep this plan alive
 - A phase PR updates its own status line and links itself; other status lines only to correct facts.
