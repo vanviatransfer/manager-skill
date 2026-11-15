@@ -37,7 +37,7 @@ Model strategy: <...> — scope: standing — owner: "<quote>" (<date>)
 ## Phases
 
 Status values: `todo` · `in progress (PR #n)` · `done (PR #n)` · `blocked (Dn)`
-Fix-round limit per phase: 12
+Fix-round limit per phase: 5
 
 ### P1. <title>
 Status: todo
