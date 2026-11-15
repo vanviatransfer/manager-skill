@@ -1,10 +1,9 @@
 # Plan-only PR
 
 Read by the manager skill before it dispatches, reviews or resumes a plan-only PR (the phase split,
-end-of-run bookkeeping, or a Decided move that must land first). Bold section names are the manager
-skill's.
+end-of-run bookkeeping, or a Decided move that must land first).
 
-**Plan-only PR** (the split, or end-of-run bookkeeping): phase id `plan`, branch `phase/plan-<slug>`
+Phase id `plan`, branch `phase/plan-<slug>`
 (or the designated branch). The implementer gets the exact plan text to write as its `Plan change`
 field — it replaces the usual status and record edits; the reviewer gets the same text and judges
 that the diff writes exactly that, touches nothing else, and doesn't contradict the approved goal,

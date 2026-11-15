@@ -29,8 +29,8 @@ trigger holds (again after a compaction while it still holds):
 - `Setup: code map` → `brief-code-map-setup.md`;
 - a `Plan change` field → `brief-plan-only.md`;
 - a vault (`.codemap.json`'s `vault`, else `docs/vault/` or the rules' path) → `brief-vault.md`;
-- the phase's `Notes` cite a project skill (`.claude/skills/<name>/SKILL.md`) →
-  `brief-skill-records.md`;
+- the phase's `Notes` cite a project skill (`.claude/skills/<name>/SKILL.md`), or the diff touches
+  `.claude/skills/` → `brief-skill-records.md`;
 - a Worktree dir → `brief-worktrees.md`.
 
 **Shared checkout: read-only.** There only: `git fetch origin <default> <branch>` (bounded

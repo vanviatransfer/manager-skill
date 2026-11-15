@@ -1,10 +1,9 @@
 # Recurring blocker class
 
-Read by the manager skill when reviewers report the same class of defect in two phases of a run.
-Bold section names are the manager skill's.
+Read by the manager skill when reviewers report the same class of defect (e.g. lock ordering,
+personal data exposed to the client) in two phases of a run.
 
-**Recurring blocker class.** When reviewers report the same class of defect (e.g. lock ordering,
-personal data exposed to the client) in two phases of a run, propose what would prevent it, as an
+Propose what would prevent it, as an
 ordinary owner decision (`D<n>`, asked in the batch, blocking no phase). If the class is mechanical
 (a fixed pattern a linter, type check or test can catch), option A is that check: the command, where
 it fails today (its cost), and which phase adds it and fixes those failures: a later phase whose

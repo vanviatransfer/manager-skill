@@ -1,6 +1,7 @@
 # Project skill records
 
-Read when the phase's `Notes` cite a project skill (`skill: .claude/skills/<name>/SKILL.md`).
+Read when the phase's `Notes` cite a project skill (`skill: .claude/skills/<name>/SKILL.md`), or
+(reviewer) when the diff touches `.claude/skills/`.
 
 **Implementer.** Read the skill and follow its steps where they don't conflict with your brief, the
 plan or the project rules (those win). Phase PRs only: append exactly one row to its records file

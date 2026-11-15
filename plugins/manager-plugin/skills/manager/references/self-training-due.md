@@ -1,9 +1,8 @@
 # Self-training skills due
 
-Read by the manager skill when it writes the final report. Bold section names and
-`${CLAUDE_SKILL_DIR}` are the manager skill's.
+Read by the manager skill when it writes the final report.
 
-Self-training skills: when the default branch has marked skills under `.claude/skills/` (`grep -l
+When the default branch has marked skills under `.claude/skills/` (`grep -l
 "<!-- self-training-skill v1 -->" .claude/skills/*/SKILL.md`), run `<python>
 "${CLAUDE_SKILL_DIR}/../self-training-skills/scripts/skilltrain.py" due <repo root>` (the Python
 as the code-map skill's rule picks it) and list, before the decision batch, each skill due for

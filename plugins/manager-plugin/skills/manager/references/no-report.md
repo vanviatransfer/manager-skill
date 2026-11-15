@@ -1,9 +1,9 @@
 # No report from an implementer
 
 Read by the manager skill at loop step 2 when an implementer ends with no report at all (an error,
-a crash or a usage limit). Bold section names and step numbers are the manager skill's.
+a crash or a usage limit).
 
-No report at all (the agent ended on an error, crash or usage limit): resume it once. If that
+Resume it once. If that
 fails, judge from facts, not its last words. `git fetch origin <branch>`, then the shared checkout:
 a dirty tree (whoever left it) or local commits on no remote ref (`git log --oneline HEAD
 --not --remotes`; also `<branch>` if it exists locally) → never discard them; every phase shares

@@ -1,7 +1,7 @@
 # Overhead and session checks
 
 Read by the manager skill at step 0 item 3, once per run, and again after a compaction until their
-recommendations are given. Bold section names are the manager skill's.
+recommendations are given.
 
 Overhead check (read-only): list what the repo itself enables — `enabledPlugins` in
 `.claude/settings.json` / `settings.local.json`, servers in `.mcp.json`, skills under
@@ -12,9 +12,10 @@ servers it denies); user-level settings aren't covered.
 Session check (read-only; never edit settings yourself): (a) the auto-compact window, from
 `CLAUDE_CODE_AUTO_COMPACT_WINDOW` and the `autoCompactWindow` keys (top level or under
 `modelSettings`) in `~/.claude/settings.json` and the project's settings. If none is set,
-recommend that the owner run `/autocompact 600k` if they haven't already (you can't run a
-built-in command, and a `--autocompact` flag isn't visible to you); a different value set there
-is the owner's choice: leave it. (b) Whether `cc-plugin-you-should-know@builtin` is enabled
+recommend an orchestrator window of 200–300k: the owner runs `/autocompact 250k` if they haven't
+already (you can't run a built-in command, and a `--autocompact` flag isn't visible to you); a
+different value set there is the owner's choice: leave it. It sets the main session's window only;
+never say it covers subagents. (b) Whether `cc-plugin-you-should-know@builtin` is enabled
 (`true`) in an `enabledPlugins` of those files: its side checks are extra requests to the same
 model and its notes wait for a human at the prompt, so recommend disabling it for the run. (c)
 The MCP servers and connectors this session shows (names from its deferred-tool list and MCP

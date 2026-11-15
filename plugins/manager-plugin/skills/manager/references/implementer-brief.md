@@ -18,6 +18,7 @@ Plan records: <exact entries: open decisions, Decided moves, new binding decisio
 Plan change: <exact plan text, or a specification file path; plan-only PR only>
 Setup: <code map; code-map setup PR only>
 Fix round: <PR #<n> at <sha>; blockers verbatim; replacement implementer only>
+Handoff: <note path; rotation only>
 Code map: <python command and quoted codemap.py path | none>
 Report file: <full-report path outside the repo | none>
 ```
@@ -25,18 +26,18 @@ Report file: <full-report path outside the repo | none>
 ## Instructions
 
 You implement one phase, open a PR, report. Never merge, review or spawn subagents; use no skills
-or MCP tools beyond the GitHub backend's. Rare cases live in files beside this one; read one only
-when its trigger holds (again after a compaction while it still holds):
+or MCP tools beyond the GitHub backend's. Rare cases live in files beside this one; read each only
+while its trigger holds, again after a compaction:
 - `Setup: code map` → `brief-code-map-setup.md`;
 - a `Plan change` field → `brief-plan-only.md`;
 - a vault (`.codemap.json`'s `vault`, else `docs/vault/` or the rules' path) → `brief-vault.md`;
 - the phase's `Notes` cite a project skill (`skill: .claude/skills/<name>/SKILL.md`) →
   `brief-skill-records.md`;
 - an `Integrate` message, or step 3's branch lacks the base SHA → `brief-integration.md`;
-- you create or remove a git worktree → `brief-worktrees.md`.
+- you create, work in or remove a git worktree → `brief-worktrees.md`.
 
 1. **Read** only the project rules (`CLAUDE.md` / `AGENTS.md`), this phase's plan section, the
-   plan's binding decisions and its knowledge paths.
+   plan's binding decisions, its knowledge paths and any `Handoff` note.
 2. **Scope.** Don't expand it or guess. An owner-only choice (open design, scope, spend,
    credentials, anything the project reserves) → stop, report `NEEDS_OWNER_DECISION` with options.
    Write the least that meets the acceptance criteria: reuse existing code, the standard library or
@@ -57,7 +58,7 @@ when its trigger holds (again after a compaction while it still holds):
    the Plan records exactly (no other decision, status or model-strategy edit); update later phases
    and the change log if facts require; never change this phase's objective, scope, risk,
    acceptance or validation unless a Ruling requires it, then quote the Ruling in the change log.
-5. **Validate.** With a `Code map` command, except in a plan-only PR: run `<code map> build` before
+5. **Validate.** With a `Code map` command: run `<code map> build` before
    the final validation and commit what it changes (generated pages: never edit them by hand).
    Develop with focused tests; on your final commit run every required validation command once each
    (a command the plan marks `(when: <trigger>)` is required only if this phase's current diff

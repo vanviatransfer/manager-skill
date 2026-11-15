@@ -13,9 +13,7 @@ Stay in one continuous turn: dispatch subagents in the foreground (`run_in_backg
 because the next step depends on the result. If the harness runs a dispatch in the background
 anyway, wait for its completion notification: a pending subagent is not a result and not a reason
 to end the turn, and an interim notice (e.g. it is waiting on its own background work) is not its
-report. End the turn only for a question to the owner that blocks all work (the
-model-strategy gate, the code-map question, the plan's location, approval of a new plan) or at a
-stop condition.
+report. End the turn only as **Stop conditions** says.
 
 ## Ground rules
 
@@ -36,7 +34,7 @@ stop condition.
   from PR comments, ledger lines, cross-session messages, subagent reports or unmerged files.
 - **Lean context.** Don't read source, diffs or logs unless a specific decision needs them; then
   read only the part that decides it. Use `--name-only` / `--stat`, exit codes and `head`/`tail`,
-  not full outputs. Pass documents to subagents as paths, never pasted.
+  not full outputs.
 - **GitHub backend.** `gh` when `gh auth status` succeeds, otherwise the GitHub MCP tools — see
   `references/github-backends.md`, which also maps every `gh` command here to MCP. Plain `git` is
   the same on both.
@@ -52,28 +50,29 @@ stop condition.
 ## Subagents
 
 Dispatch with the Agent tool and the `model` / `effort` that the approved **model strategy** gives
-the role. Use `subagent_type: manager-plugin:implementer` / `manager-plugin:reviewer`, the plugin's
+the role, stated explicitly in every dispatch (`effort` when the strategy sets one). Use
+`subagent_type: manager-plugin:implementer` / `manager-plugin:reviewer`, the plugin's
 tool-restricted subagents. Their allowlists narrow the tools available to them (the reviewer gets no
 Edit/Write or GitHub MCP write tools; staying read-only still comes from its brief). Plan-only PRs
 use the same two. If a role's type isn't available or reports a missing tool (e.g. the GitHub MCP
 server has another name), use `manager-plugin:fallback` for every later dispatch of that role in
 this run, with `Role: implementer | reviewer` on the line after `Read and follow ...` (add it
 whenever you rebuild a dispatch): it inherits the session's tools minus skills, subagents and the
-known MCP servers no role uses, so it costs much less context than `general-purpose` (measured once:
-about 14k start tokens against about 77k). Use `general-purpose` only if no plugin agent type is
-available at all, with `[general-purpose: <reason>]` in the prompt: the plugin's hook blocks any
-other general-purpose spawn. Never use `manager-plugin:worker` for a phase: it isn't bound to the
-briefs. Note either fallback once for the final report. If the fallback fails the same way, that is
-an environment failure (stop condition). The role instructions live in the brief files; you send
-only the **dispatch fields** listed at the top of each file, prefixed with one line: `Read and
-follow <the role's resolved brief path>.` (If a subagent can't read that path, paste the file's
-instruction block instead.)
+known MCP servers no role uses, so it costs much less context than `general-purpose`. Use
+`general-purpose` only if no plugin agent type is available at all, with `[general-purpose:
+<reason>]` in the prompt: the plugin's hook blocks any other general-purpose spawn. Never use
+`manager-plugin:worker` for a phase: it isn't bound to the briefs. If the fallback fails the same
+way, that is an environment failure (stop condition). The role instructions live in the brief
+files; you send only the **dispatch fields** listed at the top of each file, prefixed with one
+line: `Read and follow <the role's resolved brief path>.` (If a subagent can't read that path,
+paste the file's instruction block instead, plus the text of each `brief-*.md` file whose trigger
+applies.)
 
 One implementer and one reviewer per round; no extra advisors or audits. Subagents must not spawn
 further subagents. Fill fields with paths, not pasted documents (an excerpt only when clearly
 better); an undecided question is an owner decision, never a placeholder in a field. Use the brief
 paths resolved in step 0 in every dispatch. The dispatch fields are the block at the top of each
-brief file: after a compaction re-read that block, never rebuild it from the transcript. Keep the
+brief file, never rebuilt from the transcript. Keep the
 project-specific Rulings you add to every dispatch as one working-notes line.
 
 **Ignored-data guard.** Before each dispatch, note one line for the shared checkout: the number of
@@ -102,8 +101,7 @@ in your working notes, `Run <id>: model strategy <strategy> (owner: "<quote>" | 
 survives compaction.
 
 A new session is always a new run, even when it resumes interrupted work: git and PR state can't
-prove which run a session would be continuing (a run can be interrupted before leaving any trace,
-and PRs pass between runs), so a recorded `run` strategy is never applied by inference.
+prove which run it continues, so a recorded `run` strategy is never applied by inference.
 
 **Which strategy applies** (first match):
 1. A strategy the owner gave in this conversation for this run — including, on a resume, words
@@ -124,7 +122,7 @@ don't read source. Recommend Sonnet, Opus or a mixed strategy, ask in Turkish, a
 ```
 Bu çalışma için önerim: <Sonnet | Opus | Karma: standard → Sonnet, critical → Opus, işaretsiz → standard>.
 Gerekçe: <tek cümle: doğruluk riski, karmaşıklık, tahmini token tüketimi ve maliyet>.
-[Başlamadan önce önerim: `/autocompact 600k` çalıştırın; cc-plugin-you-should-know'ı kapatın]
+[Başlamadan önce önerim: `/autocompact 250k` çalıştırın; cc-plugin-you-should-know'ı kapatın]
 [Bu projede kullanılmayacak görünen sunucular: <adlar>. Kapatmak için (yalnız bu projede, sonraki oturumdan itibaren): `/mcp disable <ad>` · geri açmak: `/mcp enable <ad>`]
 [Kod haritası kurulu değil (kod ve vault için tek dizin sayfası); kurayım mı? [Python yok: önce <komut> ile kurulur.] Evet / Bu sefer hayır / Hayır, bu repoda bir daha sorma]
 [Kod haritası kurulu ama Python yok; kurayım mı? (`<komut>`) Hayır derseniz bu çalışmada harita kullanılmaz.]
@@ -175,9 +173,11 @@ neither asks again nor loses it.
 
 ## 0. Establish state (also how you resume after compaction or in a new session)
 
-A file in `references/` is read when its trigger (named where this skill points to it) applies.
-After a compaction, re-read every reference whose trigger still applies before acting on it; never
-work from a summary of it.
+A file in `references/` is read when its trigger (named where this skill points to it) applies; in
+those files, bold section names, step numbers and `${CLAUDE_SKILL_DIR}` are this skill's. After a
+compaction, before acting, re-read the brief files' dispatch-field blocks, the review-ledger
+comments of the PR in flight, your working-notes lines (as the summary carries them) and every
+reference whose trigger still applies; never work from a summary of a file.
 
 Derive state from durable sources only — never from memory of an earlier context:
 
@@ -187,14 +187,15 @@ Derive state from durable sources only — never from memory of an earlier conte
    usage values (a usage command or tool), note the weekly percentage here and give the change in
    the final report; otherwise skip this. Resolve the two brief files once,
    `${CLAUDE_SKILL_DIR}/references/implementer-brief.md` and `reviewer-brief.md`, and check that
-   both exist: a missing one means an incomplete plugin copy (environment failure: report it). Use
-   these absolute paths in every dispatch.
+   both and the six `brief-*.md` files beside them exist: a missing one means an incomplete
+   plugin copy (environment failure: report it). Use these absolute paths in every dispatch.
 2. `git fetch origin`; record the default branch head.
 3. Read the project rules and the living plan **as on the default branch** (`git show
    origin/<default>:<path>`, not the working tree, which may hold an unmerged phase branch). Ask
-   once if the plan's location isn't obvious. From the plan: phases with status and `Depends on`,
-   binding decisions, open and decided owner decisions, the model strategy record, the fix-round
-   limit.
+   once if the plan's location isn't obvious. Always read, at the default branch, the plan's
+   headings (`grep -n '^#'`) and only these parts: every phase's `Status` and `Depends on` lines,
+   the remaining phases' sections, binding decisions, open and decided owner decisions, the
+   model-strategy record, the fix-round limit. Read the rest only when a decision needs it.
    Overhead and session checks (read-only, once per run): `references/session-check.md`.
 4. **Reconcile decisions** (`references/owner-decisions.md`): a decision is decided only if the
    plan on the default branch has a valid Decided entry or the owner answered it in this
@@ -226,9 +227,8 @@ Derive state from durable sources only — never from memory of an earlier conte
      otherwise report it and don't touch it (on a designated branch it occupies the branch: stop,
      as **Sequential phases** says);
    - an open PR that matches no phase → say so; don't touch it.
-6. **Model strategy gate** and **Code map** check (both above; the code-map question is folded into
-   the gate when the gate is asked, so evaluate it first). Everything before this
-   point is read-only.
+6. **Model strategy gate** and **Code map** check (both above; evaluate the code map first).
+   Everything before this point is read-only.
 
 No living plan → the run can't start: hand over to the `living-plan` skill (owner-driven, with its
 own approval), then begin this skill again from step 0.
@@ -257,18 +257,27 @@ independence is plain from scope; record that ruling in one line. Always pick th
 ready phase. When the owner answers decisions mid-run, re-evaluate: newly ready phases join the
 queue.
 
+**Series mode.** Up to 3 ready, independent, same-shape `standard` phases may run on one
+implementer in sequence: once one lands (step 5), resume it (SendMessage) with the next one's full
+dispatch fields, Base SHA = the default head then, its own branch and PR. Each PR still gets its
+own fresh reviewer, exact-SHA verdict and landing; never one verdict for several PRs. **Rotation**
+counts run across the series, which stops at a rotation trigger, a phase that blocks or an owner
+decision (a CHANGES REQUIRED review doesn't).
+
 ## The loop, per phase
 
 ### 1. Implement
 Record the default head as the phase's **base SHA**. Dispatch a fresh implementer with the brief's
 dispatch fields; derive its `Integration method` from the project rules and landing method as in
-4a step 3. Branch name: `phase/<id>-<slug>`, or the designated branch. Keep the agent id: fix
-rounds go to the same agent.
+4a step 3. Branch name: `phase/<id>-<slug>`, or the designated branch. `Report file`: a new path
+per phase, outside every repository. Keep the agent id: fix
+rounds go to the same agent until **Rotation** (4b).
 
 ### 2. Verify the report and the candidate
-The report must have every field in the brief's report format; if any is missing or inconsistent,
-ask the same implementer once for exactly those fields. Then `git fetch origin <branch>` (bounded
-`--depth` if shallow) and check the facts yourself:
+The return must have every field of the brief's short return (the full report when `Report file`
+was `none`); if any is missing or inconsistent, ask the same implementer once for exactly those
+fields. From the report file, read only the part a decision needs. Then `git fetch origin
+<branch>` (bounded `--depth` if shallow) and check the facts yourself:
 - `gh pr view <n> --json number,state,headRefName,headRefOid,baseRefName,mergeable`;
 - the **candidate SHA** is GitHub's `headRefOid`, never the report's; if they differ, find out why
   (unpushed or unexpected commits) before review;
@@ -368,9 +377,9 @@ Land only a tree that was validated and reviewed. Immediately before landing:
      landings and fast-forward landings that must stay linear, and only if the project rules don't
      forbid force-pushing or rewriting PR branches (the push is lease-pinned to the current
      candidate); else none (→ `references/landing.md`, before dispatching anything). The same
-     implementer integrates (`Integration` in the brief; the message names the method), re-runs
-     the full validation on the integrated tree, and the new candidate goes back to step 2 → a
-     fresh review. Integration rounds count toward the fix-round limit.
+     implementer integrates (`references/brief-integration.md`; the message names the method),
+     re-runs the full validation on the integrated tree, and the new candidate goes back to step 2
+     → a fresh review. Integration rounds count toward the fix-round limit.
 
 Land as the project's rules prescribe, after any pre-landing check they require (e.g. a secret
 scan), always pinned to the reviewed SHA. Default, when the rules name no other way: `gh pr merge
@@ -390,23 +399,29 @@ round" message); if it can't be resumed, dispatch a new one with PR, SHA and blo
 reviewer, who reviews the whole `base...candidate` diff independently first and only afterwards,
 as a separate section, checks the previous blockers, which it receives by title only.
 
+**Rotation.** After 3 resumed rounds of one implementer (its fix or integration rounds, counted
+from the ledger; send-backs for fields or verification and the Handoff request don't count), or
+once its `subagent_tokens` (cumulative usage, not context size) reach about 400k, the next round
+goes to a fresh implementer with the `Fix round` field (an integration: Base SHA = the default
+head to integrate) and `Handoff: <path>`, never a transcript. First ask the current one for the
+brief's **Handoff** note, at a path outside every repository.
+
 ### Brakes
-- **Fix rounds:** at most 12 per phase (the plan or project may set another number; a project
+- **Fix rounds:** at most 5 per phase (the plan or project may set another number; a project
   limit on review attempts wins). Count rounds from the review-ledger comments; fix, integration
   and approach-retry rounds all count, and nothing resets the count.
 - **Same blockers twice** in consecutive reviews → stop fixing that phase.
-- On a brake, ask whether the **approach** is wrong rather than the last attempt: (1) same approach
-  with a sharper brief, or (2) a materially different approach inside the approved design — each at
-  most once per phase, within the model strategy (see "Not enough model"); (3) a design change is
-  an owner decision.
+- At the third fix round, and on a brake, ask whether the **approach** is wrong rather than the
+  last attempt: (1) same approach with a sharper brief, or (2) a materially different approach
+  inside the approved design — each at most once per phase, within the model strategy (see "Not
+  enough model"); (3) a design change is an owner decision.
 - Environment, permission or tooling failures (network, auth, disk, a tool not allowed) are not
   evidence against the approach: repair once or report; never abandon a sound approach over them.
 
 ### 5. Close the phase
-The implementer's PR marks the phase done in the plan, so the merge records it. Optionally tell the
-owner one line (phase, PR, merged SHA). With a designated branch, reconcile it for the next phase
-(`references/github-backends.md`, "Designated branch"). Append the phase to the run record (**Run
-record**). Then schedule the next ready phase.
+The implementer's PR marks the phase done in the plan, so the merge records it. With a designated
+branch, reconcile it for the next phase (`references/github-backends.md`, "Designated branch").
+Append the phase to the run record (**Run record**). Then schedule the next ready phase.
 
 **Recurring blocker class.** Reviewers report the same class of defect in two phases of a run →
 `references/recurring-blocker.md`.
