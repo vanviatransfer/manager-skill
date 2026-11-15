@@ -58,7 +58,7 @@ Status values: `todo` · `in progress (PR #n)` · `done (PR #n)` · `blocked (Dn
 Fix-round limit per phase: 5
 
 ### P1. Move rare manager sections into references
-Status: todo
+Status: done ([PR #29](https://github.com/vanviatransfer/manager-skill/pull/29))
 Objective: the manager skill keeps only what every run needs; rare sections live in
 `skills/manager/references/` and are read when their trigger applies.
 Scope: `plugins/manager-plugin/skills/manager/SKILL.md`, new files in
