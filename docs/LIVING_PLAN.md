@@ -17,7 +17,9 @@ invariants (independent exact-SHA review, owner authority, Git safety, required 
 - The run-start advice no longer pushes a large auto-compact window.
 
 ## Scope
-In: plugins/manager-plugin (skills/manager and its references, agents, README), docs/TODO.md.
+In: plugins/manager-plugin (skills/manager and its references, agents,
+skills/living-plan/references/plan-template.md), the root README.md and
+.claude-plugin/marketplace.json, docs/TODO.md.
 Out (deliberately not doing now):
 - delta-only re-review (weakens review independence; full review stays every round);
 - skipping the reviewer's own first validation run (required validation);
@@ -36,16 +38,19 @@ Out (deliberately not doing now):
   other phases don't conflict there.
 
 ## Model strategy
-Model strategy: Opus for both roles — scope: run R2026-11-15-0000 — owner: "sonnet kullanma opus
-kullan" (2026-11-15)
+Model strategy: Opus for both roles — scope: run R2026-11-15-0000 — owner: "sonnet kullanma opus kullan" (2026-11-15)
 
 ## Binding decisions
 - B1. Every rule text that encodes an invariant is moved, never reworded weaker: exact-SHA review,
   owner authority, Git safety, required validation, the plan-at-base reads. (owner, 2026-11-15:
   "token tasarrufu ... unutma" with the invariants kept)
-- B2. Measured facts used for decisions: restricted agents start at about 9–14k tokens, general-
-  purpose about 77k; an implementer phase median is about 207k (Sonnet) / 353k (Opus); 61% of
-  phases need 2+ review rounds; `subagent_tokens` is cumulative usage, not context size.
+- B2. Measured facts used for decisions (small samples): restricted agents start at about 9–14k
+  tokens and general-purpose about 77k (measured once, one session); an implementer phase median
+  is about 207k (Sonnet, n=5) / 353k (Opus, n=11) and 61% of phases need 2+ review rounds (one
+  project's run records); `subagent_tokens` is cumulative usage, not context size (CLI binary).
+  The thresholds in P1–P4 (25%, 3 rounds, about 400k, 3-phase series, the window caps, 200–300k)
+  are design choices to be checked against later run records, not measurements. (orchestrator,
+  2026-11-15)
 
 ## Phases
 
@@ -82,7 +87,8 @@ orchestrator passes; the return keeps RESULT, Phase, PR, Branch, Base SHA, Candi
 validation summary, Blocker / decision needed, and the report path. Add a `Handoff:` note format
 (PR, branch, candidate SHA, blockers fixed and open, next step) the implementer writes when asked.
 Out of scope: SKILL.md (P3 adapts the orchestrator side).
-Depends on: none
+Depends on: P1 (both add files to `skills/manager/references/`: P2 uses its own file names and
+links to P1's files instead of restating a rule)
 Risk: standard — moves text; the report fields the orchestrator checks stay in the return.
 Acceptance: each brief at least 25% fewer words; the dispatch-field block stays at the top; the
 reviewer's verdict format is unchanged and stays inline; nothing an invariant needs is lost.
@@ -105,8 +111,9 @@ Scope: `plugins/manager-plugin/skills/manager/SKILL.md` and the references from 
 - every dispatch states `model` (and `effort` when the strategy sets one) explicitly;
 - the session check recommends an orchestrator window of 200–300k (`/autocompact 250k`) instead of
   600k, leaves an owner's own value alone, and doesn't claim it covers subagents;
-- step 0 reads the plan's headings and remaining phases first and the rest only when needed; the
-  overhead and session checks run once per run;
+- step 0 reads the plan's headings, remaining phases, binding decisions and open and decided owner
+  decisions (always, at the default branch), and the rest only when needed; the overhead and
+  session checks run once per run;
 - after a compaction, re-read the dispatch-field block, the ledger and the working-notes lines;
 - the orchestrator side of P2's short return (report path field; facts still checked from git).
 Depends on: P1, P2
@@ -119,9 +126,9 @@ Notes: B1, B2.
 ### P4. Agent frontmatter caps
 Status: todo
 Objective: subagents can't grow or run away unbounded.
-Scope: `plugins/manager-plugin/agents/implementer.md`, `reviewer.md`, `worker.md`, `fallback.md`:
-`autoCompactWindow` (plain integers within 100000–1000000; implementer and worker 300000, reviewer
-and fallback 200000) and a generous `maxTurns` safety cap that a normal phase never reaches. No
+Scope: `plugins/manager-plugin/agents/implementer.md`, `reviewer.md`, `worker.md`, `fallback.md`,
+`researcher.md`: `autoCompactWindow` (plain integers within 100000–1000000; implementer and worker
+300000, reviewer, fallback and researcher 200000) and a generous `maxTurns` safety cap that a normal phase never reaches. No
 default `model` in frontmatter (the dispatch sets it). One line in each body: state lives in git and
 the plan; after a compaction re-derive it from them.
 Depends on: none
@@ -135,7 +142,8 @@ Notes: B2.
 Status: todo
 Objective: the documentation matches the new behaviour.
 Scope: `README.md`, `docs/TODO.md`, `plugins/manager-plugin/.claude-plugin/plugin.json` (0.7.0),
-`.claude-plugin/marketplace.json` description if it changes.
+`.claude-plugin/marketplace.json` description if it changes, and
+`plugins/manager-plugin/skills/living-plan/references/plan-template.md` (fix-round limit 12 → 5).
 Depends on: P1, P2, P3, P4
 Risk: standard — docs only.
 Acceptance: no stale mention of 600k or 12 rounds; rotation, series mode, caps and short returns
@@ -145,3 +153,10 @@ Notes: B2.
 
 ## Change log
 - 2026-11-15: plan created from a docs/binary study, a GitHub study and a repository audit.
+
+## How to keep this plan alive
+- A phase PR updates its own status line and links itself; other status lines only to correct facts.
+- Facts that change later phases → update those phases in the same PR and add a change-log line.
+- Decision, binding-decision and model-strategy records change only as the manager's Plan records
+  say.
+- Never copy SHAs or test output into the plan beyond a PR link.
