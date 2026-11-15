@@ -140,7 +140,7 @@ Validation: standard.
 Notes: B2.
 
 ### P5. README, TODO and version
-Status: todo
+Status: done ([PR #33](https://github.com/vanviatransfer/manager-skill/pull/33))
 Objective: the documentation matches the new behaviour.
 Scope: `README.md`, `docs/TODO.md`, `plugins/manager-plugin/.claude-plugin/plugin.json` (0.7.0),
 `.claude-plugin/marketplace.json` description if it changes, and
