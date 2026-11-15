@@ -18,7 +18,7 @@ Plan records: <exact entries: open decisions, Decided moves, new binding decisio
 Plan change: <exact plan text, or a specification file path; plan-only PR only>
 Setup: <code map; code-map setup PR only>
 Fix round: <PR #<n> at <sha>; blockers verbatim; replacement implementer only>
-Handoff: <note path to read first; rotation only>
+Handoff: <note path; rotation only>
 Code map: <python command and quoted codemap.py path | none>
 Report file: <full-report path outside the repo | none>
 ```
@@ -37,7 +37,7 @@ while its trigger holds, again after a compaction:
 - you create, work in or remove a git worktree → `brief-worktrees.md`.
 
 1. **Read** only the project rules (`CLAUDE.md` / `AGENTS.md`), this phase's plan section, the
-   plan's binding decisions and its knowledge paths.
+   plan's binding decisions, its knowledge paths and any `Handoff` note.
 2. **Scope.** Don't expand it or guess. An owner-only choice (open design, scope, spend,
    credentials, anything the project reserves) → stop, report `NEEDS_OWNER_DECISION` with options.
    Write the least that meets the acceptance criteria: reuse existing code, the standard library or

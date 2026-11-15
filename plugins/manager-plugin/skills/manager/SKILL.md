@@ -64,8 +64,9 @@ known MCP servers no role uses, so it costs much less context than `general-purp
 `manager-plugin:worker` for a phase: it isn't bound to the briefs. If the fallback fails the same
 way, that is an environment failure (stop condition). The role instructions live in the brief
 files; you send only the **dispatch fields** listed at the top of each file, prefixed with one
-line: `Read and follow <the role's resolved brief path>.` (If a subagent can't read that path, paste the file's
-instruction block instead, plus the text of each `brief-*.md` file whose trigger applies.)
+line: `Read and follow <the role's resolved brief path>.` (If a subagent can't read that path,
+paste the file's instruction block instead, plus the text of each `brief-*.md` file whose trigger
+applies.)
 
 One implementer and one reviewer per round; no extra advisors or audits. Subagents must not spawn
 further subagents. Fill fields with paths, not pasted documents (an excerpt only when clearly
@@ -261,7 +262,7 @@ implementer in sequence: once one lands (step 5), resume it (SendMessage) with t
 dispatch fields, Base SHA = the default head then, its own branch and PR. Each PR still gets its
 own fresh reviewer, exact-SHA verdict and landing; never one verdict for several PRs. **Rotation**
 counts run across the series, which stops at a rotation trigger, a phase that blocks or an owner
-decision.
+decision (a CHANGES REQUIRED review doesn't).
 
 ## The loop, per phase
 
@@ -275,9 +276,8 @@ rounds go to the same agent until **Rotation** (4b).
 ### 2. Verify the report and the candidate
 The return must have every field of the brief's short return (the full report when `Report file`
 was `none`); if any is missing or inconsistent, ask the same implementer once for exactly those
-fields. From the report file, read only the part a decision needs (e.g. `Risks` for the final
-report). Then `git fetch origin <branch>` (bounded
-`--depth` if shallow) and check the facts yourself:
+fields. From the report file, read only the part a decision needs. Then `git fetch origin
+<branch>` (bounded `--depth` if shallow) and check the facts yourself:
 - `gh pr view <n> --json number,state,headRefName,headRefOid,baseRefName,mergeable`;
 - the **candidate SHA** is GitHub's `headRefOid`, never the report's; if they differ, find out why
   (unpushed or unexpected commits) before review;
@@ -399,11 +399,12 @@ round" message); if it can't be resumed, dispatch a new one with PR, SHA and blo
 reviewer, who reviews the whole `base...candidate` diff independently first and only afterwards,
 as a separate section, checks the previous blockers, which it receives by title only.
 
-**Rotation.** After 3 resumed rounds of one implementer, or once its `subagent_tokens` (cumulative
-usage, not context size) reach about 400k, the next round goes to a fresh implementer with the
-`Fix round` field (an integration: Base SHA = the default head to integrate) and `Handoff: <path>`,
-never a transcript. First ask the current one for the brief's **Handoff** note, at a path outside
-every repository; facts still come from git.
+**Rotation.** After 3 resumed rounds of one implementer (its fix or integration rounds, counted
+from the ledger; send-backs for fields or verification and the Handoff request don't count), or
+once its `subagent_tokens` (cumulative usage, not context size) reach about 400k, the next round
+goes to a fresh implementer with the `Fix round` field (an integration: Base SHA = the default
+head to integrate) and `Handoff: <path>`, never a transcript. First ask the current one for the
+brief's **Handoff** note, at a path outside every repository.
 
 ### Brakes
 - **Fix rounds:** at most 5 per phase (the plan or project may set another number; a project
