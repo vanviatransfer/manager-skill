@@ -11,9 +11,8 @@ reviewer subagent.
 
 Stay in one continuous turn: dispatch subagents in the foreground (`run_in_background: false`).
 If the harness runs a dispatch in the background anyway, wait for its completion notification: a
-pending subagent is not a result and not a reason to end the turn, and an interim notice (e.g. it
-is waiting on its own background work) is not its report. End the turn only as **Stop
-conditions** says.
+pending subagent is not a result and not a reason to end the turn, and an interim notice is not
+its report. End the turn only as **Stop conditions** says.
 
 ## Ground rules
 
@@ -76,9 +75,8 @@ project-specific Rulings you add to every dispatch as one working-notes line.
 **Ignored-data guard.** Before each dispatch, note one line for the shared checkout: the number of
 top-level git-ignored entries and their total size in KiB, from the repo root (`git rev-parse
 --show-toplevel >/dev/null && git ls-files -z --others --ignored --exclude-standard --directory |
-sed -z 's#/$##' | xargs -0 -r du -sk | awk '{n++; s+=$1} END {print n+0, s+0}'`; stripping the
-trailing slash keeps `du` from counting what a linked directory points to). A git error, or `0 0`
-where the checkout holds ignored data, is a failed measurement: stop and report as for a drop.
+sed -z 's#/$##' | xargs -0 -r du -sk | awk '{n++; s+=$1} END {print n+0, s+0}'`). A git error, or
+`0 0` where the checkout holds ignored data, is a failed measurement: stop and report as for a drop.
 After the subagent returns, measure again. A drop the dispatch can't explain (untracked output the subagent listed as its own
 doesn't count) is a stop: dispatch nothing more, don't try to restore it from memory or guesswork,
 report which entries shrank or vanished and any copy you can verify still exists, and wait for the
@@ -112,7 +110,7 @@ strategy is never applied by inference.
    session resumes interrupted work and the plan holds a `run` record, recommend that recorded
    strategy, so the owner can confirm it in one word.
 
-**Asking.** After the read-only part of step 0 (no dispatch, no writes), assess complexity from the
+**Asking.** After the read-only part of step 0, assess complexity from the
 remaining phases' objectives and scope alone — or, with no plan yet, from the owner's request;
 don't read source. Recommend Sonnet, Opus or a mixed strategy, ask in Turkish, and end the turn:
 
@@ -160,8 +158,7 @@ running the other phases.
 ## Code map — checked every run
 
 At step 6 (after the fetch and the plan read), before any dispatch, whatever the model strategy:
-read `references/code-map-check.md` and settle `Code map: <cmd> | none` as it says (set up, not a
-plain file, not set up, and the setup PR).
+read `references/code-map-check.md` and settle `Code map: <cmd> | none` as it says.
 
 The code-map question goes into the model-strategy question when that is asked; otherwise it is a
 question of its own that ends the turn, asked once per run. Keep the answer as one working-notes
@@ -239,7 +236,7 @@ one, read `references/plan-only-pr.md`.
 ## Phases and scheduling
 
 A phase is one coherent deliverable worth one branch, one PR and one independent review, not the
-smallest possible unit: each phase pays a fixed cost (two fresh subagents, validation run twice).
+smallest possible unit: each phase pays a fixed cost.
 Batch same-shape changes that share one judgment, one validation surface and a diff one reviewer can
 check in one pass; split parts that need different judgment or risk level, can be validated alone
 and need no code from each other. If two parts must land together,
@@ -285,9 +282,8 @@ fields. From the report file, read only the part a decision needs. Then fetch `<
   code-map setup PR: only `.codemap.json`, the generated pages and one vault index line). One
   records row in the records file of a skill the phase's `Notes` cite passes too;
 - `git merge-base --is-ancestor origin/<default> <candidate>`: if the default moved and the
-  candidate lacks it, integrate first (as in 4a step 3: same implementer, method and rules,
-  counting toward the fix-round limit) → step 2 for the new candidate. 4a step 3 rechecks before
-  landing.
+  candidate lacks it, integrate first (as in 4a step 3: same implementer, method and rules, an
+  integration round) → step 2 for the new candidate. 4a step 3 rechecks before landing.
 
 After an integration (4a), the base SHA becomes the default head the implementer integrated, once
 `git merge-base --is-ancestor` confirms it is in the candidate.
@@ -337,10 +333,9 @@ Accept the verdict only if all hold:
 risks.
 
 Clean-tree route only: if the reviewer reports tracked files changed by its validation, the result
-is invalid (`not run`). Restore them from the repo root with `git restore --staged --worktree :/`
-— safe only because the tree was clean at HEAD = candidate before the review — then retry the
-validation once, in a worktree if the project allows one, else block as below. Never restore or
-remove anything on a tree that was dirty before the review.
+is invalid (`not run`). Restore them from the repo root with `git restore --staged --worktree :/`,
+then retry the validation once, in a worktree if the project allows one, else block as below.
+Never restore or remove anything on a tree that was dirty before the review.
 
 A PASS or PASS WITH NOTES whose required validation is `not run` is not landable yet: fix the cause
 (usually the checkout state), redo the pre-dispatch check, note the before values again, and resume
@@ -352,10 +347,11 @@ Anything else — no verdict, blocked reviewer, wrong SHA, internal contradictio
 never PASS. Redo the pre-dispatch check and dispatch one new reviewer; if that also fails, treat
 it as an environment failure for this phase and move on to independent work.
 
-Post one compact **review-ledger** PR comment (`review-ledger <run-id> round <k>: <verdict> at
-<sha>; blockers: <titles | none>`). It is history, never authorization: landing needs a PASS for
-the current head that you received in this context. When a phase with a PR blocks (owner
-decision, tripped brake), add one ledger line `review-ledger <run-id> blocked: <Dn | reason>`.
+Post one compact **review-ledger** PR comment (`review-ledger <run-id> round <k>: <verdict |
+INTEGRATE> at <sha>; blockers: <titles | none>`; an integration round posts `INTEGRATE` at the
+candidate it integrates). It is history, never authorization: landing needs a PASS for the current
+head that you received in this context. When a phase with a PR blocks (owner decision, tripped
+brake), add one ledger line `review-ledger <run-id> blocked: <Dn | reason>`.
 
 ### 4a. PASS / PASS WITH NOTES → land
 Land only a tree that was validated and reviewed. Immediately before landing:
@@ -371,15 +367,15 @@ Land only a tree that was validated and reviewed. Immediately before landing:
    `references/landing.md`.
    - **Yes** → the landed tree equals the reviewed tree; the review stands. Land.
    - **No** (the default moved and the candidate doesn't include it) → don't land, whatever the
-     file overlap: non-overlapping files don't prove the combination works. First pick the
-     integration method: **merge** the default into the branch for squash and merge-commit
-     landings (and fast-forward landings that may keep merge commits); **rebase** for rebase-merge
-     landings and fast-forward landings that must stay linear, and only if the project rules don't
-     forbid force-pushing or rewriting PR branches (the push is lease-pinned to the current
-     candidate); else none (→ `references/landing.md`, before dispatching anything). The same
-     implementer integrates (`references/brief-integration.md`; the message names the method),
-     re-runs the full validation on the integrated tree, and the new candidate goes back to step 2
-     → a fresh review. Integration rounds count toward the fix-round limit.
+     file overlap. First pick the integration method: **merge** the default into the branch for
+     squash and merge-commit landings (and fast-forward landings that may keep merge commits);
+     **rebase** for rebase-merge landings and fast-forward landings that must stay linear, and only
+     if the project rules don't forbid force-pushing or rewriting PR branches (the push is
+     lease-pinned to the current candidate); else none (→ `references/landing.md`, before
+     dispatching anything). The same implementer integrates (`references/brief-integration.md`; the
+     message names the method), re-runs the full validation on the integrated tree, and the new
+     candidate goes back to step 2 → a fresh review. This is an integration round (its own cap,
+     **Brakes**).
 
 Land as the project's rules prescribe, after any pre-landing check they require (e.g. a secret
 scan), always pinned to the reviewed SHA. Default, when the rules name no other way: `gh pr merge
@@ -399,18 +395,22 @@ round" message); if it can't be resumed, dispatch a new one with PR, SHA and blo
 reviewer, who reviews the whole `base...candidate` diff independently first and only afterwards,
 as a separate section, checks the previous blockers, which it receives by title only.
 
-**Rotation.** After 3 resumed rounds of one implementer (its fix or integration rounds, counted
-from the ledger; send-backs for fields or verification and the Handoff request don't count), or
-once its `subagent_tokens` (cumulative usage, not context size) reach about 400k, the next round
-goes to a fresh implementer with the `Fix round` field (an integration: `blockers: none
-(integration)`, Base SHA = the default head to integrate) and `Handoff: <path>`, never a
-transcript. First ask the current one for the brief's **Handoff** note, at a path outside every
-repository. Keep `<phase>: rotated at round <k>` as a working-notes line.
+**Rotation.** Once one implementer's `subagent_tokens` (cumulative usage, not context size) reach
+about 400k, or after 3 of its fix rounds (from the ledger) once they are above about 150k (design
+choices), the next round goes to a fresh implementer with the `Fix round` field (an integration:
+`blockers: none (integration)`, Base SHA = the default head to integrate) and `Handoff: <path>`,
+never a transcript. First ask the current one for the brief's **Handoff** note, at a path outside
+every repository. Integration rounds, send-backs (fields, verification) and the Handoff request
+never trigger it by count. Keep `<phase>: rotated at round <k>` as a working-notes line.
 
 ### Brakes
-- **Fix rounds:** at most 5 per phase (the plan or project may set another number; a project
-  limit on review attempts wins). Count rounds from the review-ledger comments; fix, integration
-  and approach-retry rounds all count, and nothing resets the count.
+- **Fix rounds** (after a CHANGES REQUIRED review, approach retries included): at most 5 per
+  phase (the plan or project may set another number; a project limit on review attempts wins),
+  counted from the ledger's CHANGES REQUIRED lines.
+- **Integration rounds** (step 2, 4a step 3): their own cap of 5 per phase (a plan or project
+  limit on review attempts wins), counted from the ledger's `INTEGRATE` lines. At the cap the
+  phase blocks: "default branch moving faster than the phase can land" (reported; dependents
+  blocked). Nothing resets either count.
 - **Same blockers twice** in consecutive reviews → stop fixing that phase.
 - At the third fix round, and on a brake, ask whether the **approach** is wrong rather than the
   last attempt: (1) same approach with a sharper brief, or (2) a materially different approach
