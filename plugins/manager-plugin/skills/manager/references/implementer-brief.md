@@ -131,6 +131,7 @@ Next step: <what the next implementer does first>
 
 Message: `Fix round: PR #<n> at <sha>, CHANGES REQUIRED. Blockers (verbatim): <findings>`. For a
 behavioural blocker whose finding gives a reproduction, first add a test that reaches it and see it
-fail, then fix (no test seam the suite can reach → one line under Risks). Fix them, push to the same
-branch, re-run the full validation, report the new Candidate SHA. Fold in non-blocking notes only if
-trivial and in scope. A wrong or owner-level finding → Deviations / Blocker; don't work around it.
+fail, then fix (no test seam the suite can reach → one line under Risks). Fix them, push to the
+same branch, re-run the full validation, report the new Candidate SHA. Fold in non-blocking notes
+only if trivial and in scope. A wrong or owner-level finding → Deviations / Blocker; don't work
+around it.

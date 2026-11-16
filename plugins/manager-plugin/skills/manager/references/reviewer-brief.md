@@ -73,9 +73,9 @@ listed: record those as known flaky, don't chase them. One unlisted failure, or 
 whose covered code the diff touches, is a real failure.
 Run in the first place that works:
 1. the shared checkout, if `git rev-parse HEAD` = Candidate SHA and `git status --short` is empty;
-   recheck both afterwards. List untracked files your run created (delete only those). A modified
-   tracked file invalidates the result: report `not run: validation changed <files>`, leave them
-   for the orchestrator;
+   recheck both afterwards. Delete the untracked files your run created (only those) and list them.
+   A modified tracked file invalidates the result: report `not run: validation changed <files>`,
+   leave them for the orchestrator;
 2. if a Worktree dir was given: `git worktree add --detach <worktree-dir> <candidate>`, run the
    validation there, then remove it as `brief-worktrees.md` says;
 3. otherwise `not run: <reason>` (e.g. HEAD ≠ candidate, dirty tree, command unavailable). Never

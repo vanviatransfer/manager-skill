@@ -285,9 +285,9 @@ fields. From the report file, read only the part a decision needs. Then fetch `<
   code-map setup PR: only `.codemap.json`, the generated pages and one vault index line). One
   records row in the records file of a skill the phase's `Notes` cite passes too;
 - `git merge-base --is-ancestor origin/<default> <candidate>`: if the default moved and the
-  candidate lacks it, integrate first (as in 4a step 3: same implementer, method and rules; it
-  counts toward the fix-round limit), then review the new candidate. 4a step 3 still checks
-  before landing.
+  candidate lacks it, integrate first (as in 4a step 3: same implementer, method and rules,
+  counting toward the fix-round limit) → step 2 for the new candidate. 4a step 3 rechecks before
+  landing.
 
 After an integration (4a), the base SHA becomes the default head the implementer integrated, once
 `git merge-base --is-ancestor` confirms it is in the candidate.
