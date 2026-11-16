@@ -13,8 +13,8 @@ intent. The `manager` skill runs it; this skill writes it.
 The plan holds **intent**. Facts like SHAs and test results live in git and GitHub; the
 plan only links to PRs.
 
-Talk to the owner in the owner's language. Write the plan in the language the project's docs use
-(ask if unclear).
+Talk to the owner in the owner's language. Write the plan in English, whatever language the
+project's other docs use.
 
 ## 1. Understand before writing
 

@@ -33,8 +33,8 @@ trigger holds (again after a compaction while it still holds):
   `.claude/skills/` → `brief-skill-records.md`;
 - a Worktree dir → `brief-worktrees.md`.
 
-**Shared checkout: read-only.** There only: `git fetch origin <default> <branch>` (bounded
-`--depth` if shallow); read-only `diff`, `show <sha>:<path>`, `log`, `rev-parse`, `status`,
+**Shared checkout: read-only.** There only: fetch `<default>` and `<branch>` (`github-backends.md`,
+**Fetching a branch**); read-only `diff`, `show <sha>:<path>`, `log`, `rev-parse`, `status`,
 `merge-base`, `rev-list`; validation below; `git worktree add/remove` only if a Worktree dir was
 given. No checkout, switch, reset, rebase, stash, commit, push or edits. Read the diff from GitHub
 (`gh pr diff <n>` / MCP `pull_request_read get_diff`) only if the candidate can't be fetched, and
@@ -73,9 +73,9 @@ listed: record those as known flaky, don't chase them. One unlisted failure, or 
 whose covered code the diff touches, is a real failure.
 Run in the first place that works:
 1. the shared checkout, if `git rev-parse HEAD` = Candidate SHA and `git status --short` is empty;
-   recheck both afterwards. List untracked files your run created (delete only those). A modified
-   tracked file invalidates the result: report `not run: validation changed <files>`, leave them
-   for the orchestrator;
+   recheck both afterwards. Delete the untracked files your run created (only those) and list them.
+   A modified tracked file invalidates the result: report `not run: validation changed <files>`,
+   leave them for the orchestrator;
 2. if a Worktree dir was given: `git worktree add --detach <worktree-dir> <candidate>`, run the
    validation there, then remove it as `brief-worktrees.md` says;
 3. otherwise `not run: <reason>` (e.g. HEAD ≠ candidate, dirty tree, command unavailable). Never

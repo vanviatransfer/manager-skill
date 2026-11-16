@@ -3,7 +3,8 @@
 Read on an `Integrate` message, or when step 3 finds the remote branch lacks the Base SHA.
 
 Message: `Integrate <default-head> into PR #<n>[ by <method>].` (in step 3, `<default-head>` is
-the Base SHA). Use that method, else the dispatch's, after `git fetch origin <default>`:
+the Base SHA). Use that method, else the dispatch's, after fetching `<default>`
+(`github-backends.md`, **Fetching a branch**):
 - merge: `git merge <default-head>`; `git push origin <branch>`;
 - rebase: `git rebase <default-head>`; `git push --force-with-lease=<branch>:<current-candidate>
   origin <branch>`;

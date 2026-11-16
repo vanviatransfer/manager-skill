@@ -16,7 +16,8 @@ The vault holds **knowledge**, not intent or status:
 - not PR lists or test results (git and GitHub hold those);
 - not secrets, credentials or personal data.
 
-Talk to the owner in their language; write pages in the language the project's docs use.
+Talk to the owner in their language; write pages in English, whatever language the project's
+other docs use.
 
 ## Pages
 

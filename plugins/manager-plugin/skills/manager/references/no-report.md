@@ -4,7 +4,8 @@ Read by the manager skill at loop step 2 when an implementer ends with no report
 a crash or a usage limit).
 
 Resume it once. If that
-fails, judge from facts, not its last words. `git fetch origin <branch>`, then the shared checkout:
+fails, judge from facts, not its last words. Fetch `<branch>` (`github-backends.md`, **Fetching a
+branch**), then the shared checkout:
 a dirty tree (whoever left it) or local commits on no remote ref (`git log --oneline HEAD
 --not --remotes`; also `<branch>` if it exists locally) → never discard them; every phase shares
 this checkout, so stop the run and report it (**Stop conditions**). Otherwise, the remote branch
