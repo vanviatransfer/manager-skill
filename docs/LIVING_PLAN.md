@@ -101,9 +101,9 @@ Objective: the orchestrator spends fewer rounds and smaller contexts.
 Scope: `plugins/manager-plugin/skills/manager/SKILL.md` and the references from P1/P2:
 - default fix-round limit 5 (plan or project limits still win), with the approach question at
   round 3;
-- implementer rotation: after 3 resumed rounds in one phase, or about 400k cumulative
-  `subagent_tokens`, the next round goes to a fresh implementer with the previous one's `Handoff:`
-  note and the `Fix round` field, never a transcript;
+- implementer rotation (as revised in 0.7.3, see the change log): at about 400k cumulative
+  `subagent_tokens`, or after 3 fix rounds once above about 150k, the next round goes to a fresh
+  implementer with the previous one's `Handoff:` note and the `Fix round` field, never a transcript;
 - series mode: up to 3 ready, independent, same-shape `standard` phases go to one implementer in
   sequence, each from the default head on its own branch and PR; each PR gets its own fresh
   reviewer dispatch, exact-SHA verdict and landing; the series stops at a rotation trigger, a
@@ -171,6 +171,9 @@ Notes: B2.
   list) so the rotation count and the series survive a compaction; (b) before the final report,
   read the Risks section of each phase's report file (the short return omits it); (c) when rotating
   during an integration round, the `Fix round` field says `blockers: none (integration)`.
+- 2026-11-16: after a live test, plugin 0.7.3 (PR #36) counts integration rounds separately from
+  fix rounds (at most 5 per phase), and rotates on tokens (about 400k, or 3 fix rounds above about
+  150k) instead of 3 resumed rounds; P3's rotation line is updated to match.
 
 ## How to keep this plan alive
 - A phase PR updates its own status line and links itself; other status lines only to correct facts.
