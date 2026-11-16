@@ -348,10 +348,11 @@ never PASS. Redo the pre-dispatch check and dispatch one new reviewer; if that a
 it as an environment failure for this phase and move on to independent work.
 
 Post one compact **review-ledger** PR comment (`review-ledger <run-id> round <k>: <verdict |
-INTEGRATE> at <sha>; blockers: <titles | none>`; an integration round posts `INTEGRATE` at the
-candidate it integrates). It is history, never authorization: landing needs a PASS for the current
-head that you received in this context. When a phase with a PR blocks (owner decision, tripped
-brake), add one ledger line `review-ledger <run-id> blocked: <Dn | reason>`.
+INTEGRATE> at <sha>; blockers: <titles | none>`; `<k>` counts every ledger line; an integration
+round posts `INTEGRATE` at the candidate it integrates). It is history, never authorization:
+landing needs a PASS for the current head received in this context. When a phase with a PR blocks
+(owner decision, tripped brake), add one ledger line `review-ledger <run-id> blocked: <Dn |
+reason>`.
 
 ### 4a. PASS / PASS WITH NOTES → land
 Land only a tree that was validated and reviewed. Immediately before landing:
@@ -407,10 +408,10 @@ never trigger it by count. Keep `<phase>: rotated at round <k>` as a working-not
 - **Fix rounds** (after a CHANGES REQUIRED review, approach retries included): at most 5 per
   phase (the plan or project may set another number; a project limit on review attempts wins),
   counted from the ledger's CHANGES REQUIRED lines.
-- **Integration rounds** (step 2, 4a step 3): their own cap of 5 per phase (a plan or project
-  limit on review attempts wins), counted from the ledger's `INTEGRATE` lines. At the cap the
-  phase blocks: "default branch moving faster than the phase can land" (reported; dependents
-  blocked). Nothing resets either count.
+- **Integration rounds** (step 2, 4a step 3): at most 5 per phase (a plan or project limit on
+  review attempts wins), counted from the ledger's `INTEGRATE` lines; a 6th needed → the phase
+  blocks: "default branch moving faster than the phase can land" (reported, dependents blocked).
+  Nothing resets either count.
 - **Same blockers twice** in consecutive reviews → stop fixing that phase.
 - At the third fix round, and on a brake, ask whether the **approach** is wrong rather than the
   last attempt: (1) same approach with a sharper brief, or (2) a materially different approach
