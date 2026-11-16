@@ -92,3 +92,12 @@
   3. Language during a run: new or changed plan and vault text the implementers write is in
      English, owner quotes stay verbatim, and unchanged text is not translated unless the phase
      says so; project rules still win.
+
+### 7. Large saved auto-compact windows (plugin 0.7.4)
+
+- An owner saw new manager sessions still running with a 600k auto-compact window. `/autocompact`
+  saves its value per model in the user settings, so a window set on an older plugin version's
+  advice stays in place, and the session check treated any value already set as the owner's
+  choice and said nothing. The session check now also recommends `/autocompact 300k` when the
+  saved value is above 300k, naming the current value; a value of 300k or less is still left alone,
+  and the manager never changes a setting itself.
