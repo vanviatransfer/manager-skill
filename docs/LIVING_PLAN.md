@@ -171,8 +171,8 @@ Notes: B2.
   list) so the rotation count and the series survive a compaction; (b) before the final report,
   read the Risks section of each phase's report file (the short return omits it); (c) when rotating
   during an integration round, the `Fix round` field says `blockers: none (integration)`.
-- 2026-11-16: after a live test, plugin 0.7.3 (PR #36) counts integration rounds separately (at
-  most 5 per phase) from fix rounds, and rotates on tokens (about 400k, or 3 fix rounds above about
+- 2026-11-16: after a live test, plugin 0.7.3 (PR #36) counts integration rounds separately from
+  fix rounds (at most 5 per phase), and rotates on tokens (about 400k, or 3 fix rounds above about
   150k) instead of 3 resumed rounds; P3's rotation line is updated to match.
 
 ## How to keep this plan alive
