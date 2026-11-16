@@ -83,9 +83,9 @@
   cost about 2k tokens; the rotation cost a fresh start of about 22k). Owner-approved, 2026-11-16:
   1. Separate counters: the fix-round brake, the approach question and rotation count only rounds
      after a CHANGES REQUIRED review. Integration rounds (loop step 2 and 4a step 3) have their own
-     cap of 5 per phase (a plan or project limit on review attempts still wins); hitting it blocks
-     the phase as "default branch moving faster than the phase can land". The review-ledger marks
-     integration rounds `INTEGRATE`, so both counts come from it.
+     limit, at most 5 per phase (a plan or project limit on review attempts still wins); a 6th
+     needed blocks the phase as "default branch moving faster than the phase can land". The
+     review-ledger marks integration rounds `INTEGRATE`, so both counts come from it.
   2. Rotation by tokens: a fresh implementer once the current one's cumulative `subagent_tokens`
      reach about 400k, or after 3 of its fix rounds once they are above about 150k (design
      choices). Integration rounds never trigger rotation by count.

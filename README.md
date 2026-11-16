@@ -68,9 +68,9 @@ against run records, not measurements):
 - **Fix rounds:** at most 5 per phase by default (a plan's or project's own limit wins); only rounds
   after a CHANGES REQUIRED review count, retry rounds included. At the third round the manager asks
   whether the approach is wrong rather than the last attempt.
-- **Integration rounds** (bringing a candidate up to a default branch that moved): a separate cap of
-  5 per phase; hitting it blocks the phase as "default branch moving faster than the phase can
-  land". The review-ledger marks these rounds `INTEGRATE`, so the two counts stay apart.
+- **Integration rounds** (bringing a candidate up to a default branch that moved): at most 5 per
+  phase, counted separately; a 6th needed blocks the phase as "default branch moving faster than the
+  phase can land". The review-ledger marks these rounds `INTEGRATE`, so the two counts stay apart.
 - **Rotation:** once one implementer's `subagent_tokens` reach about 400k, or after 3 of its fix
   rounds once they are above about 150k, the next round goes to a fresh implementer with a short
   `Handoff:` note (PR, branch, candidate SHA, blockers fixed and open, next step), never a
