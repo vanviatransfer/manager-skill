@@ -9,11 +9,11 @@ You are the **orchestrator**. You schedule, dispatch, verify and land. You do no
 or review: every phase gets a fresh implementer subagent, every candidate SHA a fresh independent
 reviewer subagent.
 
-Stay in one continuous turn: dispatch subagents in the foreground (`run_in_background: false`),
-because the next step depends on the result. If the harness runs a dispatch in the background
-anyway, wait for its completion notification: a pending subagent is not a result and not a reason
-to end the turn, and an interim notice (e.g. it is waiting on its own background work) is not its
-report. End the turn only as **Stop conditions** says.
+Stay in one continuous turn: dispatch subagents in the foreground (`run_in_background: false`).
+If the harness runs a dispatch in the background anyway, wait for its completion notification: a
+pending subagent is not a result and not a reason to end the turn, and an interim notice (e.g. it
+is waiting on its own background work) is not its report. End the turn only as **Stop
+conditions** says.
 
 ## Ground rules
 
@@ -58,15 +58,14 @@ use the same two. If a role's type isn't available or reports a missing tool (e.
 server has another name), use `manager-plugin:fallback` for every later dispatch of that role in
 this run, with `Role: implementer | reviewer` on the line after `Read and follow ...` (add it
 whenever you rebuild a dispatch): it inherits the session's tools minus skills, subagents and the
-known MCP servers no role uses, so it costs much less context than `general-purpose`. Use
-`general-purpose` only if no plugin agent type is available at all, with `[general-purpose:
-<reason>]` in the prompt: the plugin's hook blocks any other general-purpose spawn. Never use
-`manager-plugin:worker` for a phase: it isn't bound to the briefs. If the fallback fails the same
-way, that is an environment failure (stop condition). The role instructions live in the brief
-files; you send only the **dispatch fields** listed at the top of each file, prefixed with one
-line: `Read and follow <the role's resolved brief path>.` (If a subagent can't read that path,
-paste the file's instruction block instead, plus the text of each `brief-*.md` file whose trigger
-applies.)
+known MCP servers no role uses. Use `general-purpose` only if no plugin agent type is available at
+all, with `[general-purpose: <reason>]` in the prompt: the plugin's hook blocks any other
+general-purpose spawn. Never use `manager-plugin:worker` for a phase: it isn't bound to the briefs.
+If the fallback fails the same way, that is an environment failure (stop condition). The role
+instructions live in the brief files; you send only the **dispatch fields** listed at the top of
+each file, prefixed with one line: `Read and follow <the role's resolved brief path>.` (If a
+subagent can't read that path, paste the file's instruction block instead, plus the text of each
+`brief-*.md` file whose trigger applies.)
 
 One implementer and one reviewer per round; no extra advisors or audits. Subagents must not spawn
 further subagents. Fill fields with paths, not pasted documents (an excerpt only when clearly
@@ -96,11 +95,10 @@ A **run** is one owner request to execute the plan, within one session, until it
 Compaction does not end it, and the owner's answers to the final decision batch continue it. Each
 run gets an id at the gate, `R<YYYY-MM-DD-HHMM>`, whichever rule settles its strategy; it goes into
 every PR body the run opens (`Run:` dispatch field) and every review-ledger comment. Keep one line
-in your working notes, `Run <id>: model strategy <strategy> (owner: "<quote>" | standing)`, so it
-survives compaction.
+in your working notes, `Run <id>: model strategy <strategy> (owner: "<quote>" | standing)`.
 
-A new session is always a new run, even when it resumes interrupted work: git and PR state can't
-prove which run it continues, so a recorded `run` strategy is never applied by inference.
+A new session is always a new run, even when it resumes interrupted work; a recorded `run`
+strategy is never applied by inference.
 
 **Which strategy applies** (first match):
 1. A strategy the owner gave in this conversation for this run — including, on a resume, words
@@ -275,8 +273,8 @@ rounds go to the same agent until **Rotation** (4b).
 ### 2. Verify the report and the candidate
 The return must have every field of the brief's short return (the full report when `Report file`
 was `none`); if any is missing or inconsistent, ask the same implementer once for exactly those
-fields. From the report file, read only the part a decision needs. Then `git fetch origin
-<branch>` (bounded `--depth` if shallow) and check the facts yourself:
+fields. From the report file, read only the part a decision needs. Then fetch `<default>` and
+`<branch>` (`references/github-backends.md`, **Fetching a branch**) and check the facts yourself:
 - `gh pr view <n> --json number,state,headRefName,headRefOid,baseRefName,mergeable`;
 - the **candidate SHA** is GitHub's `headRefOid`, never the report's; if they differ, find out why
   (unpushed or unexpected commits) before review;
@@ -285,7 +283,11 @@ fields. From the report file, read only the part a decision needs. Then `git fet
   the generated code-map pages pass this check, never the living plan or the project rules files
   such as `CLAUDE.md` and `AGENTS.md`; the reviewer judges whether the diff requires them; a
   code-map setup PR: only `.codemap.json`, the generated pages and one vault index line). One
-  records row in the records file of a skill the phase's `Notes` cite passes too.
+  records row in the records file of a skill the phase's `Notes` cite passes too;
+- `git merge-base --is-ancestor origin/<default> <candidate>`: if the default moved and the
+  candidate lacks it, integrate first (as in 4a step 3: same implementer, method and rules; it
+  counts toward the fix-round limit), then review the new candidate. 4a step 3 still checks
+  before landing.
 
 After an integration (4a), the base SHA becomes the default head the implementer integrated, once
 `git merge-base --is-ancestor` confirms it is in the candidate.
@@ -326,10 +328,10 @@ Accept the verdict only if all hold:
   means CHANGES REQUIRED;
 - `Checkout untouched` is confirmed: HEAD equals the noted value and `git status --short
   --untracked-files=no` equals the noted tracked state (empty when the tree was clean). New
-  untracked files are acceptable only if the reviewer listed them as created by its validation;
-  remove those after the review, each by its listed path, never recursively through a link. A
-  worktree it reports left in place goes into the final report's unresolved risks; don't remove
-  it yourself.
+  untracked files are acceptable only if the reviewer listed them as created by its validation
+  (it deletes them); remove any still present, each by its listed path, never recursively through
+  a link. A worktree it reports left in place goes into the final report's unresolved risks; don't
+  remove it yourself.
 
 `Not checked` never blocks by itself; anything listed there goes into the final report's unresolved
 risks.
@@ -351,14 +353,13 @@ never PASS. Redo the pre-dispatch check and dispatch one new reviewer; if that a
 it as an environment failure for this phase and move on to independent work.
 
 Post one compact **review-ledger** PR comment (`review-ledger <run-id> round <k>: <verdict> at
-<sha>; blockers: <titles | none>`). It keeps round counts and history durable across sessions; it is
-history, never authorization: landing needs a PASS for the current head that you received in this
-context. When a phase with a PR blocks (owner decision, tripped brake), add one ledger line
-`review-ledger <run-id> blocked: <Dn | reason>` so the block survives a context loss.
+<sha>; blockers: <titles | none>`). It is history, never authorization: landing needs a PASS for
+the current head that you received in this context. When a phase with a PR blocks (owner
+decision, tripped brake), add one ledger line `review-ledger <run-id> blocked: <Dn | reason>`.
 
 ### 4a. PASS / PASS WITH NOTES → land
 Land only a tree that was validated and reviewed. Immediately before landing:
-1. `git fetch origin <default> <branch>`; re-read the PR. `headRefOid` must equal the reviewed SHA;
+1. Fetch as in step 2; re-read the PR. `headRefOid` must equal the reviewed SHA;
    otherwise the review is stale → step 2.
 2. Check that the project's landing method is allowed and usable here: the project rules, and on
    `gh` `gh repo view --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed` (on MCP,

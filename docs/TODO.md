@@ -55,3 +55,23 @@
   The thresholds (25%, 3 rounds, about 400k, 3-phase series, the windows) are design choices; the
   run records should show whether they lower tokens per landed phase. The caps' effect is
   unmeasured.
+
+### 5. Live-test fixes (plugin 0.7.2)
+
+- From a live run on a scratch test repository:
+  1. Stale candidate: loop step 2 checks that the candidate contains the current default head and
+     integrates first (as 4a step 3, counting toward the fix-round limit), so a review isn't spent
+     on a stale candidate; 4a step 3 stays the last check before landing.
+  2. Generated files: implementers stage by path (never `git add -A` / `git add .`), commit no
+     caches or build output unless the scope names them, and validate without writing them into
+     the tree where the toolchain allows.
+  3. Single-branch clones: `git fetch origin <branch>` creates no `origin/<branch>` ref, so
+     branches are fetched with an explicit refspec (`github-backends.md`, **Fetching a branch**)
+     or compared by SHA; every fetch in the skill and briefs points there.
+  4. Validation leftovers: the reviewer deletes and lists the untracked files its run created; the
+     orchestrator removes any still present, each by its listed path.
+  5. README: the full-1M-window standard rate is qualified as Claude 4.6 and later Opus and Sonnet
+     models.
+  6. Language: the living plan and the vault are written in English, whatever language a
+     project's other docs use (owner decision, 2026-11-16); talking to the owner stays in the
+     owner's language.

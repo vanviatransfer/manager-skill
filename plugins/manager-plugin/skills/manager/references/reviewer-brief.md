@@ -33,8 +33,8 @@ trigger holds (again after a compaction while it still holds):
   `.claude/skills/` → `brief-skill-records.md`;
 - a Worktree dir → `brief-worktrees.md`.
 
-**Shared checkout: read-only.** There only: `git fetch origin <default> <branch>` (bounded
-`--depth` if shallow); read-only `diff`, `show <sha>:<path>`, `log`, `rev-parse`, `status`,
+**Shared checkout: read-only.** There only: fetch `<default>` and `<branch>` (`github-backends.md`,
+**Fetching a branch**); read-only `diff`, `show <sha>:<path>`, `log`, `rev-parse`, `status`,
 `merge-base`, `rev-list`; validation below; `git worktree add/remove` only if a Worktree dir was
 given. No checkout, switch, reset, rebase, stash, commit, push or edits. Read the diff from GitHub
 (`gh pr diff <n>` / MCP `pull_request_read get_diff`) only if the candidate can't be fetched, and

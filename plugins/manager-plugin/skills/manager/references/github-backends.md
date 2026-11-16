@@ -21,6 +21,11 @@ If `gh` fails with an auth error mid-run, switch to MCP if it's available and sa
 `git` itself (fetch, diff, show, worktree, push) works the same in both backends; only GitHub API
 operations differ. Owner/repo come from `git remote get-url origin`.
 
+**Fetching a branch** (both roles). In a single-branch clone `git fetch origin <branch>` creates
+no `origin/<branch>` ref, so a check naming `origin/<branch>` fails. Fetch each branch a check
+names with an explicit refspec, `git fetch origin +refs/heads/<branch>:refs/remotes/origin/<branch>`
+(with a bounded `--depth` if the clone is shallow), or compare by SHA.
+
 ## Operation map
 
 | Operation | `gh` | GitHub MCP |
@@ -63,7 +68,7 @@ MCP results are facts from GitHub just like `gh` output; a subagent's prose is s
      commits you didn't land.
   2. If the project rules don't forbid force-pushing this branch (the same standard as a rebase
      integration):
-     `git fetch origin <default> && git checkout -B <branch> origin/<default>`, then
+     fetch `<default>` (**Fetching a branch**), `git checkout -B <branch> origin/<default>`, then
      `git push --force-with-lease=<branch>:<reviewed-sha> origin <branch>`. Always give the explicit
      expected SHA: a bare `--force-with-lease` after a `git fetch` checks against the just-fetched
      ref and protects nothing.
@@ -74,9 +79,9 @@ MCP results are facts from GitHub just like `gh` output; a subagent's prose is s
      on the branch, or merges by rebase (the next PR would replay the old commits), landing
      further phases from this branch is blocked: report it as an environment constraint (owner
      decision); don't look for another way around the rule.
-- **Shallow clones.** Cloud checkouts may be shallow. Before diffing `base...head`, fetch both refs
-  (`git fetch origin <default> <head-branch>`); fetch with a bounded `--depth` if a merge-base is
-  missing rather than `--unshallow`.
+- **Shallow clones.** Cloud checkouts may be shallow or single-branch. Before diffing
+  `base...head`, fetch both refs (**Fetching a branch**); fetch with a bounded `--depth` if a
+  merge-base is missing rather than `--unshallow`.
 - **Subagents:** the plugin's `implementer` / `reviewer` agents list only the tools they need,
   including specific `mcp__github__*` tools (a reviewer gets read tools only);
   `manager-plugin:fallback` inherits the session's tools minus skills, subagents and the known MCP

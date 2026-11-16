@@ -44,35 +44,38 @@ while its trigger holds, again after a compaction:
    native features before new code; no abstraction, option or scaffolding the plan doesn't need.
    Before changing a function, grep its callers and keep them working; a root cause outside this
    phase's scope → report it (under Risks, or `NEEDS_OWNER_DECISION`); don't fix it. Code you move
-   or merge keeps its error handling and validation. Acceptance, project rules and required tests,
+   or merge keeps its error handling and validation. Acceptance, project rules, required tests,
    validation, error handling and security always win.
-3. **Git.** `git fetch origin`. Remote `<branch>` exists → `git checkout -B <branch>
-   origin/<branch>`; if it lacks the base SHA (`git merge-base --is-ancestor <base-sha> HEAD`),
-   integrate (`brief-integration.md`) and report the new Base SHA. Else `git checkout -B <branch>
-   <base-sha>`. Commit clearly; `git push -u origin <branch>`. Never force-push or rewrite pushed
-   history (except an assigned rebase) or touch other branches.
-4. **PR** against the default branch, or update the one open for the branch (`gh pr create` / MCP
-   `create_pull_request`, tools via ToolSearch; see `github-backends.md`; a tool you need is missing
-   → `RESULT: BLOCKED`, Blocker `missing tool <name>`), with the repo's PR template if any and a
-   `Run: <run-id>` line. Phase PR, in the same PR: mark the phase done (status + PR link); write
-   the Plan records exactly (no other decision, status or model-strategy edit); update later phases
-   and the change log if facts require; never change this phase's objective, scope, risk,
-   acceptance or validation unless a Ruling requires it, then quote the Ruling in the change log.
-5. **Validate.** With a `Code map` command: run `<code map> build` before
-   the final validation and commit what it changes (generated pages: never edit them by hand).
-   Develop with focused tests; on your final commit run every required validation command once each
-   (a command the plan marks `(when: <trigger>)` is required only if this phase's current diff
-   matches the trigger, re-judged after every fix round or integration; list what you skipped and
-   why under Validation), output to a file (`cmd > /tmp/<name>.log 2>&1; echo $?`); only the exit
-   code and failure summary (failing test names, first error lines) enter context. Known-flaky: only
-   tests on the project's documented list count (never edit it to cover your failures); rerun such a
-   command at most once more, record the tests as known flaky, don't chase them. An unlisted
-   failure, or a listed test whose covered code your diff touches, is real: fix it. Rerun the full
-   set only after a change that could affect it (fix rounds and integration always do). No CI.
-6. **Leave** the shared checkout on your pushed head, tree clean (remove only untracked files your
-   validation created; commit or restore tracked ones it changed), after every round: the
-   reviewer validates there. Delete only paths you created in this dispatch; never delete
-   recursively through a link.
+3. **Git.** `git fetch origin` (branches by refspec: `github-backends.md`, **Fetching a branch**).
+   Remote `<branch>` exists → `git checkout -B <branch> origin/<branch>`; if it lacks the base SHA
+   (`git merge-base --is-ancestor <base-sha> HEAD`), integrate and report the new Base SHA. Else
+   `git checkout -B <branch> <base-sha>`. Commit clearly; stage by path (never `git add -A` /
+   `git add .`); commit no caches or build output (e.g. `__pycache__`, `*.pyc`, `node_modules`,
+   `dist`) unless the scope names them, and validate without writing them into the tree where the
+   toolchain allows (e.g. `PYTHONDONTWRITEBYTECODE=1`), else delete them before committing.
+   `git push -u origin <branch>`. Never force-push or rewrite pushed history (except an assigned
+   rebase) or touch other branches.
+4. **PR** against the default branch, or update the one open for the branch (`github-backends.md`;
+   MCP tools via ToolSearch; a missing tool → `RESULT: BLOCKED`, Blocker `missing tool <name>`),
+   with the repo's PR template if any and a `Run: <run-id>` line. In a phase PR: mark the phase done
+   (status + PR link); write the Plan records exactly (no other decision, status or model-strategy
+   edit); update later phases and the change log if facts require; never change this phase's
+   objective, scope, risk, acceptance or validation unless a Ruling requires it, then quote the
+   Ruling in the change log.
+5. **Validate.** With a `Code map` command: run `<code map> build` before the final validation and
+   commit what it changes (never hand-edit generated pages). Develop with focused tests; on your
+   final commit run every required validation command once each (a `(when: <trigger>)` command is
+   required only if this phase's diff matches the trigger, re-judged after every fix round or
+   integration; list skips and why under Validation), output to a file
+   (`cmd > /tmp/<name>.log 2>&1; echo $?`); only the exit code and failure summary (failing tests,
+   first errors) enter context. Known-flaky: only tests on the project's documented list (never edit
+   it for your failures); rerun such a command at most once more, record them as known flaky, don't
+   chase them. An unlisted failure, or a listed test whose covered code your diff touches, is real:
+   fix it. Rerun the full set only after a change that could affect it (fix rounds and integration
+   always do). No CI.
+6. **Leave** the shared checkout on your pushed head, tree clean (remove untracked files your
+   validation created; commit or restore tracked ones it changed), after every round. Delete only
+   paths you created in this dispatch, never recursively through a link.
 7. **Report.** Unverified → `not run` / `unknown`, never success. Write the full report to the
    `Report file` (replace it each round) and return only the short return; `Report file: none` or
    absent → return only the full report.
@@ -103,7 +106,7 @@ Phase: <id>
 PR: #<n> | none
 Branch: <name>
 Base SHA: <sha>
-Candidate SHA: <pushed head; must equal the remote branch head>
+Candidate SHA: <pushed head>
 Validation: <one line; failing commands and tests named>
 Blocker / decision needed: <one line | none>
 Report: <Report file path>
@@ -126,10 +129,8 @@ Next step: <what the next implementer does first>
 
 ## Fix round
 
-Message: `Fix round: PR #<n> at <sha>, CHANGES REQUIRED. Blockers (verbatim): <findings>` (a
-replacement gets it in its `Fix round` field). For a behavioural blocker whose finding gives a
-reproduction, first add a test that reaches it and see it fail, then fix (no test seam the suite
-can reach → one line under Risks). Fix them, push to the same branch (no force-push or
-history rewrite), re-run the full validation, report the new Candidate SHA. Fold in non-blocking
-notes only if trivial and in scope. A wrong or owner-level finding → Deviations / Blocker; don't
-work around it.
+Message: `Fix round: PR #<n> at <sha>, CHANGES REQUIRED. Blockers (verbatim): <findings>`. For a
+behavioural blocker whose finding gives a reproduction, first add a test that reaches it and see it
+fail, then fix (no test seam the suite can reach → one line under Risks). Fix them, push to the same
+branch, re-run the full validation, report the new Candidate SHA. Fold in non-blocking notes only if
+trivial and in scope. A wrong or owner-level finding → Deviations / Blocker; don't work around it.
