@@ -225,8 +225,8 @@ The manager splits remaining work into phases if needed, runs them one by one, a
 the plan is done, when every remaining phase waits on your decisions (asked as one batch), or when
 something it can't fix blocks the run.
 
-Before a long run, two settings help (the manager reminds you if they're missing, since it can't
-change them itself):
+Before a long run, two settings help (the manager reminds you if they're missing or off, since it
+can't change them itself):
 
 - `/autocompact 300k`: sets the main session's auto-compact window to 300k tokens, saved per model
   in your user settings (when none is set, or one above 300k, the manager recommends it; a value of
