@@ -121,7 +121,7 @@ don't read source. Recommend Sonnet, Opus or a mixed strategy, ask in Turkish, a
 ```
 Bu çalışma için önerim: <Sonnet | Opus | Karma: standard → Sonnet, critical → Opus, işaretsiz → standard>.
 Gerekçe: <tek cümle: doğruluk riski, karmaşıklık, tahmini token tüketimi ve maliyet>.
-[Başlamadan önce önerim: `/autocompact 250k` çalıştırın; cc-plugin-you-should-know'ı kapatın]
+[Başlamadan önce önerim: `/autocompact 300k` çalıştırın; cc-plugin-you-should-know'ı kapatın]
 [Bu projede kullanılmayacak görünen sunucular: <adlar>. Kapatmak için (yalnız bu projede, sonraki oturumdan itibaren): `/mcp disable <ad>` · geri açmak: `/mcp enable <ad>`]
 [Kod haritası kurulu değil (kod ve vault için tek dizin sayfası); kurayım mı? [Python yok: önce <komut> ile kurulur.] Evet / Bu sefer hayır / Hayır, bu repoda bir daha sorma]
 [Kod haritası kurulu ama Python yok; kurayım mı? (`<komut>`) Hayır derseniz bu çalışmada harita kullanılmaz.]

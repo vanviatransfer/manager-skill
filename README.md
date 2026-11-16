@@ -219,10 +219,12 @@ something it can't fix blocks the run.
 Before a long run, two settings help (the manager reminds you if they're missing, since it can't
 change them itself):
 
-- `/autocompact 250k`: sets the main session's auto-compact window to 250k tokens, saved per model
-  in your user settings (when none is set, the manager recommends 200–300k; a value you set is left
-  alone). Claude Code caps it at the model's context window. It covers the main session only; the
-  subagents' windows come from their own caps (above).
+- `/autocompact 300k`: sets the main session's auto-compact window to 300k tokens, saved per model
+  in your user settings (when none is set, the manager recommends it; a value you set is left
+  alone). 300k matches the implementer's and worker's own cap (a subagent's window is the smaller
+  of the two), and Opus and Sonnet bill the full 1M window at the standard per-token rate. Claude
+  Code caps it at the model's context window. It covers the main session only; the subagents'
+  windows come from their own caps (above).
 - Keep the built-in `cc-plugin-you-should-know` off (`/plugin disable
   cc-plugin-you-should-know@builtin`): while on, it rereads the conversation from time to time in a
   separate request to the same model and shows notes above the prompt for you to answer.

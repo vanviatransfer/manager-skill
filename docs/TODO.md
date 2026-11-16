@@ -2,7 +2,7 @@
 
 ## Done
 
-### 1. `/autocompact` before a run (plugin 0.5.2; 200–300k since 0.7.0)
+### 1. `/autocompact` before a run (plugin 0.5.2; 200–300k in 0.7.0, 300k since 0.7.1)
 
 - Findings (Claude Code docs, model-config / settings / CLI reference): `/autocompact <tokens|auto>`
   sets the window at which the main session auto-compacts (100000–1000000, `250k` style accepted),
@@ -11,11 +11,14 @@
   `CLAUDE_CODE_AUTO_COMPACT_WINDOW`. Claude Code caps it at the model's context window.
 - A skill can't run a built-in command, and editing the owner's settings silently would overstep,
   so the manager checks the value read-only in step 0 and, when none is set, recommends
-  `/autocompact 250k` (an orchestrator window of 200–300k) in the model-strategy question (or the
-  final report). A value the owner set is left alone. It covers the main session only.
+  `/autocompact 300k` in the model-strategy question (or the final report). A value the owner set
+  is left alone. It covers the main session only.
 - 0.5.2 recommended a much larger window; 0.7.0 lowered it, since a thin orchestrator should carry
   little context per turn. Expected effect (inferred, not measured): earlier compaction and fewer
-  tokens per orchestrator turn on long runs.
+  tokens per orchestrator turn on long runs. 0.7.1 settled on 300k: it equals the implementer and
+  worker cap (below 300k the orchestrator's window lowers theirs), and the Pricing page bills
+  Claude 4.6 and later models except Haiku 5.5 at the standard rate across the full 1M window
+  (checked 2026-11-16), so nothing argues for staying at or under 200k.
 
 ### 2. `cc-plugin-you-should-know` — not added
 
