@@ -9,7 +9,9 @@ index lacks → update that page (or add a page and its index line) in this PR (
 command, `<code map> mentions --base <Base SHA>` lists the pages that mention changed paths in code
 spans or links; also `grep` the vault for the symbol names and paths you rename or remove); correct
 the fact in place, keep its source (a path), add no status or plan content, and set the page's last
-line to `Verified: <date>, phase <id>, base <short Base SHA>`.
+line to `Verified: <date>, phase <id>, base <short Base SHA>`. New or changed vault text is in
+English (owner quotes stay verbatim, in the owner's words); don't translate unchanged text unless
+the phase says so.
 
 **Reviewer.** Vault updates the diff requires are in scope; changed vault content must match the
 code at the candidate. Blocker: a page the diff makes false and doesn't update, among the pages in

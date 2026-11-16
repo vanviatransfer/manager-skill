@@ -75,3 +75,20 @@
   6. Language: the living plan and the vault are written in English, whatever language a
      project's other docs use (owner decision, 2026-11-16); talking to the owner stays in the
      owner's language.
+
+### 6. Separate round counters (plugin 0.7.3)
+
+- From a live rotation test on a scratch test repository: a phase with zero defects reached fix
+  round 5 and rotated only because the default branch moved four times (each integration round
+  cost about 2k tokens; the rotation cost a fresh start of about 22k). Owner-approved, 2026-11-16:
+  1. Separate counters: the fix-round brake, the approach question and rotation count only rounds
+     after a CHANGES REQUIRED review. Integration rounds (loop step 2 and 4a step 3) have their own
+     cap of 5 per phase (a plan or project limit on review attempts still wins); hitting it blocks
+     the phase as "default branch moving faster than the phase can land". The review-ledger marks
+     integration rounds `INTEGRATE`, so both counts come from it.
+  2. Rotation by tokens: a fresh implementer once the current one's cumulative `subagent_tokens`
+     reach about 400k, or after 3 of its fix rounds once they are above about 150k (design
+     choices). Integration rounds never trigger rotation by count.
+  3. Language during a run: new or changed plan and vault text the implementers write is in
+     English, owner quotes stay verbatim, and unchanged text is not translated unless the phase
+     says so; project rules still win.

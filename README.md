@@ -65,13 +65,17 @@ The main session becomes a thin orchestrator that runs the plan one phase per PR
 Limits that keep a run's tokens down (the thresholds are design choices still to be checked
 against run records, not measurements):
 
-- **Fix rounds:** at most 5 per phase by default (a plan's or project's own limit wins); fix,
-  integration and retry rounds all count. At the third round the manager asks whether the approach
-  is wrong rather than the last attempt.
-- **Rotation:** after 3 resumed rounds of one implementer, or once its `subagent_tokens` reach about
-  400k, the next round goes to a fresh implementer with a short `Handoff:` note (PR, branch,
-  candidate SHA, blockers fixed and open, next step), never a transcript. `subagent_tokens` is
-  cumulative usage over the agent's rounds, not its current context size, so 400k is a rough proxy.
+- **Fix rounds:** at most 5 per phase by default (a plan's or project's own limit wins); only rounds
+  after a CHANGES REQUIRED review count, retry rounds included. At the third round the manager asks
+  whether the approach is wrong rather than the last attempt.
+- **Integration rounds** (bringing a candidate up to a default branch that moved): a separate cap of
+  5 per phase; hitting it blocks the phase as "default branch moving faster than the phase can
+  land". The review-ledger marks these rounds `INTEGRATE`, so the two counts stay apart.
+- **Rotation:** once one implementer's `subagent_tokens` reach about 400k, or after 3 of its fix
+  rounds once they are above about 150k, the next round goes to a fresh implementer with a short
+  `Handoff:` note (PR, branch, candidate SHA, blockers fixed and open, next step), never a
+  transcript. Integration rounds never trigger it by count. `subagent_tokens` is cumulative usage
+  over the agent's rounds, not its current context size, so the thresholds are rough proxies.
 - **Series mode:** up to 3 ready, independent, same-shape `standard` phases may run on one
   implementer one after another, each from the default head on its own branch and PR. Every PR
   still gets its own fresh reviewer, exact-SHA verdict and landing, never one verdict for several.
@@ -91,6 +95,10 @@ against run records, not measurements):
 Before a new run starts, the manager recommends a model strategy (Sonnet, Opus or a mix, with a
 one-line reason) and waits for the owner's choice, unless the owner set a standing policy; it never
 picks or escalates a model on its own.
+
+Plan and vault text the implementers write during a run (status lines, plan records, plan-only PRs,
+vault pages) is in English when new or changed; owner quotes stay verbatim, and unchanged text is
+not translated unless the phase says so. A project's own rules still win.
 
 Phases are scheduled by their declared dependencies: an owner decision or a stuck phase blocks only
 what depends on it, and everything else keeps running; the open decisions are asked in one batch at
