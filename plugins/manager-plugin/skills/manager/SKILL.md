@@ -117,7 +117,7 @@ don't read source. Recommend Sonnet, Opus or a mixed strategy, ask in Turkish, a
 ```
 Bu çalışma için önerim: <Sonnet | Opus | Karma: standard → Sonnet, critical → Opus, işaretsiz → standard>.
 Gerekçe: <tek cümle: doğruluk riski, karmaşıklık, tahmini token tüketimi ve maliyet>.
-[Başlamadan önce önerim: `/autocompact 300k` çalıştırın; cc-plugin-you-should-know'ı kapatın]
+[Başlamadan önce önerim: `/autocompact 300k` çalıştırın[ (şu an <değer>)]; cc-plugin-you-should-know'ı kapatın]
 [Bu projede kullanılmayacak görünen sunucular: <adlar>. Kapatmak için (yalnız bu projede, sonraki oturumdan itibaren): `/mcp disable <ad>` · geri açmak: `/mcp enable <ad>`]
 [Kod haritası kurulu değil (kod ve vault için tek dizin sayfası); kurayım mı? [Python yok: önce <komut> ile kurulur.] Evet / Bu sefer hayır / Hayır, bu repoda bir daha sorma]
 [Kod haritası kurulu ama Python yok; kurayım mı? (`<komut>`) Hayır derseniz bu çalışmada harita kullanılmaz.]
@@ -132,7 +132,7 @@ Guide for the recommendation: Sonnet for bounded code, docs, tests and ordinary 
 architecture, numerical or financial correctness, concurrency, security-critical code or hard
 debugging. Default to mixed by the plan's `Risk` field: `standard` phases Sonnet for both roles,
 `critical` phases Opus for both, unmarked phases standard — say all three in the question so the
-condition is settled by the owner's answer. Recommend Opus throughout only when most remaining
+owner's answer settles the condition. Recommend Opus throughout only when most remaining
 phases are critical. Opus costs more per token; say so when you recommend it.
 
 **Applying.** The approved strategy fixes, per role (and per phase or condition for a mixed one),
