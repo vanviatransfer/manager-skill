@@ -708,11 +708,6 @@ class LayoutError(Exception):
     pass
 
 
-def needs_vault(vault_dir):
-    """No vault found and none configured: the code-map skill sets one up first (create-vault)."""
-    return not vault_dir
-
-
 def safe_rel(value, what):
     if value is None:
         return None
@@ -824,9 +819,9 @@ def changed_files(root, base):
 
 # Fingerprint: a hash of the map's inputs, stored as the last line of the map page when
 # .codemap.json has "commit_check": true, so `check --quiet` can say "current" without a scan.
-# Inputs: every tracked path the scan sees, with the blob id of each file whose content is read
-# (source files, vault pages, package.json; a changed working-tree copy is hashed as it is),
-# .codemap.json, the format and this script. Anything it can't decide falls back to the full check.
+# Inputs: every tracked path the scan sees, the raw working-tree bytes of each file whose content
+# it reads (source files, vault pages, package.json), .codemap.json, the format and this script.
+# Anything it can't decide falls back to the full check.
 FP_PREFIX = "<!-- codemap-fingerprint: "
 
 
@@ -883,42 +878,43 @@ def worktree_differs(root, paths, blobs):
 
 
 def input_fingerprint(root, entries, vault, out_rel, cfg_text):
-    """Hex digest of the map's inputs, or None when it can't be computed."""
+    """Hex digest of the map's inputs, or None when it can't be computed.
+
+    The content inputs are hashed from their raw working-tree bytes (git hash-object
+    --no-filters, one call), the bytes the scan reads, never from git's view of the index: clean
+    filters, assume-unchanged and skip-worktree entries can't hide a change."""
     if entries is None:
         return None
-    rows = []
-    for mode, blob, stage, path in entries:
+    rows, readable = [], []
+    for mode, _, stage, path in entries:
         if stage != "0":  # an unresolved merge
             return None
         if mode.startswith("120000") or is_map_page(path, out_rel) or path == CONFIG \
                 or skipped(path, out_rel):
             continue
-        rows.append([path, mode, blob] if is_content_input(path, vault) else [path])
-    try:
-        # git diff-files reports assume-unchanged and skip-worktree entries as clean, but the
-        # scan reads the working tree: hash those as changed too.
-        dirty = set(git_lines(root, ["diff-files", "--name-only", "-z"])) | flagged_paths(root)
-        need = [r for r in rows if len(r) == 3 and r[0] in dirty]
-        readable = []
-        for r in need:
-            full = os.path.join(root, *r[0].split("/"))
-            if "\n" in r[0]:
-                return None
-            if link_in_path(root, r[0]) or not os.path.isfile(full):
-                r[2] = "unreadable"
+        if "\n" in path:
+            return None
+        row = [path]
+        if is_content_input(path, vault):
+            if link_in_path(root, path) or not os.path.isfile(os.path.join(root,
+                                                                           *path.split("/"))):
+                row.append("unreadable")
             else:
-                readable.append(r)
-        if readable:
+                row.append(None)
+                readable.append(row)
+        rows.append(row)
+    if readable:
+        try:
             out = subprocess.run(["git", "-C", root, "hash-object", "--no-filters",
                                   "--stdin-paths"], capture_output=True, check=True,
                                  input="\n".join(r[0] for r in readable).encode("utf-8"))
-            blobs = out.stdout.decode().split()
-            if len(blobs) != len(readable):
-                return None
-            for r, b in zip(readable, blobs):
-                r[2] = b
-    except (OSError, subprocess.CalledProcessError):
-        return None
+        except (OSError, subprocess.CalledProcessError):
+            return None
+        blobs = out.stdout.decode().split()
+        if len(blobs) != len(readable):
+            return None
+        for r, b in zip(readable, blobs):
+            r[1] = b
     h = hashlib.sha256(("codemap %d %s\0%s\0%s\0%s\0" % (FORMAT, script_hash(), vault, out_rel,
                                                         cfg_text)).encode("utf-8"))
     for r in rows:
@@ -1245,9 +1241,10 @@ def pre_commit(root):
 
 # The Claude Code hook: before a `git commit` Bash call, in a repository whose .codemap.json has
 # "commit_check": true, block the commit while the map is stale. Fails open on anything else.
-# `git` must stand in command position (line start, or after ; & | ( or a newline). Known gaps,
-# where the hook does nothing: a commit after `cd`/`pushd` or with `git -C <dir>` (another folder
-# than the session's), `/usr/bin/git commit`, and commits inside `sh -c "..."` or scripts.
+# `git` must stand in command position (line start, or after ; & | ( or a newline), outside quotes.
+# Known gaps, where the hook does nothing: a commit after `cd`/`pushd` or with `git -C <dir>`,
+# `--git-dir` or `--work-tree` (another repository than the session's), `/usr/bin/git commit`,
+# and commits inside `sh -c "..."` or scripts. A here-document's lines still count as commands.
 GIT_COMMIT = re.compile(r"""(?:^|[;&|(\n])\s*git((?:\s+(?:-C\s+(?:"[^"]*"|'[^']*'|[^\s;&|]+)"""
                         r"""|-c\s+[^\s;&|]+|--[\w-]+(?:=[^\s;&|]+)?|-[A-Za-z]))*)\s+commit"""
                         r"""(?=$|[\s;&|)])""")
@@ -1257,10 +1254,31 @@ CHANGES_DIR = re.compile(r"(?:^|[;&|(\s])(?:cd|pushd)(?:\s|$)")
 def commit_dir(command, cwd):
     """The folder a `git commit` in this shell command runs in; None if it has none, or when
     the folder can't be told for sure (`cd`, `pushd` or `git -C` before it)."""
-    m = GIT_COMMIT.search(command or "")
-    if not m or "-C" in m.group(1).split() or CHANGES_DIR.search(command[:m.start(1)]):
+    command = command or ""
+    m = next((m for m in GIT_COMMIT.finditer(command) if not in_quotes(command[:m.start()])),
+             None)
+    if not m or CHANGES_DIR.search(command[:m.start(1)]):
+        return None
+    if any(a == "-C" or a.startswith(("--git-dir", "--work-tree")) for a in m.group(1).split()):
         return None
     return cwd
+
+
+def in_quotes(prefix):
+    """True if a shell command's text ends inside a quoted string."""
+    quote, i = None, 0
+    while i < len(prefix):
+        c = prefix[i]
+        if quote == "'":
+            quote = None if c == "'" else quote
+        elif c == "\\":
+            i += 1
+        elif quote == '"':
+            quote = None if c == '"' else quote
+        elif c in "'\"":
+            quote = c
+        i += 1
+    return quote is not None
 
 
 def claude_hook(stdin_text, python):
@@ -1292,12 +1310,16 @@ def claude_hook(stdin_text, python):
 
 # The rules-file block: tells every session to use the map and the plugin's agents.
 RULES_BEGIN = "<!-- manager-plugin:code-map:begin (managed by the code-map skill) -->"
+# The begin marker of a file rules-hint created: only such a file is deleted by --remove.
+RULES_BEGIN_CREATED = ("<!-- manager-plugin:code-map:begin (managed by the code-map skill; "
+                       "it created this file) -->")
 RULES_END = "<!-- manager-plugin:code-map:end -->"
 RULES_VIA_IMPORT = "<!-- manager-plugin:code-map: the code-map block comes via @AGENTS.md -->"
 RULES_BLOCK = [
     RULES_BEGIN,
     "- Before searching the code or the vault, read the vault index and the code map (paths in",
-    "  `.codemap.json`) and use the `manager-plugin:code-map` skill's `query`, not broad grep/glob.",
+    "  `.codemap.json`) and use the `manager-plugin:code-map` skill's `query`, not broad "
+    "grep/glob.",
     "- After changing source files or vault pages, rebuild the map with that skill's `build` (its",
     "  git commit hook does it when installed).",
     "- Instead of `general-purpose`, use `manager-plugin:worker` for work that changes files,",
@@ -1331,7 +1353,10 @@ def rules_update(text, name, remove=False):
             raise LayoutError("%s: more than one code-map marker; fix them by hand" % name)
     outside = [line for i, line in enumerate(lines) if start is None or not start <= i <= end]
     via_import = name == "CLAUDE.md" and any(IMPORTS_AGENTS.match(line) for line in outside)
+    created = text is None or (start is not None and lines[start].startswith(RULES_BEGIN_CREATED))
     block = [] if remove else ([RULES_VIA_IMPORT] if via_import else RULES_BLOCK)
+    if created and block is RULES_BLOCK:
+        block = [RULES_BEGIN_CREATED] + RULES_BLOCK[1:]
     new = "".join(line + eol for line in block)
     if start is not None:
         tail = lines[end + 1:]
@@ -1349,8 +1374,8 @@ def rules_update(text, name, remove=False):
         result = text + eol + new  # no blank line: removal then knows to drop this newline
     else:
         result = text + (eol if text else "") + new  # a blank line before the block
-    if remove and result.replace("\r\n", "\n").strip() == RULES_TITLES[name]:
-        return None  # only the title this tool wrote is left
+    if remove and created and result.replace("\r\n", "\n").strip() == RULES_TITLES[name]:
+        return None  # a file this tool created, holding only its title
     return result
 
 
@@ -1467,7 +1492,7 @@ def main(argv=None):
     if args.action == "detect":
         print("vault: %s (%s)" % (vault_dir or "none", source))
         print("map: %s" % out_rel)
-        if needs_vault(vault_dir):
+        if not vault_dir:  # the code-map skill then sets up a vault first (create-vault)
             print("next: no vault; create one with the create-vault skill (Create mode), then "
                   "`build` (`build --redetect` when %s exists)" % CONFIG)
         return 0

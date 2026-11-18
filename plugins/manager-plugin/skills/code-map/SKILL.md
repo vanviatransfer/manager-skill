@@ -92,7 +92,8 @@ need it; write the block by hand).
   nothing, so it is safe on a shared checkout. It also prints broken vault links as warnings.
   `check --quiet`: the same exit codes, one short line or nothing. With `"commit_check": true` in
   `.codemap.json`, `build` ends the map page with a fingerprint line (a hash of the map's inputs:
-  the tracked paths, the git blob ids of the source files, vault pages and `package.json`, the
+  the tracked paths, the raw working-tree bytes of the source files, vault pages and `package.json`
+  as the scan reads them (so git filters and index flags can't hide a change), the
   config, the format and the script), and `check --quiet` compares it first, without a scan; when
   it can't decide, it runs the full check, so it never says current where `check` says stale.
 - `<cmd> query <term>`: definitions whose names contain the term (`file:line`), matching paths,
@@ -127,7 +128,9 @@ The map comes with a vault and the rules block, in one PR:
 its marker lines, to `AGENTS.md` and `CLAUDE.md`; run again, it updates it in place, and
 `--remove` takes it out. Besides the block it adds only, to a file it creates, a one-line title
 and a blank line, and before a block it appends, a blank line (or, when the file has no final
-newline, that newline); `--remove` takes those back too, so the file returns byte for byte.
+newline, that newline); `--remove` takes those back too, so the file returns byte for byte. A
+file it creates gets a begin marker saying so; `--remove` deletes only such a file, and only when
+nothing but its title is left.
 Nothing else changes (line endings kept). Both files are checked before either is written, and a
 rules file that is a symlink is refused. When `CLAUDE.md` already imports `AGENTS.md` (a line
 `@AGENTS.md`), it gets only one marker line saying the block comes through the import. It names

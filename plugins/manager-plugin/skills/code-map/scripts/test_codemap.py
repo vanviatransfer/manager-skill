@@ -744,14 +744,12 @@ class HookTest(unittest.TestCase):
         out = run("detect", "--root", self.root)[1]
         self.assertIn("vault: none", out)
         self.assertIn("create-vault skill (Create mode)", out)
-        self.assertTrue(codemap.needs_vault(None))
-        self.assertFalse(codemap.needs_vault("vault"))
 
     def test_rules_block_is_created_updated_and_removed(self):
         code, out = run("rules-hint", "--root", self.root)
         self.assertEqual(code, 0)
         agents = self.read("AGENTS.md")
-        self.assertTrue(agents.startswith("# Agent instructions\n\n" + codemap.RULES_BEGIN))
+        self.assertTrue(agents.startswith("# Agent instructions\n\n" + codemap.RULES_BEGIN_CREATED))
         for agent in ("worker", "researcher", "reviewer"):
             self.assertIn("`manager-plugin:%s`" % agent, agents)
         self.assertIn("manager-plugin:code-map", agents)
@@ -912,6 +910,35 @@ class HookTest(unittest.TestCase):
             run("rules-hint", "--remove", "--root", self.root)
             self.assertEqual(self.read("AGENTS.md", "rb").decode(), text, repr(text))
 
+    def test_lossy_clean_filter_never_hides_a_change(self):
+        self.opt_in()
+        self.git("config", "filter.strip.clean", "grep -v '#strip' || true")
+        self.write(".gitattributes", "src/*.py filter=strip\n")
+        self.write("src/app.py", "def run():\n    pass\n#  aaaaaaaa #strip\n")
+        self.git("add", "-A")
+        run("build", "--root", self.root)
+        self.git("add", "-A")
+        self.git("commit", "-qm", "filtered", "--no-verify")
+        self.assertEqual(self.check("--quiet"), 0)
+        self.write("src/app.py", "def run():\n    pass\nclass Zz: 1 #strip\n")  # same size
+        self.git("update-index", "--refresh", check=False)
+        self.assertEqual(self.git("diff-files", "--name-only").stdout, b"")  # git sees no change
+        self.assertEqual((self.check(), self.check("--quiet")), (1, 1))
+
+    def test_remove_keeps_a_user_file_that_equals_the_title(self):
+        for text in ("# Agent instructions\n", "# Agent instructions"):
+            self.write("AGENTS.md", text, newline="")
+            run("rules-hint", "--root", self.root)
+            self.assertNotIn(codemap.RULES_BEGIN_CREATED, self.read("AGENTS.md"))
+            run("rules-hint", "--remove", "--root", self.root)
+            self.assertEqual(self.read("AGENTS.md", "rb").decode(), text)
+        os.remove(os.path.join(self.root, "AGENTS.md"))
+        run("rules-hint", "--root", self.root)
+        run("rules-hint", "--root", self.root)  # an update keeps the "created" marker
+        self.assertIn(codemap.RULES_BEGIN_CREATED, self.read("AGENTS.md"))
+        run("rules-hint", "--remove", "--root", self.root)
+        self.assertFalse(os.path.exists(os.path.join(self.root, "AGENTS.md")))
+
     def test_commit_dir_detection(self):
         cwd = os.path.join("x", "y")
         for cmd, want in [("git commit -m 'a'", cwd), ("git add a && git commit -qm x", cwd),
@@ -920,7 +947,12 @@ class HookTest(unittest.TestCase):
                           ('git -C "sub dir" commit -m x', None), ("cd sub && git commit", None),
                           ("pushd sub; git commit -m x", None), ("echo git commit", None),
                           ("git commit-tree abc", None), ("git log --grep commit", None),
-                          ("echo git", None), ("legit commit", None)]:
+                          ("echo git", None), ("legit commit", None),
+                          ("git --git-dir=/x/.git commit -m y", None),
+                          ("git --work-tree /x commit", None), ('echo "a; git commit"', None),
+                          ("echo 'git commit' && git status", None),
+                          ("echo 'it''s'; git commit -m x", cwd),
+                          ('git commit -m "msg; git commit"', cwd)]:
             self.assertEqual(codemap.commit_dir(cmd, cwd), want, cmd)
 
 

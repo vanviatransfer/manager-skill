@@ -20,8 +20,10 @@ below are beside this file's folder: `../../create-vault/SKILL.md`, `../../code-
 
 **Reviewer**, instead of the phase-PR review: blocker if the diff holds anything but vault pages,
 `.codemap.json`, generated map pages and the `rules-hint` edits of `AGENTS.md` / `CLAUDE.md`: the
-marked block, plus a new file's one-line title and blank line, or the blank line (or missing final
-newline) before an appended block (any other change in them, or in the living plan, is a
+marked block (in `CLAUDE.md` that imports `@AGENTS.md`, instead the one marker line
+`<!-- manager-plugin:code-map: the code-map block comes via @AGENTS.md -->`), plus a new file's
+one-line title and blank line, or the blank line (or missing final newline) before an appended
+block (any other change in them, or in the living plan, is a
 blocker); if `"commit_check": true` appears without
 `+ commit check` in `Setup`; or if `<code map> check` fails. New or changed vault pages get
 `create-vault`'s review checks (facts match the code at the candidate, sources exist, no plan

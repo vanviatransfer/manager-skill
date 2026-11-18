@@ -116,14 +116,18 @@
   blocks while the map is stale. It runs only at commit time, not after every edit, and also covers
   fresh clones and cloud sessions where `.git/hooks` is empty. It does nothing when it can't tell
   which repository commits (`cd`, `git -C`, a script); those are documented gaps.
-- `check --quiet` first compares a fingerprint of the inputs (tracked paths, blob ids of the files
-  whose content the map reads, the config, the format, the script) stored on the map page; when it
-  can't decide, it runs the full check, so it never calls a stale map current. Measured once on a
-  synthetic repository (230 source files in four languages, 251 vault pages with links, 4 CPUs,
-  three runs): `build` 0.08–0.09 s, full `check` 0.07 s, `check --quiet` on a fingerprint hit
-  0.05 s, a commit touching no inputs 0.14–0.16 s with the hook (0.09 s without), a vault-page
-  commit with the hook 0.19–0.20 s, the Claude Code hook 0.06 s on a commit and under 0.01 s on
-  other commands. Small files; larger ones widen the gap between the full and the quick check.
+- `check --quiet` first compares a fingerprint of the inputs stored on the map page: the tracked
+  paths, the raw working-tree bytes of the files whose content the map reads (one `git
+  hash-object --no-filters` call, so clean filters, assume-unchanged and skip-worktree entries
+  can't hide a change, as review found twice with an index-based design), the config, the format
+  and the script. When it can't decide, it runs the full check, so it never calls a stale map
+  current. Measured once on a synthetic repository (230 source files in four languages, 251 vault
+  pages with links, 4 CPUs, three runs): `build` 0.08–0.09 s, full `check` 0.07 s, `check
+  --quiet` on a fingerprint hit 0.07 s, a commit touching no inputs 0.14–0.16 s with the hook
+  (0.09 s without), a vault-page commit with the hook 0.19–0.20 s, the Claude Code hook 0.07 s on
+  a commit and under 0.01 s on other commands. With files ten times larger (4 MB): `build` 0.19 s,
+  full `check` 0.17 s, `check --quiet` 0.07–0.08 s, the Claude Code hook 0.08–0.10 s, a
+  vault-page commit with the hook 0.33 s.
 - Sessions didn't use the map unless told: `codemap.py rules-hint` adds a short marked block to
   `AGENTS.md` and `CLAUDE.md` (read the vault index and `query` before broad searches, rebuild
   after changes, use the plugin's restricted agents instead of `general-purpose`), by skill name,
