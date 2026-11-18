@@ -61,8 +61,9 @@ other docs use.
 In every mode the same PR also sets up the code map and the rules block, without a separate
 question (the owner asking for a vault is the yes), as the `code-map` skill's "Setting it up"
 says: `.codemap.json` and `build` (`build --redetect` when `.codemap.json` has no `vault`), then
-`rules-hint`, which adds or updates its marked block in `AGENTS.md` and `CLAUDE.md` and changes
-nothing else there. No Python 3.8+ → offer the install (that skill's command for the OS); declined
+`rules-hint`, which adds or updates its marked block in `AGENTS.md` and `CLAUDE.md` (the
+`code-map` skill's **The rules block** says what else it may add: a new file's title, one
+separating line). No Python 3.8+ → offer the install (that skill's command for the OS); declined
 → the vault without a map, with the block written by hand from that skill's template, and say so
 in the report. The commit hooks are not part of this; they stay a separate owner choice.
 
@@ -82,7 +83,9 @@ in the report. The commit hooks are not part of this; they stay a separate owner
    - every fact matches the code at the candidate;
    - every source exists;
    - no plan content, status, secrets or personal data;
-   - `AGENTS.md` and `CLAUDE.md` change only inside the code-map marked block;
+   - `AGENTS.md` and `CLAUDE.md` change only as `rules-hint` writes them: the marked block, plus
+     a new file's one-line title and blank line, or the blank line (or missing final newline)
+     before an appended block;
    - the index lists every page, and every hand-written page ends with a `Verified` line;
    - with a code map: `<code map> check` passes;
    - validation: the project's docs checks if it has any, else `not required: docs-only diff`.

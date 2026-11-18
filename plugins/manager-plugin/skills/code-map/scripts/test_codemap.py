@@ -594,9 +594,13 @@ class HookTest(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(self.root, "tools")))
         outside = os.path.join(self.tmp.name, "shared-hooks")
         self.git("config", "core.hooksPath", outside)
-        code, out = run("install-hook", "--root", self.root)
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(run("install-hook", "--root", self.root)[0], 2)
+        self.assertIn("install-hook --shared", err.getvalue())
+        self.assertFalse(os.path.exists(outside))
+        code, out = run("install-hook", "--shared", "--root", self.root)
         self.assertEqual(code, 0)
-        self.assertIn("shared by every repository", out)
+        self.assertIn("shared core.hooksPath folder", out)
         self.assertTrue(codemap.is_our_hook(os.path.join(outside, "pre-commit")))
         self.git("config", "core.hooksPath", ".git/my-hooks")
         self.assertEqual(run("install-hook", "--root", self.root)[0], 0)
@@ -766,7 +770,7 @@ class HookTest(unittest.TestCase):
         self.write("AGENTS.md", agents)
         run("rules-hint", "--root", self.root)
         claude = self.read("CLAUDE.md", "rb").decode()
-        self.assertTrue(claude.startswith(original + "\r\n\r\n" + codemap.RULES_BEGIN + "\r\n"))
+        self.assertTrue(claude.startswith(original + "\r\n" + codemap.RULES_BEGIN + "\r\n"))
         self.assertNotIn("\n", claude.replace("\r\n", ""))
         old_block = "\n".join(codemap.RULES_BLOCK) + "\n"
         self.assertEqual(self.read("AGENTS.md", "rb").decode(), agents + "\n" + old_block)
@@ -778,7 +782,7 @@ class HookTest(unittest.TestCase):
                          agents + "\n" + old_block + "After the block.\n")
         run("rules-hint", "--remove", "--root", self.root)
         self.assertEqual(self.read("AGENTS.md", "rb").decode(), agents + "After the block.\n")
-        self.assertEqual(self.read("CLAUDE.md", "rb").decode(), original + "\r\n")
+        self.assertEqual(self.read("CLAUDE.md", "rb").decode(), original)
 
     def test_rules_block_via_agents_import(self):
         self.write("AGENTS.md", "# Agents\n")
@@ -813,11 +817,108 @@ class HookTest(unittest.TestCase):
         with open(skill, encoding="utf-8") as fh:
             self.assertTrue("\n".join(codemap.RULES_BLOCK) in fh.read(), "SKILL.md template")
 
+    def test_assume_unchanged_and_skip_worktree_never_hide_a_change(self):
+        self.opt_in()
+        for flag in ("--assume-unchanged", "--skip-worktree"):
+            run("build", "--root", self.root)
+            self.assertEqual(self.check("--quiet"), 0)
+            self.git("update-index", flag, "src/app.py")
+            self.write("src/app.py", "def run():\n    pass\n\ndef hidden%s():\n    pass\n"
+                       % flag.strip("-").replace("-", "_"))
+            self.assertEqual((self.check(), self.check("--quiet")), (1, 1), flag)
+            self.git("update-index", flag.replace("--", "--no-"), "src/app.py")
+            self.git("checkout", "--", "src/app.py")
+
+    def test_assume_unchanged_change_stops_the_commit(self):
+        self.install()
+        self.git("update-index", "--assume-unchanged", "vault/topic.md")
+        self.write("vault/topic.md", "# Topic\n\nnot staged\n")
+        self.write("vault/new.md", "# New\n")
+        self.git("add", "vault/new.md")
+        p = self.commit()
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("vault/topic.md has unstaged changes", p.stderr.decode())
+
+    def test_commit_with_paths_is_refused_with_a_reason(self):
+        self.install()
+        self.write("vault/new.md", "# New\n")
+        self.git("add", "vault/new.md")
+        p = self.git("commit", "-qm", "only", "--", "vault/new.md", check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("without paths", p.stderr.decode())
+        self.write("notes.txt", "other\n")
+        p = self.git("commit", "-qm", "only", "--", "notes.txt", check=False)
+        self.assertEqual(p.returncode, 0)  # no map input: nothing to stage, nothing refused
+
+    def test_map_pages_are_staged_as_literal_paths(self):
+        self.write(".codemap.json", '{"vault": "vault", "map": "notes/m*.md"}\n')
+        run("build", "--root", self.root)
+        self.write("notes/mx.md", "plain notes\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "glob map", "--no-verify")
+        self.install()
+        self.write("notes/mx.md", "edited, not staged\n")
+        self.write("vault/new.md", "# New\n")
+        self.git("add", "vault/new.md")
+        self.assertEqual(self.commit().returncode, 0, self.commit().stderr)
+        self.assertIn("notes/m*.md", self.committed())
+        self.assertNotIn("notes/mx.md", self.committed())
+        self.assertIn(b" M notes/mx.md", self.git("status", "--porcelain").stdout)
+
+    def test_hooks_folder_behind_a_symlink_is_refused(self):
+        if not hasattr(os, "symlink"):
+            self.skipTest("no symlinks")
+        target = os.path.join(self.tmp.name, "elsewhere")
+        os.makedirs(target)
+        os.symlink(target, os.path.join(self.root, ".git", "linked"))
+        for value in (".git/linked/", ".git/linked", ".git/linked/sub"):
+            self.git("config", "core.hooksPath", value)
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(run("install-hook", "--shared", "--root", self.root)[0], 2,
+                                 value)
+        self.assertEqual(os.listdir(target), [])
+
+    def test_locator_ignores_odd_and_tracked_folders(self):
+        base = os.path.join(self.tmp.name, "cache", "manager-plugin")
+        for v in ("0.9.0", "9.9.9-dev", "latest"):
+            d = os.path.join(base, v, "skills", "code-map", "scripts")
+            os.makedirs(d)
+            open(os.path.join(d, "codemap.py"), "w").close()
+        gone = os.path.join(base, "0.7.4", "skills", "code-map", "scripts", "codemap.py")
+        out = subprocess.run([sys.executable, "-c", codemap.LOCATOR, gone],
+                             capture_output=True).stdout.decode().strip()
+        self.assertTrue(out.replace("\\", "/").endswith("/0.9.0/skills/code-map/scripts/"
+                                                        "codemap.py"), out)
+        inside_repo = os.path.join(self.root, "plugins", "manager-plugin")
+        d = os.path.join(inside_repo, "1.0.0", "skills", "code-map", "scripts")
+        os.makedirs(d)
+        open(os.path.join(d, "codemap.py"), "w").close()
+        gone = os.path.join(inside_repo, "0.7.4", "skills", "code-map", "scripts", "codemap.py")
+        out = subprocess.run([sys.executable, "-c", codemap.LOCATOR, gone],
+                             capture_output=True).stdout.decode().strip()
+        self.assertEqual(out, "")
+
+    def test_rules_files_are_both_checked_before_writing(self):
+        self.write("CLAUDE.md", "x\n" + codemap.RULES_BEGIN + "\nno end\n")
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(run("rules-hint", "--root", self.root)[0], 2)
+        self.assertFalse(os.path.exists(os.path.join(self.root, "AGENTS.md")))
+
+    def test_rules_block_round_trip_without_final_newline(self):
+        for text in ("no newline", "two\nlines", "crlf\r\nno end", "", "\n", "ends\n\n"):
+            self.write("AGENTS.md", text, newline="")
+            run("rules-hint", "--root", self.root)
+            self.assertIn(codemap.RULES_END, self.read("AGENTS.md"))
+            run("rules-hint", "--remove", "--root", self.root)
+            self.assertEqual(self.read("AGENTS.md", "rb").decode(), text, repr(text))
+
     def test_commit_dir_detection(self):
         cwd = os.path.join("x", "y")
         for cmd, want in [("git commit -m 'a'", cwd), ("git add a && git commit -qm x", cwd),
-                          ('git -C "sub dir" commit -m x', os.path.join(cwd, "sub dir")),
                           ("git -c user.name=a commit --amend", cwd),
+                          ("ls\n  git commit -m x", cwd), ("(git commit -m x)", cwd),
+                          ('git -C "sub dir" commit -m x', None), ("cd sub && git commit", None),
+                          ("pushd sub; git commit -m x", None), ("echo git commit", None),
                           ("git commit-tree abc", None), ("git log --grep commit", None),
                           ("echo git", None), ("legit commit", None)]:
             self.assertEqual(codemap.commit_dir(cmd, cwd), want, cmd)

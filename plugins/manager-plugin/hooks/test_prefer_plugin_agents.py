@@ -132,8 +132,9 @@ class CodemapCommitCheckTest(unittest.TestCase):
         self.assertEqual(len(err.strip().splitlines()), 1)
         self.assertIn("codemap.py\" build", err)
         self.assertIn("vault/map.md", err)
-        code, _ = self.hook('git -C "%s" commit -m x' % self.root, cwd=self.tmp)
-        self.assertEqual(code, 2)
+        for cmd in ('git -C "%s" commit -m x' % self.root, "cd %s && git commit -m x" % self.root,
+                    "echo git commit"):
+            self.assertEqual(self.hook(cmd, cwd=self.tmp)[0], 0, cmd)  # can't tell: fail open
 
     def test_opted_in_current_map_passes(self):
         self.opt_in()

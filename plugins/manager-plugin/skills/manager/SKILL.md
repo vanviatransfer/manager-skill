@@ -277,8 +277,8 @@ fields. From the report file, read only the part a decision needs. Then fetch `<
 - `git diff --name-only <base-sha>...<candidate>` stays inside the phase scope (vault pages and
   the generated code-map pages pass this check, never the living plan or the project rules files
   such as `CLAUDE.md` and `AGENTS.md`; the reviewer judges whether the diff requires them; a
-  setup PR: only vault and map files, `.codemap.json` and the `AGENTS.md`/`CLAUDE.md` marked
-  blocks). One
+  setup PR: only vault and map files, `.codemap.json` and the `AGENTS.md`/`CLAUDE.md` `rules-hint`
+  edits). One
   records row in the records file of a skill the phase's `Notes` cite passes too;
 - `git merge-base --is-ancestor origin/<default> <candidate>`: if the default moved and the
   candidate lacks it, integrate first (as in 4a step 3: same implementer, method and rules, an

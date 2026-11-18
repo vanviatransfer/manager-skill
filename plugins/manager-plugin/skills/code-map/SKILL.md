@@ -125,10 +125,14 @@ The map comes with a vault and the rules block, in one PR:
 
 **The rules block.** Sessions don't use the map unless told. `rules-hint` adds this block, between
 its marker lines, to `AGENTS.md` and `CLAUDE.md`; run again, it updates it in place, and
-`--remove` takes it out. Nothing else in the files changes (line endings kept), and a rules file
-that is a symlink is refused. When `CLAUDE.md` already imports `AGENTS.md` (a line `@AGENTS.md`),
-it gets only one marker line saying the block comes through the import. It names the skill, never
-a path to the script (that differs per machine). Without Python, write the same block by hand:
+`--remove` takes it out. Besides the block it adds only, to a file it creates, a one-line title
+and a blank line, and before a block it appends, a blank line (or, when the file has no final
+newline, that newline); `--remove` takes those back too, so the file returns byte for byte.
+Nothing else changes (line endings kept). Both files are checked before either is written, and a
+rules file that is a symlink is refused. When `CLAUDE.md` already imports `AGENTS.md` (a line
+`@AGENTS.md`), it gets only one marker line saying the block comes through the import. It names
+the skill, never a path to the script (that differs per machine). Without Python, write the same
+block by hand:
 
 ```
 <!-- manager-plugin:code-map:begin (managed by the code-map skill) -->
@@ -153,16 +157,21 @@ time. Both are off until the owner turns them on; turn one on only after the own
   only the regenerated map pages, so they land in the same commit. A commit touching none of them
   runs no build.
 - It stops the commit, with a one-line reason, when an input has unstaged changes (the map would
-  be built from the working tree: stage or stash them, then commit), or when `build` refuses
-  (exit 2: a hand-written file in the map's page folder, an invalid layout).
+  be built from the working tree: stage or stash them, then commit; files marked assume-unchanged
+  or skip-worktree count too), when `build` refuses (exit 2: a hand-written file in the map's page
+  folder, an invalid layout), or for `git commit <paths>` / `--only` when the map needs a rebuild
+  (git can't take the map pages into that commit: stage the files and commit without paths).
 - It is a POSIX `sh` script (Git for Windows runs hooks through its own `sh`, also for a commit
   started from PowerShell). It finds Python as above and runs this script by the path it had at
-  install time (or the newest plugin version beside it); with no Python or no script it warns and
-  lets the commit through.
+  install time, or else the newest plugin version beside it (only folders named like a version
+  number, outside any git work tree); with no Python or no script it warns and lets the commit
+  through.
 - An existing `pre-commit` hook is kept as `pre-commit.codemap-chained` and runs first; its
   failure stops the commit. `uninstall-hook` puts it back unchanged. A hook file that is a symlink
-  is never replaced. With `core.hooksPath` set, it installs there only if that folder is outside
-  the work tree (or inside `.git`), and says the folder is shared; inside the work tree it refuses.
+  is never replaced, and nothing is written through a symlinked folder. With `core.hooksPath` set:
+  a folder inside `.git` is used as is; one elsewhere in the work tree is refused (its files may be
+  tracked); one outside the repository, which other repositories may share, only with
+  `install-hook --shared`.
 
 **Claude Code commit check** (versioned, so it also works in fresh clones and cloud sessions):
 - on: set `"commit_check": true` in `.codemap.json`, run `build` and commit both; off: remove the
@@ -172,7 +181,10 @@ time. Both are off until the owner turns them on; turn one on only after the own
   Claude to run `build`, stage the map pages and commit again. When this clone has the git hook,
   it leaves the refresh to that. No key, no `.codemap.json`, no Python or any error: it does
   nothing. It checks the working tree before the command runs, so a `git add` in the same command
-  isn't seen yet; the git hook covers that case.
+  isn't seen yet; the git hook covers that case. It also does nothing, as known gaps, when it
+  can't be sure which repository commits: `cd` / `pushd` or `git -C <dir>` before the commit,
+  `/usr/bin/git commit`, or a commit inside `sh -c "..."` or a script (`git` must stand in command
+  position, so `echo git commit` is no commit).
 
 ## Rules
 

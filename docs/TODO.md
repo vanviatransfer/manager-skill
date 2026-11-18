@@ -109,11 +109,13 @@
 - Two opt-in commit hooks, both off by default. A git pre-commit hook, per clone (`codemap.py
   install-hook` / `uninstall-hook`): when staged changes touch the map's inputs it runs `build`
   and stages only the map pages; it stops the commit when an input has unstaged changes or the
-  build refuses, chains an existing hook (run first, restored on uninstall) and writes nothing
-  inside the work tree under `core.hooksPath`. A Claude Code `PreToolUse` hook on Bash, versioned
+  build refuses, chains an existing hook (run first, restored on uninstall), writes nothing inside
+  the work tree under `core.hooksPath`, and uses a shared `core.hooksPath` folder outside the
+  repository only with `--shared`. A Claude Code `PreToolUse` hook on Bash, versioned
   (`"commit_check": true` in `.codemap.json`): before a `git commit` it runs `check --quiet` and
   blocks while the map is stale. It runs only at commit time, not after every edit, and also covers
-  fresh clones and cloud sessions where `.git/hooks` is empty.
+  fresh clones and cloud sessions where `.git/hooks` is empty. It does nothing when it can't tell
+  which repository commits (`cd`, `git -C`, a script); those are documented gaps.
 - `check --quiet` first compares a fingerprint of the inputs (tracked paths, blob ids of the files
   whose content the map reads, the config, the format, the script) stored on the map page; when it
   can't decide, it runs the full check, so it never calls a stale map current. Measured once on a
