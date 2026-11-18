@@ -119,13 +119,14 @@ Bu çalışma için önerim: <Sonnet | Opus | Karma: standard → Sonnet, critic
 Gerekçe: <tek cümle: doğruluk riski, karmaşıklık, tahmini token tüketimi ve maliyet>.
 [Başlamadan önce önerim: `/autocompact 300k` çalıştırın[ (şu an <değer>)]; cc-plugin-you-should-know'ı kapatın]
 [Bu projede kullanılmayacak görünen sunucular: <adlar>. Kapatmak için (yalnız bu projede, sonraki oturumdan itibaren): `/mcp disable <ad>` · geri açmak: `/mcp enable <ad>`]
-[Kod haritası kurulu değil (kod ve vault için tek dizin sayfası); kurayım mı? [Python yok: önce <komut> ile kurulur.] Evet / Bu sefer hayır / Hayır, bu repoda bir daha sorma]
-[Kod haritası kurulu ama Python yok; kurayım mı? (`<komut>`) Hayır derseniz bu çalışmada harita kullanılmaz.]
+[Bu repoda vault yok. Bu repoda sürekli çalışacaksanız kurmanızı öneririm: projenin mimarisi, modülleri, işletimi, entegrasyonları, terimleri ve alınmış kararlar ile gerekçeleri kalıcı sayfalara yazılır, kod haritası kurulur; oturumlar (ajanlar dahil) her seferinde baştan aramak yerine bunları okur. Kısa süreli bir repoysa gerek yok. Kurayım mı? Evet / Bu sefer hayır / Hayır, bu repoda bir daha sorma]
+[Haritayı commit'te güncel tutayım mı? (Claude Code commit kontrolü; git kancası için komut veririm) Evet / Hayır]
+[Python yok; kurayım mı? (`<komut>`) Hayır: harita kullanılmaz.]
 Model tercihiniz hangisi?
 ```
 
-The bracketed lines only when step 0 found something (the session check, a code map not set up, a
-code map set up but no Python), with only the items it found. An install answer is carried out right
+The bracketed lines only when step 0 found something (the session check, no vault, a setup PR to
+make, no Python), with only the items it found. An install answer is carried out right
 after the gate.
 
 Guide for the recommendation: Sonnet for bounded code, docs, tests and ordinary reviews; Opus for
@@ -157,13 +158,11 @@ running the other phases.
 
 ## Code map — checked every run
 
-At step 6 (after the fetch and the plan read), before any dispatch, whatever the model strategy:
-read `references/code-map-check.md` and settle `Code map: <cmd> | none` as it says.
-
-The code-map question goes into the model-strategy question when that is asked; otherwise it is a
-question of its own that ends the turn, asked once per run. Keep the answer as one working-notes
-line, `Run <id>: code map <set up | setup PR #<n> | none (owner: "<quote>")>`, so a compaction
-neither asks again nor loses it.
+At step 6, before any dispatch, whatever the model strategy: read `references/code-map-check.md`
+(vault, map, rules block) and settle `Code map: <cmd> | none`. Its questions join the gate when
+asked, else end the turn as one question, once per run.
+Keep one working-notes line, `Run <id>: code map <set up | setup PR #<n> | none (owner:
+"<quote>")>`, so a compaction neither asks again nor loses it.
 
 ## 0. Establish state (also how you resume after compaction or in a new session)
 
@@ -216,10 +215,9 @@ Derive state from durable sources only — never from memory of an earlier conte
    - PRs merged but the phase not marked done → mark it done in the next PR;
    - an open plan-only PR (`phase/plan-*`) → resume it like a phase if its Plan change is still
      needed; otherwise report it rather than open a duplicate;
-   - an open code-map setup PR (`setup/code-map*`, or `Setup: code map` work on the designated
-     branch) → resume it like a plan-only PR if the owner says yes to the code-map question again;
-     otherwise report it and don't touch it (on a designated branch it occupies the branch: stop,
-     as **Sequential phases** says);
+   - an open setup PR (`setup/code-map*`, or `Setup: code map` work on the designated branch) →
+     resume it like a plan-only PR if step 6 still needs it; else report it, untouched (on a
+     designated branch it occupies the branch: stop, as **Sequential phases** says);
    - an open PR that matches no phase → say so; don't touch it.
 6. **Model strategy gate** and **Code map** check (both above; evaluate the code map first).
    Everything before this point is read-only.
@@ -279,7 +277,8 @@ fields. From the report file, read only the part a decision needs. Then fetch `<
 - `git diff --name-only <base-sha>...<candidate>` stays inside the phase scope (vault pages and
   the generated code-map pages pass this check, never the living plan or the project rules files
   such as `CLAUDE.md` and `AGENTS.md`; the reviewer judges whether the diff requires them; a
-  code-map setup PR: only `.codemap.json`, the generated pages and one vault index line). One
+  setup PR: only vault and map files, `.codemap.json` and the `AGENTS.md`/`CLAUDE.md` marked
+  blocks). One
   records row in the records file of a skill the phase's `Notes` cite passes too;
 - `git merge-base --is-ancestor origin/<default> <candidate>`: if the default moved and the
   candidate lacks it, integrate first (as in 4a step 3: same implementer, method and rules, an
@@ -462,9 +461,8 @@ its first write (the first phase outcome) and follow it.
 
 ## Stop conditions
 
-End the turn only for a question that blocks all work (the model-strategy gate, the code-map
-question, the plan's location, a new plan's approval), or when no ready phase is left, and say which
-holds:
+End the turn only for a question that blocks all work (the model-strategy gate, the vault
+question, the plan's location, a new plan's approval), or when no ready phase is left; say which:
 - the plan is complete;
 - every remaining phase is blocked (owner decisions, tripped brakes, refused landings);
 - the environment is persistently broken after one repair attempt, or the shared checkout holds
@@ -474,7 +472,7 @@ Before the final report, read the Risks section of each phase's report file (the
 omits it).
 Final report, compact: phases landed (PR, merged SHA); phases blocked and why; the model strategy
 used and any model concerns; the plugin version and usage change (if readable); the run record path,
-or why it was skipped; the code map (set up, set up in this run, or not used and why); session-check
+or why it was skipped; the vault and code map (set up, set up now, or not and why); session-check
 recommendations not already given at the gate; one line on repo-enabled plugins, MCP servers or
 skills found in step 0 (names, "disable for this repo if unneeded") and any fallback dispatch
 (`manager-plugin:fallback` or `general-purpose`); unresolved risks (including validation the

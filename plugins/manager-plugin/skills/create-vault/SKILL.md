@@ -36,8 +36,8 @@ other docs use.
   updates it in a phase PR. A fact the code doesn't confirm is marked `(unverified)` or left out. A
   changed fact is corrected in place, never appended as a new version.
 - `map.md` (and `map/<dir>.md` in large repos): the generated code map, built with the `code-map`
-  skill (it offers to install Python 3.8+ if it is missing; skipped only if the owner declines);
-  listed in the index, never edited by hand, no `Verified` line (its `check` is its review).
+  skill (**Map and rules block**); listed in the index, never edited by hand, no `Verified` line
+  (its `check` is its review).
 - `skills/<name>/records.md`: a self-training skill's per-use records (the `self-training-skills`
   skill), evidence, not knowledge. The index lists it in one line, it has no `Verified` line, and a
   refresh never rewrites it.
@@ -51,19 +51,28 @@ other docs use.
    Ask the owner, in one numbered batch, only what the code can't answer.
 2. **Adopt** (a vault exists). Keep its structure and file names. Add only what is missing from the
    rules above: an index line, a `Verified` line, a source. Report what doesn't fit (status, plan
-   content, secrets) instead of rewriting it. With Python, set up the code map for it (the
-   `code-map` skill's "Setting it up").
+   content, secrets) instead of rewriting it.
 3. **Refresh** (the owner asks to update it). For each page, check its facts against the code at
    the default branch head; correct what changed, mark what you can't confirm, and update the
    `Verified` lines. Touch no page you didn't check.
+
+## Map and rules block
+
+In every mode the same PR also sets up the code map and the rules block, without a separate
+question (the owner asking for a vault is the yes), as the `code-map` skill's "Setting it up"
+says: `.codemap.json` and `build` (`build --redetect` when `.codemap.json` has no `vault`), then
+`rules-hint`, which adds or updates its marked block in `AGENTS.md` and `CLAUDE.md` and changes
+nothing else there. No Python 3.8+ → offer the install (that skill's command for the OS); declined
+→ the vault without a map, with the block written by hand from that skill's template, and say so
+in the report. The commit hooks are not part of this; they stay a separate owner choice.
 
 ## Landing
 
 1. Check the checkout first: a dirty tree or local commits on no remote ref → never discard them;
    stop and report. Then fetch, branch from the default branch (`vault/<mode>-<date>`, or the
-   session's designated branch), with a code map, run its `build` after the pages are final (the
-   vault index holds titles and word counts); commit and open a PR. Follow the project's rules
-   first.
+   session's designated branch), run the map's `build` after the pages are final (the vault index
+   holds titles and word counts) and `rules-hint`; commit by path and open a PR. Follow the
+   project's rules first.
 2. Independent review: dispatch a new `manager-plugin:reviewer` (if that type can't run here,
    `manager-plugin:fallback` with `Role: reviewer`, else `general-purpose` with `[general-purpose:
    <reason>]` in its prompt, which the plugin's hook requires). Tell it this is a manual review of
@@ -73,6 +82,7 @@ other docs use.
    - every fact matches the code at the candidate;
    - every source exists;
    - no plan content, status, secrets or personal data;
+   - `AGENTS.md` and `CLAUDE.md` change only inside the code-map marked block;
    - the index lists every page, and every hand-written page ends with a `Verified` line;
    - with a code map: `<code map> check` passes;
    - validation: the project's docs checks if it has any, else `not required: docs-only diff`.
@@ -93,5 +103,5 @@ other docs use.
 
 ## Report
 
-In the owner's language: mode, pages created or changed, what the owner still has to answer, the
-PR, and the review verdict.
+In the owner's language: mode, pages created or changed, whether the map was set up (or why not),
+what the owner still has to answer, the PR, and the review verdict.

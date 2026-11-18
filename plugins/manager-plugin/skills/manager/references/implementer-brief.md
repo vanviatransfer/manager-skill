@@ -16,7 +16,7 @@ Rulings: <orchestrator rulings / quoted owner words | none>
 Plan records: <exact entries: open decisions, Decided moves, new binding decisions, status
   corrections, model-strategy record | none>
 Plan change: <exact plan text, or a specification file path; plan-only PR only>
-Setup: <code map; code-map setup PR only>
+Setup: <code map | code map + commit check; setup PR only>
 Fix round: <PR #<n> at <sha>; blockers verbatim; replacement implementer only>
 Handoff: <note path; rotation only>
 Code map: <python command and quoted codemap.py path | none>

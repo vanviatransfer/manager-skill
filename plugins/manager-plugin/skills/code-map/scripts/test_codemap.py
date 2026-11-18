@@ -2,6 +2,7 @@
 import contextlib
 import io
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -446,6 +447,380 @@ class CodemapTest(unittest.TestCase):
         self.assertIn("app/util.py:1 Helper", out)
         code, out = run("query", "util.py", "--root", self.root)
         self.assertIn("<- app/main.py", out)
+
+
+GIT_ENV = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t",
+               GIT_COMMITTER_EMAIL="t@t", GIT_CONFIG_NOSYSTEM="1", PYTHONDONTWRITEBYTECODE="1")
+
+
+class HookTest(unittest.TestCase):
+    """The git pre-commit hook, the fingerprint and the rules block, in temporary repos."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = os.path.join(self.tmp.name, "repo")
+        self.home = os.path.join(self.tmp.name, "home")
+        os.makedirs(self.home)
+        self.env = dict(GIT_ENV, HOME=self.home)
+        self.write("src/app.py", "def run():\n    pass\n")
+        self.write("vault/index.md", "- [[topic]]\n- [[map]]\n")
+        self.write("vault/topic.md", "# Topic\n\nSee `src/app.py`.\n")
+        self.write("notes.txt", "plain notes\n")
+        self.git("init", "-q")
+        self.git("add", "-A")
+        self.assertEqual(run("build", "--root", self.root)[0], 0)
+        self.git("add", "-A")
+        self.git("commit", "-qm", "init")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def write(self, rel, text, newline="\n"):
+        path = os.path.join(self.root, *rel.split("/"))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8", newline=newline) as fh:
+            fh.write(text)
+
+    def read(self, rel, mode="r"):
+        with open(os.path.join(self.root, *rel.split("/")), mode) as fh:
+            return fh.read()
+
+    def git(self, *args, check=True):
+        os.makedirs(self.root, exist_ok=True)
+        p = subprocess.run(["git", "-C", self.root] + list(args), capture_output=True,
+                           env=self.env)
+        if check and p.returncode:
+            raise AssertionError("git %s: %s" % (args, p.stderr.decode()))
+        return p
+
+    def commit(self, msg="change", *extra):
+        return self.git("commit", "-qm", msg, *extra, check=False)
+
+    def hooks(self):
+        return os.path.join(self.root, ".git", "hooks")
+
+    def install(self):
+        code = run("install-hook", "--root", self.root)[0]
+        self.assertEqual(code, 0)
+
+    def committed(self, rev="HEAD"):
+        return self.git("show", "--name-only", "--format=", rev).stdout.decode().split()
+
+    def check(self, *flags):
+        with contextlib.redirect_stderr(io.StringIO()):
+            return run("check", *flags, "--root", self.root)[0]
+
+    def test_install_uninstall_idempotent_and_chained(self):
+        hook = os.path.join(self.hooks(), "pre-commit")
+        mine = "#!/bin/sh\necho mine-ran >> \"$(git rev-parse --git-dir)/ran\"\nexit 0\n"
+        with open(hook, "w", newline="\n") as fh:
+            fh.write(mine)
+        os.chmod(hook, 0o750)
+        self.install()
+        self.assertIn("already installed", run("install-hook", "--root", self.root)[1])
+        self.assertTrue(codemap.is_our_hook(hook))
+        with open(os.path.join(self.hooks(), codemap.CHAINED)) as fh:
+            self.assertEqual(fh.read(), mine)
+        self.write("vault/new.md", "# New\n")
+        self.git("add", "vault/new.md")
+        self.assertEqual(self.commit().returncode, 0)
+        self.assertTrue(os.path.exists(os.path.join(self.root, ".git", "ran")))
+        self.assertEqual(run("uninstall-hook", "--root", self.root)[0], 0)
+        with open(hook) as fh:
+            self.assertEqual(fh.read(), mine)
+        self.assertEqual(os.stat(hook).st_mode & 0o777, 0o750)
+        self.assertFalse(os.path.exists(os.path.join(self.hooks(), codemap.CHAINED)))
+        self.assertIn("isn't codemap's", run("uninstall-hook", "--root", self.root)[1])
+        os.remove(hook)
+        self.assertIn("not installed", run("uninstall-hook", "--root", self.root)[1])
+
+    def test_failing_chained_hook_stops_the_commit(self):
+        hook = os.path.join(self.hooks(), "pre-commit")
+        with open(hook, "w", newline="\n") as fh:
+            fh.write("#!/bin/sh\necho no >&2\nexit 3\n")
+        os.chmod(hook, 0o755)
+        self.install()
+        self.write("vault/new.md", "# New\n")
+        self.git("add", "vault/new.md")
+        self.assertNotEqual(self.commit().returncode, 0)
+
+    def test_vault_page_commit_leaves_the_map_current(self):
+        self.install()
+        self.write("vault/new.md", "# New page\n\nLinks [[topic]].\n")
+        self.git("add", "vault/new.md")
+        self.assertEqual(self.commit().returncode, 0)
+        self.assertIn("vault/map.md", self.committed())
+        self.assertEqual(self.check(), 0)
+        self.assertEqual(self.git("status", "--porcelain").stdout, b"")
+
+    def test_commit_without_inputs_does_not_rebuild(self):
+        self.write("vault/map.md", self.read("vault/map.md") + "hand edit\n")
+        self.git("add", "vault/map.md")
+        self.git("commit", "-qm", "stale on purpose", "--no-verify")
+        self.install()
+        before = self.read("vault/map.md")
+        self.write("notes.txt", "other notes\n")
+        self.git("add", "notes.txt")
+        self.assertEqual(self.commit().returncode, 0)
+        self.assertEqual(self.committed(), ["notes.txt"])
+        self.assertEqual(self.read("vault/map.md"), before)
+
+    def test_refused_build_fails_the_commit(self):
+        self.install()
+        self.write("vault/map/notes.md", "hand-written\n")
+        self.write("vault/new.md", "# New\n")
+        self.git("add", "vault/new.md")
+        p = self.commit()
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("the map build refused", p.stderr.decode())
+        self.assertIn("didn't write", p.stderr.decode())
+
+    def test_partial_staging_is_refused(self):
+        self.install()
+        self.write("vault/topic.md", "# Topic\n\nstaged part\n")
+        self.git("add", "vault/topic.md")
+        self.write("vault/topic.md", "# Topic\n\nstaged part\nunstaged part\n")
+        p = self.commit()
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("vault/topic.md has unstaged changes", p.stderr.decode())
+        self.assertIn("stage or stash them", p.stderr.decode())
+
+    def test_hooks_path_inside_the_work_tree_is_refused(self):
+        self.git("config", "core.hooksPath", "tools/hooks")
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(run("install-hook", "--root", self.root)[0], 2)
+        self.assertIn("inside the work tree", err.getvalue())
+        self.assertFalse(os.path.exists(os.path.join(self.root, "tools")))
+        outside = os.path.join(self.tmp.name, "shared-hooks")
+        self.git("config", "core.hooksPath", outside)
+        code, out = run("install-hook", "--root", self.root)
+        self.assertEqual(code, 0)
+        self.assertIn("shared by every repository", out)
+        self.assertTrue(codemap.is_our_hook(os.path.join(outside, "pre-commit")))
+        self.git("config", "core.hooksPath", ".git/my-hooks")
+        self.assertEqual(run("install-hook", "--root", self.root)[0], 0)
+
+    def test_symlinked_hook_is_never_replaced(self):
+        if not hasattr(os, "symlink"):
+            self.skipTest("no symlinks")
+        target = os.path.join(self.tmp.name, "real-hook")
+        with open(target, "w") as fh:
+            fh.write("#!/bin/sh\n")
+        os.symlink(target, os.path.join(self.hooks(), "pre-commit"))
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(run("install-hook", "--root", self.root)[0], 2)
+        with open(target) as fh:
+            self.assertEqual(fh.read(), "#!/bin/sh\n")
+
+    def test_windows_paths_in_the_hook(self):
+        self.assertEqual(codemap.sh_path(r"C:\Users\O'Neil\codemap.py"),
+                         "'C:/Users/O'\\''Neil/codemap.py'")
+        text = codemap.hook_text(r"C:\Program Files\plugin\codemap.py")
+        self.assertIn("script='C:/Program Files/plugin/codemap.py'", text)
+        self.assertNotIn("\\", text.split("script=")[1].split("\n")[0])
+        self.assertIn("for c in 'python3' 'python' 'py -3'; do", text)
+        self.assertNotIn("\r", text)
+
+    def test_hook_falls_back_to_the_py_launcher(self):
+        if os.name == "nt":
+            self.skipTest("POSIX stubs")
+        stubs = os.path.join(self.tmp.name, "bin")
+        os.makedirs(stubs)
+
+        def stub(name, body):
+            path = os.path.join(stubs, name)
+            with open(path, "w") as fh:
+                fh.write("#!/bin/sh\n" + body + "\n")
+            os.chmod(path, 0o755)
+        stub("python3", "exit 9009")  # like the Windows store stub
+        stub("py", '[ "$1" = "-3" ] || exit 1\nshift\nexec %s "$@"' % sys.executable)
+        git = subprocess.run(["sh", "-c", "command -v git"], capture_output=True).stdout.strip()
+        os.symlink(git.decode(), os.path.join(stubs, "git"))
+        self.install()
+        self.write("vault/new.md", "# New\n")
+        self.git("add", "vault/new.md")
+        env = dict(self.env, PATH=stubs)
+        p = subprocess.run(["/bin/sh", os.path.join(self.hooks(), "pre-commit")], cwd=self.root,
+                           env=env, capture_output=True)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn(b"vault/map.md", self.git("diff", "--cached", "--name-only").stdout)
+
+    def test_locator_finds_the_newest_plugin_version(self):
+        base = os.path.join(self.tmp.name, "cache", "mkt", "manager-plugin")
+        for v in ("0.9.0", "0.10.0", "0.8.0"):
+            d = os.path.join(base, v, "skills", "code-map", "scripts")
+            os.makedirs(d)
+            open(os.path.join(d, "codemap.py"), "w").close()
+        gone = os.path.join(base, "0.7.4", "skills", "code-map", "scripts", "codemap.py")
+        out = subprocess.run([sys.executable, "-c", codemap.LOCATOR, gone.replace("/", "\\")],
+                             capture_output=True).stdout.decode().strip()
+        self.assertTrue(out.replace("\\", "/").endswith("/0.10.0/skills/code-map/scripts/"
+                                                        "codemap.py"), out)
+
+    def opt_in(self):
+        self.write(".codemap.json", '{"vault": "vault", "map": "vault/map.md", '
+                   '"commit_check": true}\n')
+        self.git("add", ".codemap.json")
+        run("build", "--root", self.root)
+        self.git("add", "-A")
+        self.git("commit", "-qm", "opt in", "--no-verify")
+
+    def test_quiet_check_uses_the_fingerprint(self):
+        self.opt_in()
+        self.assertIn(codemap.FP_PREFIX, self.read("vault/map.md"))
+        real = codemap.scan
+        codemap.scan = None  # a fingerprint hit must not scan
+        try:
+            self.assertEqual(run("check", "--quiet", "--root", self.root), (0, ""))
+        finally:
+            codemap.scan = real
+        self.assertEqual(self.check(), 0)
+        self.write("notes.txt", "changed, not an input\n")
+        codemap.scan = None
+        try:
+            self.assertEqual(run("check", "--quiet", "--root", self.root), (0, ""))
+        finally:
+            codemap.scan = real
+
+    def test_fingerprint_never_says_current_when_check_says_stale(self):
+        self.opt_in()
+        old = codemap.SPLIT_ABOVE
+        codemap.SPLIT_ABOVE = 0  # group pages too
+        self.addCleanup(setattr, codemap, "SPLIT_ABOVE", old)
+        run("build", "--root", self.root)
+        self.git("add", "-A")
+        self.git("commit", "-qm", "split", "--no-verify")
+        mutations = [
+            lambda: self.write("vault/topic.md", "# Renamed topic\n"),
+            lambda: self.git("add", "vault/topic.md"),
+            lambda: self.write("src/app.py", "def run():\n    pass\n\ndef more():\n    pass\n"),
+            lambda: self.git("add", "-A"),
+            lambda: self.write("src/new.py", "def fresh():\n    pass\n"),
+            lambda: self.git("add", "src/new.py"),
+            lambda: os.remove(os.path.join(self.root, "vault", "topic.md")),
+            lambda: self.git("add", "-A"),
+            lambda: self.write("vault/map/src.md", self.read("vault/map/src.md") + "x\n"),
+            lambda: self.write("vault/map.md", self.read("vault/map.md").replace("Code", "C")),
+            lambda: self.write(".codemap.json", '{"vault": "vault", "map": "vault/map.md", '
+                               '"commit_check": true, "x": 1}\n'),
+            lambda: self.write("package.json", '{"main": "src/app.py"}'),
+            lambda: self.git("add", "package.json"),
+        ]
+        stale_seen = 0
+        for i, mutate in enumerate(mutations):
+            with contextlib.redirect_stdout(io.StringIO()):
+                if i % 2 == 0:
+                    codemap.main(["build", "--root", self.root])
+            mutate()
+            full, quick = self.check(), self.check("--quiet")
+            self.assertEqual(quick, full, "mutation %d" % i)
+            stale_seen += full == 1
+        self.assertGreater(stale_seen, 5)
+        for name in os.listdir(os.path.join(self.root, "vault", "map")):
+            os.remove(os.path.join(self.root, "vault", "map", name))
+        self.assertEqual((self.check(), self.check("--quiet")), (1, 1))
+
+    def test_redetect_keeps_the_opt_in(self):
+        self.opt_in()
+        run("build", "--root", self.root, "--redetect")
+        self.assertIn('"commit_check": true', self.read(".codemap.json"))
+
+    def test_build_leaves_unchanged_pages_alone(self):
+        path = os.path.join(self.root, "vault", "map.md")
+        os.utime(path, (1000000000, 1000000000))
+        run("build", "--root", self.root)
+        self.assertEqual(os.stat(path).st_mtime, 1000000000)
+
+    def test_detect_points_to_create_vault_without_a_vault(self):
+        self.assertNotIn("create-vault", run("detect", "--root", self.root)[1])
+        shutil.rmtree(os.path.join(self.root, "vault"))
+        os.remove(os.path.join(self.root, ".codemap.json"))
+        self.git("add", "-A")
+        out = run("detect", "--root", self.root)[1]
+        self.assertIn("vault: none", out)
+        self.assertIn("create-vault skill (Create mode)", out)
+        self.assertTrue(codemap.needs_vault(None))
+        self.assertFalse(codemap.needs_vault("vault"))
+
+    def test_rules_block_is_created_updated_and_removed(self):
+        code, out = run("rules-hint", "--root", self.root)
+        self.assertEqual(code, 0)
+        agents = self.read("AGENTS.md")
+        self.assertTrue(agents.startswith("# Agent instructions\n\n" + codemap.RULES_BEGIN))
+        for agent in ("worker", "researcher", "reviewer"):
+            self.assertIn("`manager-plugin:%s`" % agent, agents)
+        self.assertIn("manager-plugin:code-map", agents)
+        self.assertNotIn(self.root, agents)
+        self.assertNotIn("codemap.py", agents)
+        self.assertIn(codemap.RULES_END, self.read("CLAUDE.md"))
+        self.assertIn("unchanged", run("rules-hint", "--root", self.root)[1])
+        run("rules-hint", "--remove", "--root", self.root)
+        self.assertFalse(os.path.exists(os.path.join(self.root, "AGENTS.md")))
+        self.assertFalse(os.path.exists(os.path.join(self.root, "CLAUDE.md")))
+
+    def test_rules_block_keeps_other_content_byte_identical(self):
+        original = "# Rules\r\n\r\nKeep this — exactly.\r\nNo final newline"
+        self.write("CLAUDE.md", original, newline="")
+        agents = "# Agents\n\nUse tabs.\n"
+        self.write("AGENTS.md", agents)
+        run("rules-hint", "--root", self.root)
+        claude = self.read("CLAUDE.md", "rb").decode()
+        self.assertTrue(claude.startswith(original + "\r\n\r\n" + codemap.RULES_BEGIN + "\r\n"))
+        self.assertNotIn("\n", claude.replace("\r\n", ""))
+        old_block = "\n".join(codemap.RULES_BLOCK) + "\n"
+        self.assertEqual(self.read("AGENTS.md", "rb").decode(), agents + "\n" + old_block)
+        stale = agents + "\n" + codemap.RULES_BEGIN + "\n- an old line\n" + codemap.RULES_END \
+            + "\nAfter the block.\n"
+        self.write("AGENTS.md", stale)
+        run("rules-hint", "--root", self.root)
+        self.assertEqual(self.read("AGENTS.md", "rb").decode(),
+                         agents + "\n" + old_block + "After the block.\n")
+        run("rules-hint", "--remove", "--root", self.root)
+        self.assertEqual(self.read("AGENTS.md", "rb").decode(), agents + "After the block.\n")
+        self.assertEqual(self.read("CLAUDE.md", "rb").decode(), original + "\r\n")
+
+    def test_rules_block_via_agents_import(self):
+        self.write("AGENTS.md", "# Agents\n")
+        self.write("CLAUDE.md", "@AGENTS.md\n\n" + "\n".join(codemap.RULES_BLOCK) + "\n")
+        run("rules-hint", "--root", self.root)
+        self.assertEqual(self.read("CLAUDE.md"), "@AGENTS.md\n\n" + codemap.RULES_VIA_IMPORT + "\n")
+        self.assertIn(codemap.RULES_BEGIN, self.read("AGENTS.md"))
+        self.assertIn("unchanged", run("rules-hint", "--root", self.root)[1])
+        run("rules-hint", "--remove", "--root", self.root)
+        self.assertEqual(self.read("CLAUDE.md"), "@AGENTS.md\n")
+        self.assertEqual(self.read("AGENTS.md"), "# Agents\n")
+
+    def test_rules_file_symlink_and_broken_markers_are_refused(self):
+        self.write("AGENTS.md", "x\n" + codemap.RULES_BEGIN + "\nno end\n")
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(run("rules-hint", "--root", self.root)[0], 2)
+        self.assertEqual(self.read("AGENTS.md"), "x\n" + codemap.RULES_BEGIN + "\nno end\n")
+        if not hasattr(os, "symlink"):
+            return
+        os.remove(os.path.join(self.root, "AGENTS.md"))
+        victim = os.path.join(self.tmp.name, "victim.md")
+        with open(victim, "w") as fh:
+            fh.write("precious\n")
+        os.symlink(victim, os.path.join(self.root, "CLAUDE.md"))
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(run("rules-hint", "--root", self.root)[0], 2)
+        with open(victim) as fh:
+            self.assertEqual(fh.read(), "precious\n")
+
+    def test_skill_doc_template_matches_the_block(self):
+        skill = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "SKILL.md")
+        with open(skill, encoding="utf-8") as fh:
+            self.assertTrue("\n".join(codemap.RULES_BLOCK) in fh.read(), "SKILL.md template")
+
+    def test_commit_dir_detection(self):
+        cwd = os.path.join("x", "y")
+        for cmd, want in [("git commit -m 'a'", cwd), ("git add a && git commit -qm x", cwd),
+                          ('git -C "sub dir" commit -m x', os.path.join(cwd, "sub dir")),
+                          ("git -c user.name=a commit --amend", cwd),
+                          ("git commit-tree abc", None), ("git log --grep commit", None),
+                          ("echo git", None), ("legit commit", None)]:
+            self.assertEqual(codemap.commit_dir(cmd, cwd), want, cmd)
 
 
 if __name__ == "__main__":

@@ -9,6 +9,12 @@ Usage:
   codemap.py mentions [PATH...] [--base SHA]   vault pages that mention these files (or the
                                                files changed since SHA)
   codemap.py detect [--root DIR]               where the vault and the map are, and why
+  codemap.py check --quiet                     the same exit codes, one line or none; uses the
+                                               fingerprint when .codemap.json has commit_check
+  codemap.py install-hook | uninstall-hook     the opt-in git pre-commit hook for this clone
+  codemap.py pre-commit                        what that hook runs (refresh and stage the map)
+  codemap.py claude-hook                       the opt-in Claude Code hook (JSON on stdin)
+  codemap.py rules-hint [--remove]             the marked block in AGENTS.md and CLAUDE.md
 
 The vault and map locations come from .codemap.json at the repository root. Without it they
 are detected (a folder with .obsidian/, a known vault folder name, or the folder holding most
@@ -22,6 +28,9 @@ executed and nothing is sent anywhere. The vault link rules and the secret-file 
 ideas from graphify (Apache-2.0); no code was copied.
 """
 import argparse
+import contextlib
+import hashlib
+import io
 import json
 import os
 import posixpath
@@ -113,20 +122,32 @@ def in_git_repo(root):
         d = parent
 
 
-def git_files(root):
+def git_index(root):
+    """Index entries [(mode, blob, stage, path)], or None outside a git repository."""
     try:
         out = subprocess.run(["git", "-C", root, "ls-files", "-s", "-z"], capture_output=True,
                              check=True)
-        files = []
-        for entry in out.stdout.decode("utf-8", "replace").split("\0"):
-            meta, _, path = entry.partition("\t")
-            if path and not meta.startswith("120000"):  # symlinks are skipped on every OS
-                files.append(path)
     except (OSError, subprocess.CalledProcessError) as exc:
         if in_git_repo(root):
             detail = getattr(exc, "stderr", b"") or b""
             raise GitError("git ls-files failed: %s" % (detail.decode("utf-8", "replace").strip()
                                                           or exc))
+        return None
+    entries = []
+    for entry in out.stdout.decode("utf-8", "replace").split("\0"):
+        meta, _, path = entry.partition("\t")
+        fields = meta.split()
+        if path and len(fields) == 3:
+            entries.append((fields[0], fields[1], fields[2], path))
+    return entries
+
+
+def git_files(root, entries=None):
+    if entries is None:
+        entries = git_index(root)
+    if entries is not None:  # symlinks (mode 120000) are skipped on every OS
+        files = [path for mode, _, _, path in entries if not mode.startswith("120000")]
+    else:
         files = []
         for dirpath, dirnames, filenames in os.walk(root):
             dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
@@ -687,6 +708,11 @@ class LayoutError(Exception):
     pass
 
 
+def needs_vault(vault_dir):
+    """No vault found and none configured: the code-map skill sets one up first (create-vault)."""
+    return not vault_dir
+
+
 def safe_rel(value, what):
     if value is None:
         return None
@@ -796,24 +822,537 @@ def changed_files(root, base):
     return sorted({f for f in out.stdout.decode("utf-8", "replace").splitlines() if f})
 
 
+# Fingerprint: a hash of the map's inputs, stored as the last line of the map page when
+# .codemap.json has "commit_check": true, so `check --quiet` can say "current" without a scan.
+# Inputs: every tracked path the scan sees, with the blob id of each file whose content is read
+# (source files, vault pages, package.json; a changed working-tree copy is hashed as it is),
+# .codemap.json, the format and this script. Anything it can't decide falls back to the full check.
+FP_PREFIX = "<!-- codemap-fingerprint: "
+
+
+def strip_fp(text):
+    return "".join(line for line in text.replace("\r\n", "\n").splitlines(True)
+                   if not line.startswith(FP_PREFIX))
+
+
+def is_map_page(path, out_rel):
+    return path == out_rel or path.startswith(posixpath.splitext(out_rel)[0] + "/")
+
+
+def is_content_input(path, vault):
+    """A tracked file whose content (not only its path) can change the map."""
+    return (posixpath.splitext(path)[1].lower() in LANG or path == "package.json"
+            or bool(vault and is_page(path, vault)))
+
+
+def script_hash():
+    try:
+        with open(os.path.abspath(__file__), "rb") as fh:
+            data = fh.read().replace(b"\r\n", b"\n")
+    except OSError:
+        return "unknown"
+    return hashlib.sha256(data).hexdigest()
+
+
+def git_lines(root, args, nul=True):
+    out = subprocess.run(["git", "-C", root] + args, capture_output=True, check=True)
+    text = out.stdout.decode("utf-8", "replace")
+    return [x for x in text.split("\0" if nul else "\n") if x]
+
+
+def input_fingerprint(root, entries, vault, out_rel, cfg_text):
+    """Hex digest of the map's inputs, or None when it can't be computed."""
+    if entries is None:
+        return None
+    rows = []
+    for mode, blob, stage, path in entries:
+        if stage != "0":  # an unresolved merge
+            return None
+        if mode.startswith("120000") or is_map_page(path, out_rel) or path == CONFIG \
+                or skipped(path, out_rel):
+            continue
+        rows.append([path, mode, blob] if is_content_input(path, vault) else [path])
+    try:
+        dirty = set(git_lines(root, ["diff-files", "--name-only", "-z"]))
+        need = [r for r in rows if len(r) == 3 and r[0] in dirty]
+        readable = []
+        for r in need:
+            full = os.path.join(root, *r[0].split("/"))
+            if "\n" in r[0]:
+                return None
+            if link_in_path(root, r[0]) or not os.path.isfile(full):
+                r[2] = "unreadable"
+            else:
+                readable.append(r)
+        if readable:
+            out = subprocess.run(["git", "-C", root, "hash-object", "--no-filters",
+                                  "--stdin-paths"], capture_output=True, check=True,
+                                 input="\n".join(r[0] for r in readable).encode("utf-8"))
+            blobs = out.stdout.decode().split()
+            if len(blobs) != len(readable):
+                return None
+            for r, b in zip(readable, blobs):
+                r[2] = b
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    h = hashlib.sha256(("codemap %d %s\0%s\0%s\0%s\0" % (FORMAT, script_hash(), vault, out_rel,
+                                                        cfg_text)).encode("utf-8"))
+    for r in rows:
+        h.update(("\0".join(r) + "\n").encode("utf-8"))
+    return h.hexdigest()[:32]
+
+
+def pages_fingerprint(pages):
+    h = hashlib.sha256()
+    for rel in sorted(pages):
+        h.update(("%s\0%s\0" % (rel, strip_fp(pages[rel]))).encode("utf-8"))
+    return h.hexdigest()[:32]
+
+
+def fp_line(inputs, pages):
+    return "%s%s %s -->\n" % (FP_PREFIX, inputs, pages)
+
+
+def fingerprint_current(root, entries, vault, out_rel):
+    """True if the stored fingerprint proves the map current; None if it can't decide."""
+    index = read_text(root, out_rel)
+    if not index:
+        return None
+    stored = [line for line in index.splitlines() if line.startswith(FP_PREFIX)]
+    if len(stored) != 1:
+        return None
+    on_disk = {}
+    for rel in [out_rel] + generated_pages(root, out_rel):
+        text = read_text(root, rel)
+        if text is None:
+            return None
+        on_disk[rel] = text
+    inputs = input_fingerprint(root, entries, vault, out_rel, read_text(root, CONFIG) or "")
+    if inputs and stored[0] == fp_line(inputs, pages_fingerprint(on_disk)).rstrip("\n"):
+        return True
+    return None
+
+
+# The git pre-commit hook. A POSIX sh script (Git for Windows runs hooks through its own sh, also
+# for a commit started from PowerShell) that runs an existing hook first, then `pre-commit`.
+HOOK_MARKER = "# codemap-managed-hook"
+CHAINED = "pre-commit.codemap-chained"
+# Finds codemap.py in another version folder of the plugin when the recorded one is gone.
+LOCATOR = r"""import glob, os, re, sys
+p = sys.argv[1].replace(chr(92), "/").split("/")
+if p[-4:] == ["skills", "code-map", "scripts", "codemap.py"] and len(p) > 5:
+    c = glob.glob("/".join(p[:-5]) + "/*/skills/code-map/scripts/codemap.py")
+    k = lambda s: [int(x) for x in re.findall("[0-9]+", s.replace(chr(92), "/").split("/")[-5])]
+    if c:
+        print(max(c, key=k))"""
+PYTHONS = ("python3", "python", "py -3")
+
+
+def sh_quote(text):
+    return "'" + text.replace("'", "'\\''") + "'"
+
+
+def sh_path(path):
+    """A path for sh: forward slashes (Git for Windows' sh and Windows Python accept them)."""
+    return sh_quote(path.replace("\\", "/"))
+
+
+def hook_text(script):
+    return "\n".join([
+        "#!/bin/sh",
+        HOOK_MARKER + " (written by codemap.py install-hook; uninstall-hook removes it)",
+        "# Refreshes and stages the code map when a commit changes its inputs (code-map skill).",
+        "script=" + sh_path(script),
+        'chained="${0%/*}/' + CHAINED + '"',
+        'if [ -f "$chained" ] && [ -x "$chained" ]; then',
+        '  "$chained" "$@" || exit $?',
+        "fi",
+        "py=",
+        "for c in %s; do" % " ".join(sh_quote(p) for p in PYTHONS),
+        "  if $c -c 'import sys; sys.exit(sys.version_info < (3, 8))' >/dev/null 2>&1; then",
+        "    py=$c",
+        "    break",
+        "  fi",
+        "done",
+        'if [ -z "$py" ]; then',
+        "  echo 'codemap hook: no Python 3.8+ (python3, python, py -3); map not refreshed' >&2",
+        "  exit 0",
+        "fi",
+        'if [ ! -f "$script" ]; then',
+        "  script=$($py -c %s \"$script\" 2>/dev/null)" % sh_quote(LOCATOR),
+        "fi",
+        'if [ -z "$script" ] || [ ! -f "$script" ]; then',
+        "  echo 'codemap hook: codemap.py not found; map not refreshed (run install-hook again)'"
+        " >&2",
+        "  exit 0",
+        "fi",
+        'PYTHONDONTWRITEBYTECODE=1 exec $py "$script" pre-commit',
+        "",
+    ])
+
+
+class HookError(Exception):
+    pass
+
+
+def inside(path, folder):
+    path, folder = os.path.normcase(path), os.path.normcase(folder)
+    try:
+        return os.path.commonpath([path, folder]) == folder
+    except ValueError:  # Windows: another drive
+        return False
+
+
+def hooks_dir(root):
+    """(the folder git runs hooks from, a note or None). Refuses one inside the work tree."""
+    try:
+        top = git_lines(root, ["rev-parse", "--show-toplevel"], nul=False)[0]
+        common = git_lines(root, ["rev-parse", "--git-common-dir"], nul=False)[0]
+    except (OSError, subprocess.CalledProcessError, IndexError):
+        raise HookError("not inside a git work tree: %s" % root)
+    top = os.path.abspath(top)
+    common = os.path.abspath(os.path.join(root, common))
+    try:
+        custom = git_lines(root, ["config", "--get", "core.hooksPath"], nul=False)
+    except subprocess.CalledProcessError:
+        custom = []
+    except OSError:
+        raise HookError("git is not available")
+    if not custom:
+        return os.path.join(common, "hooks"), None
+    path = os.path.join(top, os.path.expanduser(custom[0]))
+    real = os.path.realpath(path)
+    if inside(real, os.path.realpath(top)) and not inside(real, os.path.realpath(common)):
+        raise HookError("core.hooksPath (%s) is inside the work tree, where a hook file may be "
+                        "tracked; codemap writes no file there. Call `codemap.py pre-commit` from "
+                        "that hook yourself, or unset core.hooksPath" % custom[0])
+    return path, ("core.hooksPath is set: %s, shared by every repository that uses it" % path)
+
+
+def is_our_hook(path):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            return any(line.startswith(HOOK_MARKER) for line in fh.read(4096).splitlines())
+    except OSError:
+        return False
+
+
+def write_new_file(path, text, mode=0o644):
+    """Write a file without following a symlink (O_NOFOLLOW where the OS has it)."""
+    if is_link(path):
+        raise HookError("%s is a symlink; codemap never writes through one" % path)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0) | \
+        getattr(os, "O_BINARY", 0)
+    fd = os.open(path, flags, mode)
+    with os.fdopen(fd, "wb") as fh:
+        fh.write(text if isinstance(text, bytes) else text.encode("utf-8"))
+    try:
+        os.chmod(path, mode)
+    except OSError:
+        pass
+
+
+def install_hook(root):
+    cfg = read_config(root)
+    if not cfg or not cfg.get("map"):
+        raise HookError("no %s with a \"map\" here; set the map up (build) and commit it first"
+                        % CONFIG)
+    folder, note = hooks_dir(root)
+    if is_link(folder) or (os.path.lexists(folder) and not os.path.isdir(folder)):
+        raise HookError("%s is a symlink or not a folder" % folder)
+    hook, chained = os.path.join(folder, "pre-commit"), os.path.join(folder, CHAINED)
+    for p in (hook, chained):
+        if is_link(p) or os.path.isdir(p):
+            raise HookError("%s is a symlink or a folder; codemap leaves it alone" % p)
+    text = hook_text(os.path.abspath(__file__))
+    msgs = [note] if note else []
+    if os.path.lexists(hook) and is_our_hook(hook):
+        with open(hook, "rb") as fh:
+            if fh.read() == text.encode("utf-8"):
+                return msgs + ["already installed: %s" % hook]
+        write_new_file(hook, text, 0o755)
+        return msgs + ["updated %s" % hook]
+    if os.path.lexists(chained):
+        raise HookError("%s exists without codemap's pre-commit; run uninstall-hook to restore it "
+                        "first" % chained)
+    os.makedirs(folder, exist_ok=True)
+    if os.path.lexists(hook):
+        os.rename(hook, chained)  # bytes and mode kept, so uninstall restores it exactly
+        msgs.append("kept the existing hook as %s; it runs first" % CHAINED)
+    write_new_file(hook, text, 0o755)
+    return msgs + ["installed %s" % hook]
+
+
+def uninstall_hook(root):
+    folder, _ = hooks_dir(root)
+    hook, chained = os.path.join(folder, "pre-commit"), os.path.join(folder, CHAINED)
+    for p in (hook, chained):
+        if is_link(p) or os.path.isdir(p):
+            raise HookError("%s is a symlink or a folder; codemap leaves it alone" % p)
+    msgs = []
+    if os.path.lexists(hook):
+        if not is_our_hook(hook):
+            if os.path.lexists(chained):
+                raise HookError("%s isn't codemap's; %s left in place" % (hook, CHAINED))
+            return ["not installed: %s isn't codemap's" % hook]
+        os.remove(hook)
+        msgs.append("removed %s" % hook)
+    if os.path.lexists(chained):
+        os.rename(chained, hook)
+        msgs.append("restored the earlier hook as %s" % hook)
+    return msgs or ["not installed"]
+
+
+def hook_installed(root):
+    try:
+        folder, _ = hooks_dir(root)
+    except HookError:
+        return False
+    hook = os.path.join(folder, "pre-commit")
+    return not is_link(hook) and os.path.isfile(hook) and is_our_hook(hook)
+
+
+def staged_changes(root):
+    """[(status letter, path)] for the commit being made."""
+    items = git_lines(root, ["diff", "--cached", "--name-status", "--no-renames", "-z"])
+    return [(items[i][0], items[i + 1]) for i in range(0, len(items) - 1, 2)]
+
+
+def needs_build(changes, vault, out_rel):
+    for status, path in changes:
+        if path == CONFIG or is_map_page(path, out_rel):
+            return True
+        if skipped(path, out_rel):
+            continue
+        if status != "M" or is_content_input(path, vault):  # added, deleted, type changed
+            return True
+    return False
+
+
+def pre_commit(root):
+    """The git hook's work: 0 lets the commit go on, 1 stops it (one line says why)."""
+    try:
+        cfg = read_config(root)
+        if not cfg or not cfg.get("map"):
+            return 0  # no map set up on this branch
+        vault, out_rel = safe_rel(cfg.get("vault"), "vault"), safe_rel(cfg.get("map"), "map")
+    except LayoutError as exc:
+        print("codemap: commit stopped: %s" % exc, file=sys.stderr)
+        return 1
+    try:
+        if not needs_build(staged_changes(root), vault, out_rel):
+            return 0
+        unstaged = [p for p in git_lines(root, ["diff", "--name-only", "--no-renames", "-z"])
+                    if p == CONFIG or (not is_map_page(p, out_rel) and not skipped(p, out_rel)
+                                       and is_content_input(p, vault))]
+    except (OSError, subprocess.CalledProcessError) as exc:
+        print("codemap: commit stopped: git failed: %s" % exc, file=sys.stderr)
+        return 1
+    if unstaged:
+        more = " and %d more" % (len(unstaged) - 1) if len(unstaged) > 1 else ""
+        print("codemap: commit stopped: %s%s has unstaged changes the map would be built from; "
+              "stage or stash them, then commit" % (unstaged[0], more), file=sys.stderr)
+        return 1
+    before = set(generated_pages(root, out_rel))
+    with contextlib.redirect_stdout(io.StringIO()):
+        code = main(["build", "--root", root])
+    if code != 0:
+        print("codemap: commit stopped: the map build refused (see above); fix it, then commit",
+              file=sys.stderr)
+        return 1
+    try:
+        tracked = {p for p in git_lines(root, ["ls-files", "-z"]) if is_map_page(p, out_rel)}
+        paths = sorted(p for p in tracked | before | set(generated_pages(root, out_rel))
+                       | {out_rel}
+                       if p in tracked or os.path.isfile(os.path.join(root, *p.split("/"))))
+        if paths:
+            subprocess.run(["git", "-C", root, "add", "--"] + paths, capture_output=True,
+                           check=True)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        detail = (getattr(exc, "stderr", b"") or b"").decode("utf-8", "replace").strip()
+        print("codemap: commit stopped: could not stage the map: %s" % (detail or exc),
+              file=sys.stderr)
+        return 1
+    return 0
+
+
+# The Claude Code hook: before a `git commit` Bash call, in a repository whose .codemap.json has
+# "commit_check": true, block the commit while the map is stale. Fails open on anything else.
+GIT_COMMIT = re.compile(r"""(?:^|[;&|({\s])git((?:\s+(?:-C\s+(?:"[^"]*"|'[^']*'|[^\s;&|]+)"""
+                        r"""|-c\s+[^\s;&|]+|--[\w-]+(?:=[^\s;&|]+)?|-[A-Za-z]))*)\s+commit"""
+                        r"""(?=$|[\s;&|)])""")
+GIT_C = re.compile(r"""-C\s+("[^"]*"|'[^']*'|[^\s;&|]+)""")
+
+
+def commit_dir(command, cwd):
+    """The folder a `git commit` in this shell command runs in, or None if it has none."""
+    m = GIT_COMMIT.search(command or "")
+    if not m:
+        return None
+    d = cwd
+    for arg in GIT_C.findall(m.group(1)):
+        d = os.path.join(d, arg.strip("\"'"))
+    return d
+
+
+def claude_hook(stdin_text, python):
+    try:
+        data = json.loads(stdin_text)
+        command = (data.get("tool_input") or {}).get("command")
+        folder = commit_dir(command if isinstance(command, str) else "",
+                            data.get("cwd") or os.getcwd())
+        if not folder or not os.path.isdir(folder):
+            return 0
+        top = git_lines(folder, ["rev-parse", "--show-toplevel"], nul=False)[0]
+        cfg = read_config(top)
+        if not cfg or cfg.get("commit_check") is not True or hook_installed(top):
+            return 0
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            code = main(["check", "--quiet", "--root", top])
+        if code != 1:
+            return 0
+        out_rel = safe_rel(cfg.get("map"), "map")
+        sub = posixpath.splitext(out_rel)[0]
+        script = os.path.abspath(__file__).replace("\\", "/")
+        print("codemap: the code map is stale; run `%s \"%s\" build` in %s, stage %s and %s/, "
+              "then commit again" % (python, script, top.replace("\\", "/"), out_rel, sub),
+              file=sys.stderr)
+        return 2
+    except Exception:  # fail open: never block a commit on a hook error
+        return 0
+
+
+# The rules-file block: tells every session to use the map and the plugin's agents.
+RULES_BEGIN = "<!-- manager-plugin:code-map:begin (managed by the code-map skill) -->"
+RULES_END = "<!-- manager-plugin:code-map:end -->"
+RULES_VIA_IMPORT = "<!-- manager-plugin:code-map: the code-map block comes via @AGENTS.md -->"
+RULES_BLOCK = [
+    RULES_BEGIN,
+    "- Before searching the code or the vault, read the vault index and the code map (paths in",
+    "  `.codemap.json`) and use the `manager-plugin:code-map` skill's `query`, not broad grep/glob.",
+    "- After changing source files or vault pages, rebuild the map with that skill's `build` (its",
+    "  git commit hook does it when installed).",
+    "- Instead of `general-purpose`, use `manager-plugin:worker` for work that changes files,",
+    "  `manager-plugin:researcher` for read-only research, `manager-plugin:reviewer` for a review.",
+    RULES_END,
+]
+RULES_TITLES = {"AGENTS.md": "# Agent instructions", "CLAUDE.md": "# Project instructions"}
+IMPORTS_AGENTS = re.compile(r"^\s*@(?:\./)?AGENTS\.md\s*$")
+
+
+def rules_update(text, name, remove=False):
+    """New text of a rules file (None = delete it) with the block added, updated or removed.
+
+    Only the block's lines (and the blank line added before it) change; the rest stays
+    byte-identical, line endings included."""
+    eol = "\r\n" if "\r\n" in (text or "") else "\n"
+    lines = (text or "").splitlines(True)
+    marks = [i for i, line in enumerate(lines) if line.startswith("<!-- manager-plugin:code-map")]
+    start = end = None
+    if marks:
+        start = marks[0]
+        if lines[start].startswith(RULES_BEGIN.split(" (")[0]):
+            ends = [i for i in marks if lines[i].startswith(RULES_END)]
+            if not ends or len(marks) != 2 or ends[0] != marks[1]:
+                raise LayoutError("%s: the code-map block's markers are broken; fix them by hand"
+                                  % name)
+            end = ends[0]
+        elif len(marks) == 1:
+            end = start
+        else:
+            raise LayoutError("%s: more than one code-map marker; fix them by hand" % name)
+    outside = [line for i, line in enumerate(lines) if start is None or not start <= i <= end]
+    via_import = name == "CLAUDE.md" and any(IMPORTS_AGENTS.match(line) for line in outside)
+    block = [] if remove else ([RULES_VIA_IMPORT] if via_import else RULES_BLOCK)
+    new = "".join(line + eol for line in block)
+    if start is not None:
+        tail = lines[end + 1:]
+        head = lines[:start]
+        if not new and head and not head[-1].strip():
+            head = head[:-1]  # the blank line added with the block
+        result = "".join(head) + new + "".join(tail)
+    elif not new:
+        return text
+    elif text is None:
+        result = RULES_TITLES[name] + eol + eol + new
+    else:
+        sep = "" if not text or text.endswith("\n") else eol
+        result = text + sep + (eol if text.strip() else "") + new
+    if remove and result.replace("\r\n", "\n").strip() == RULES_TITLES[name]:
+        return None  # only the title this tool wrote is left
+    return result
+
+
+def rules_hint(root, remove=False):
+    msgs = []
+    for name in ("AGENTS.md", "CLAUDE.md"):
+        path = os.path.join(root, name)
+        if is_link(path) or os.path.isdir(path):
+            raise LayoutError("%s is a symlink or a folder; codemap never writes through one"
+                              % name)
+        raw = None
+        if os.path.lexists(path):
+            with open(path, "rb") as fh:
+                raw = fh.read()
+        try:
+            text = None if raw is None else raw.decode("utf-8")
+        except UnicodeDecodeError:
+            raise LayoutError("%s is not UTF-8; add the block by hand" % name)
+        new = rules_update(text, name, remove)
+        if new == text:
+            msgs.append("%s: unchanged" % name)
+        elif new is None:
+            os.remove(path)
+            msgs.append("%s: removed (it held only the block)" % name)
+        else:
+            write_new_file(path, new.encode("utf-8"))
+            msgs.append("%s: %s" % (name, "created" if text is None else
+                                    "block removed" if remove else "block written"))
+    return msgs
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="codemap.py", description="Deterministic code map.")
-    ap.add_argument("action", choices=["build", "check", "query", "mentions", "detect"])
+    ap.add_argument("action", choices=["build", "check", "query", "mentions", "detect",
+                                       "install-hook", "uninstall-hook", "pre-commit",
+                                       "claude-hook", "rules-hint"])
     ap.add_argument("terms", nargs="*")
     ap.add_argument("--root", default=".")
     ap.add_argument("--out", help="map path (default: from %s, else detected)" % CONFIG)
     ap.add_argument("--vault", help="vault folder (default: from %s, else detected)" % CONFIG)
     ap.add_argument("--redetect", action="store_true", help="build: ignore and rewrite %s" % CONFIG)
     ap.add_argument("--base", help="mentions: use the files changed since this commit")
+    ap.add_argument("--quiet", action="store_true",
+                    help="check: print nothing when current, one line otherwise; fast")
+    ap.add_argument("--remove", action="store_true", help="rules-hint: remove the block")
+    ap.add_argument("--python", default="python3", help="claude-hook: Python command to print")
     args = ap.parse_args(argv)
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(errors="backslashreplace")
         except AttributeError:
             pass
+    if args.action == "claude-hook":
+        return claude_hook(sys.stdin.read(), args.python)
     root = os.path.abspath(args.root)
     if not os.path.isdir(root):
         ap.error("no such directory: %s" % args.root)
+    if args.action in ("install-hook", "uninstall-hook", "rules-hint"):
+        try:
+            if args.action == "install-hook":
+                msgs = install_hook(root)
+            elif args.action == "uninstall-hook":
+                msgs = uninstall_hook(root)
+            else:
+                msgs = rules_hint(root, args.remove)
+        except (HookError, LayoutError, OSError) as exc:
+            print("error: %s" % exc, file=sys.stderr)
+            return 2
+        for m in msgs:
+            print(m)
+        return 0
+    if args.action == "pre-commit":
+        return pre_commit(root)
     out_arg = None
     if args.out:
         try:
@@ -825,12 +1364,16 @@ def main(argv=None):
                   file=sys.stderr)
             return 2
     try:
-        tracked = git_files(root)
+        index = git_index(root)
+        tracked = git_files(root, index)
     except GitError as exc:
         print("error: %s" % exc, file=sys.stderr)
         return 2
     redetect = args.redetect and args.action == "build"
+    old_cfg = None
     try:
+        if redetect:
+            old_cfg = read_config(root)
         old = None if not redetect else resolve_layout(root, tracked)
         vault_dir, out_rel, source = resolve_layout(root, tracked, args.vault, out_arg,
                                                     use_config=not redetect)
@@ -845,6 +1388,13 @@ def main(argv=None):
     if args.action == "detect":
         print("vault: %s (%s)" % (vault_dir or "none", source))
         print("map: %s" % out_rel)
+        if needs_vault(vault_dir):
+            print("next: no vault; create one with the create-vault skill (Create mode), then "
+                  "`build` (`build --redetect` when %s exists)" % CONFIG)
+        return 0
+    quick = args.action == "check" and args.quiet and source == CONFIG and out_arg is None \
+        and args.vault is None
+    if quick and fingerprint_current(root, index, vault_dir, out_rel):
         return 0
     info, importers, entries, files = scan(root, out_rel, tracked)
     cmd = command_label()
@@ -911,9 +1461,14 @@ def main(argv=None):
         bad = []
         for rel, text in sorted(pages.items()):
             current = read_text(root, rel)
-            if current is None or current.replace("\r\n", "\n") != text:
+            if current is None or strip_fp(current) != text:
                 bad.append(rel)
         bad += stale_extra
+        if args.quiet:
+            if bad:
+                print("stale: %d map page%s; run build" % (len(bad), "s" if len(bad) > 1 else ""))
+                return 1
+            return 0
         for page, ln, target in (vault or {}).get("broken", [])[:20]:
             print("warning: broken link %s:%d -> %s" % (page, ln, target))
         if bad:
@@ -948,13 +1503,24 @@ def main(argv=None):
                           file=sys.stderr)
                     break
             rel_dir = posixpath.dirname(rel_dir)
-    inside = not out_rel.startswith("../")
-    if inside and (redetect or (source != CONFIG and not args.out and not read_config(root))):
+    in_repo = not out_rel.startswith("../")
+    if in_repo and (redetect or (source != CONFIG and not args.out and not read_config(root))):
+        cfg = {"vault": vault_dir, "map": out_rel}
+        for key, value in (old_cfg or {}).items():  # e.g. "commit_check" survives --redetect
+            cfg.setdefault(key, value)
         with open(os.path.join(root, CONFIG), "w", encoding="utf-8", newline="\n") as fh:
-            fh.write(json.dumps({"vault": vault_dir, "map": out_rel}, indent=2) + "\n")
+            fh.write(json.dumps(cfg, indent=2) + "\n")
         print("wrote %s (vault: %s, %s)" % (CONFIG, vault_dir or "none", source))
+    cfg = read_config(root) if in_repo and not args.out and not args.vault else None
+    if cfg and cfg.get("commit_check") is True and safe_rel(cfg.get("map"), "map") == out_rel:
+        inputs = input_fingerprint(root, index, vault_dir, out_rel, read_text(root, CONFIG) or "")
+        if inputs:
+            pages[out_rel] += fp_line(inputs, pages_fingerprint(pages))
     for rel, text in sorted(pages.items()):
         path = os.path.join(root, *rel.split("/"))
+        current = read_text(root, rel)
+        if current is not None and current.replace("\r\n", "\n") == text:
+            continue  # unchanged: leave the file (and its mtime) alone
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         with open(path, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(text)
