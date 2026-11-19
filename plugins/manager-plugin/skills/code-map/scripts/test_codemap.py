@@ -454,7 +454,7 @@ GIT_ENV = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMM
 
 
 class HookTest(unittest.TestCase):
-    """The git pre-commit hook, the fingerprint and the rules block, in temporary repos."""
+    """The git pre-commit hook, `check --quiet` and the rules block, in temporary repos."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -670,24 +670,19 @@ class HookTest(unittest.TestCase):
         self.git("add", "-A")
         self.git("commit", "-qm", "opt in", "--no-verify")
 
-    def test_quiet_check_uses_the_fingerprint(self):
+    def test_quiet_check_is_the_full_check(self):
+        plain = self.read("vault/map.md")
         self.opt_in()
-        self.assertIn(codemap.FP_PREFIX, self.read("vault/map.md"))
-        real = codemap.scan
-        codemap.scan = None  # a fingerprint hit must not scan
-        try:
-            self.assertEqual(run("check", "--quiet", "--root", self.root), (0, ""))
-        finally:
-            codemap.scan = real
-        self.assertEqual(self.check(), 0)
+        self.assertEqual(self.read("vault/map.md"), plain)  # the opt-in adds nothing to the page
+        self.assertNotIn("fingerprint", self.read("vault/map.md"))
+        self.assertEqual(run("check", "--quiet", "--root", self.root), (0, ""))
         self.write("notes.txt", "changed, not an input\n")
-        codemap.scan = None
-        try:
-            self.assertEqual(run("check", "--quiet", "--root", self.root), (0, ""))
-        finally:
-            codemap.scan = real
+        self.assertEqual(run("check", "--quiet", "--root", self.root), (0, ""))
+        self.write("vault/topic.md", "# Renamed\n")
+        self.assertEqual(run("check", "--quiet", "--root", self.root),
+                         (1, "stale: 1 map page; run build\n"))
 
-    def test_fingerprint_never_says_current_when_check_says_stale(self):
+    def test_quiet_check_agrees_with_check(self):
         self.opt_in()
         old = codemap.SPLIT_ABOVE
         codemap.SPLIT_ABOVE = 0  # group pages too
@@ -925,6 +920,71 @@ class HookTest(unittest.TestCase):
         self.assertEqual(self.git("diff-files", "--name-only").stdout, b"")  # git sees no change
         self.assertEqual((self.check(), self.check("--quiet")), (1, 1))
 
+    def test_quoted_path_change_is_seen(self):
+        self.opt_in()
+        self.write('"a".py', "def one():\n    pass\n")
+        self.write("a", "plain\n")
+        self.git("add", "-A")
+        run("build", "--root", self.root)
+        self.git("add", "-A")
+        self.git("commit", "-qm", "quoted", "--no-verify")
+        self.assertEqual((self.check(), self.check("--quiet")), (0, 0))
+        self.write('"a".py', "def one():\n    pass\n\ndef two():\n    pass\n")
+        self.assertEqual((self.check(), self.check("--quiet")), (1, 1))
+
+    def test_untracking_a_linked_file_is_seen(self):
+        self.write(".codemap.json", '{"vault": ".", "map": "map.md", "commit_check": true}\n')
+        self.write("index.md", "- [[.codemap.json]]\n- [[map]]\n")
+        self.git("add", "-A")
+        self.assertEqual(run("build", "--root", self.root)[0], 0)
+        self.git("add", "-A")
+        self.git("commit", "-qm", "root vault", "--no-verify")
+        self.assertEqual((self.check(), self.check("--quiet")), (0, 0))
+        self.git("rm", "-q", "--cached", ".codemap.json")
+        self.assertEqual((self.check(), self.check("--quiet")), (1, 1))
+
+    def test_quoted_path_hidden_change_stops_the_commit(self):
+        self.write('"a".py', "def one():\n    pass\n")
+        self.write("a", "def one():\n    pass\n")  # what git would hash for an unquoted '"a".py'
+        self.git("add", "-A")
+        self.git("commit", "-qm", "quoted", "--no-verify")
+        self.install()
+        self.git("update-index", "--assume-unchanged", '"a".py')
+        self.write('"a".py', "def one():\n    pass\n\ndef two():\n    pass\n")
+        self.write("vault/new.md", "# New\n")
+        self.git("add", "vault/new.md")
+        p = self.commit()
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn('"a".py has unstaged changes', p.stderr.decode())
+
+    def test_lossy_clean_filter_change_stops_the_commit(self):
+        self.git("config", "filter.strip.clean", "grep -v '#strip' || true")
+        self.write(".gitattributes", "src/*.py filter=strip\n")
+        self.write("src/app.py", "def run():\n    pass\n#  aaaaaaaa #strip\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "filtered", "--no-verify")
+        self.install()
+        self.write("src/app.py", "def run():\n    pass\nclass Zz: 1 #strip\n")  # same size
+        self.git("update-index", "--refresh", check=False)
+        self.assertEqual(self.git("diff-files", "--name-only").stdout, b"")  # git sees no change
+        self.write("vault/new.md", "# New\n")
+        self.git("add", "vault/new.md")
+        p = self.commit()
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("src/app.py has unstaged changes", p.stderr.decode())
+
+    def test_crlf_checkout_does_not_stop_the_commit(self):
+        self.git("config", "core.autocrlf", "true")
+        self.write("src/app.py", "def run():\r\n    pass\r\n", newline="")
+        self.git("add", "src/app.py")  # the blob stays the LF one
+        self.assertEqual(self.git("diff", "--cached", "--name-only").stdout, b"")
+        self.install()
+        self.write("vault/new.md", "# New\n")
+        self.git("add", "vault/new.md")
+        p = self.commit()
+        self.assertEqual(p.returncode, 0, p.stderr.decode())
+        self.assertEqual(self.check(), 0)
+
     def test_remove_keeps_a_user_file_that_equals_the_title(self):
         for text in ("# Agent instructions\n", "# Agent instructions"):
             self.write("AGENTS.md", text, newline="")
@@ -952,7 +1012,8 @@ class HookTest(unittest.TestCase):
                           ("git --work-tree /x commit", None), ('echo "a; git commit"', None),
                           ("echo 'git commit' && git status", None),
                           ("echo 'it''s'; git commit -m x", cwd),
-                          ('git commit -m "msg; git commit"', cwd)]:
+                          ('git commit -m "msg; git commit"', cwd),
+                          ("GIT_DIR=/x/.git git commit -m y", None), ("env git commit", None)]:
             self.assertEqual(codemap.commit_dir(cmd, cwd), want, cmd)
 
 

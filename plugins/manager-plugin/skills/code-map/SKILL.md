@@ -90,12 +90,7 @@ need it; write the block by hand).
 - `<cmd> check`: exit 0 if the map matches the repository, 1 if it is stale, 2 if the layout is
   invalid (for example a hand-written file in the map's page folder) or git fails. It writes
   nothing, so it is safe on a shared checkout. It also prints broken vault links as warnings.
-  `check --quiet`: the same exit codes, one short line or nothing. With `"commit_check": true` in
-  `.codemap.json`, `build` ends the map page with a fingerprint line (a hash of the map's inputs:
-  the tracked paths, the raw working-tree bytes of the source files, vault pages and `package.json`
-  as the scan reads them (so git filters and index flags can't hide a change), the
-  config, the format and the script), and `check --quiet` compares it first, without a scan; when
-  it can't decide, it runs the full check, so it never says current where `check` says stale.
+  `check --quiet`: the same full check and exit codes, one short line or nothing.
 - `<cmd> query <term>`: definitions whose names contain the term (`file:line`), matching paths,
   the files that import them, the vault pages that mention them, and vault pages whose path or
   title matches. Use it before a broad `grep` or opening vault pages.
@@ -160,10 +155,12 @@ time. Both are off until the owner turns them on; turn one on only after the own
   only the regenerated map pages, so they land in the same commit. A commit touching none of them
   runs no build.
 - It stops the commit, with a one-line reason, when an input has unstaged changes (the map would
-  be built from the working tree: stage or stash them, then commit; files marked assume-unchanged
-  or skip-worktree count too), when `build` refuses (exit 2: a hand-written file in the map's page
-  folder, an invalid layout), or for `git commit <paths>` / `--only` when the map needs a rebuild
-  (git can't take the map pages into that commit: stage the files and commit without paths).
+  be built from the working tree: stage or stash them, then commit; the raw bytes of every input
+  are compared with the staged ones, so assume-unchanged, skip-worktree and clean filters can't
+  hide a change, while a CRLF-only difference doesn't count), when `build` refuses (exit 2: a
+  hand-written file in the map's page folder, an invalid layout), or for `git commit <paths>` /
+  `--only` when the map needs a rebuild (git can't take the map pages into that commit: stage the
+  files and commit without paths).
 - It is a POSIX `sh` script (Git for Windows runs hooks through its own `sh`, also for a commit
   started from PowerShell). It finds Python as above and runs this script by the path it had at
   install time, or else the newest plugin version beside it (only folders named like a version
@@ -185,7 +182,8 @@ time. Both are off until the owner turns them on; turn one on only after the own
   it leaves the refresh to that. No key, no `.codemap.json`, no Python or any error: it does
   nothing. It checks the working tree before the command runs, so a `git add` in the same command
   isn't seen yet; the git hook covers that case. It also does nothing, as known gaps, when it
-  can't be sure which repository commits: `cd` / `pushd` or `git -C <dir>` before the commit,
+  can't be sure which repository commits: `cd` / `pushd`, `git -C <dir>`, `--git-dir` or
+  `--work-tree` before the commit, `GIT_DIR=... git commit`, `env git commit`,
   `/usr/bin/git commit`, or a commit inside `sh -c "..."` or a script (`git` must stand in command
   position, so `echo git commit` is no commit).
 
@@ -195,9 +193,7 @@ time. Both are off until the owner turns them on; turn one on only after the own
   `Verified` line; `check` is their review.
 - The map is navigation, not truth: open the file before relying on a symbol or a page.
 - A merge conflict in map pages: resolve the inputs (source files, vault pages), then run `build`
-  again and stage its pages. Never edit them by hand. With the fingerprint, the map page's last
-  line changes with every input change, so parallel branches conflict there more often; `build`
-  resolves it the same way.
+  again and stage its pages. Never edit them by hand.
 
 ## In the manager
 

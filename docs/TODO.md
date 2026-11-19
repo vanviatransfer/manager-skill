@@ -116,18 +116,22 @@
   blocks while the map is stale. It runs only at commit time, not after every edit, and also covers
   fresh clones and cloud sessions where `.git/hooks` is empty. It does nothing when it can't tell
   which repository commits (`cd`, `git -C`, a script); those are documented gaps.
-- `check --quiet` first compares a fingerprint of the inputs stored on the map page: the tracked
-  paths, the raw working-tree bytes of the files whose content the map reads (one `git
-  hash-object --no-filters` call, so clean filters, assume-unchanged and skip-worktree entries
-  can't hide a change, as review found twice with an index-based design), the config, the format
-  and the script. When it can't decide, it runs the full check, so it never calls a stale map
-  current. Measured once on a synthetic repository (230 source files in four languages, 251 vault
-  pages with links, 4 CPUs, three runs): `build` 0.08–0.09 s, full `check` 0.07 s, `check
-  --quiet` on a fingerprint hit 0.07 s, a commit touching no inputs 0.14–0.16 s with the hook
-  (0.09 s without), a vault-page commit with the hook 0.19–0.20 s, the Claude Code hook 0.07 s on
-  a commit and under 0.01 s on other commands. With files ten times larger (4 MB): `build` 0.19 s,
-  full `check` 0.17 s, `check --quiet` 0.07–0.08 s, the Claude Code hook 0.08–0.10 s, a
-  vault-page commit with the hook 0.33 s.
+- `check --quiet` is the full check with one line of output or none. A fingerprint fast path
+  (a hash of the inputs on the map page) was tried and removed: review found a soundness hole in
+  three rounds (index flags, a lossy clean filter, `"`-quoted paths, a linked file untracked) for
+  a gain of 0.05–0.1 s; the tests keep all four repros, each checking `check --quiet` agrees with
+  `check`. The git hook compares the raw bytes of every staged input with its blob (`git
+  hash-object --no-filters`, paths as arguments) and refuses on a difference other than CRLF.
+  Measured on a synthetic repository (230 source files in four languages, 251 vault pages with
+  links, 4 CPUs, three runs): `build` 0.07–0.09 s, `check` and `check --quiet` 0.07 s, the Claude
+  Code hook 0.08–0.09 s on a commit and under 0.01 s on other commands, a commit touching no
+  inputs 0.14–0.19 s with the git hook (0.08–0.11 s without), a vault-page commit with the hook
+  0.20–0.22 s. With files ten times larger (4 MB): `build` 0.17–0.22 s, `check` and `check
+  --quiet` 0.16–0.17 s, the Claude Code hook 0.17–0.21 s, a vault-page commit with the hook
+  0.29–0.30 s.
+- Behaviour changes for repositories that don't opt in, both harmless: `build` leaves a map page
+  whose content is unchanged untouched (no rewrite, same mtime), and `build --redetect` keeps
+  extra `.codemap.json` keys (such as `commit_check`) instead of dropping them.
 - Sessions didn't use the map unless told: `codemap.py rules-hint` adds a short marked block to
   `AGENTS.md` and `CLAUDE.md` (read the vault index and `query` before broad searches, rebuild
   after changes, use the plugin's restricted agents instead of `general-purpose`), by skill name,
@@ -139,6 +143,3 @@
   A vault costs the same whether `create-vault` is run by hand or by the manager; the manager only
   moves it to the first run. For a short-lived or tiny repository the owner can decline it (a
   Decided entry or a project rule), and the manager honours that.
-- Fingerprint trade-off (design choice): the map page's last line changes with every input change,
-  so with `commit_check` on, parallel branches conflict on it more often; the rule is unchanged
-  (run `build` again after resolving the inputs).

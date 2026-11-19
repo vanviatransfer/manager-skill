@@ -9,8 +9,7 @@ Usage:
   codemap.py mentions [PATH...] [--base SHA]   vault pages that mention these files (or the
                                                files changed since SHA)
   codemap.py detect [--root DIR]               where the vault and the map are, and why
-  codemap.py check --quiet                     the same exit codes, one line or none; uses the
-                                               fingerprint when .codemap.json has commit_check
+  codemap.py check --quiet                     the same check: one line when stale, else none
   codemap.py install-hook | uninstall-hook     the opt-in git pre-commit hook for this clone
   codemap.py pre-commit                        what that hook runs (refresh and stage the map)
   codemap.py claude-hook                       the opt-in Claude Code hook (JSON on stdin)
@@ -29,7 +28,6 @@ ideas from graphify (Apache-2.0); no code was copied.
 """
 import argparse
 import contextlib
-import hashlib
 import io
 import json
 import os
@@ -817,19 +815,6 @@ def changed_files(root, base):
     return sorted({f for f in out.stdout.decode("utf-8", "replace").splitlines() if f})
 
 
-# Fingerprint: a hash of the map's inputs, stored as the last line of the map page when
-# .codemap.json has "commit_check": true, so `check --quiet` can say "current" without a scan.
-# Inputs: every tracked path the scan sees, the raw working-tree bytes of each file whose content
-# it reads (source files, vault pages, package.json), .codemap.json, the format and this script.
-# Anything it can't decide falls back to the full check.
-FP_PREFIX = "<!-- codemap-fingerprint: "
-
-
-def strip_fp(text):
-    return "".join(line for line in text.replace("\r\n", "\n").splitlines(True)
-                   if not line.startswith(FP_PREFIX))
-
-
 def is_map_page(path, out_rel):
     return path == out_rel or path.startswith(posixpath.splitext(out_rel)[0] + "/")
 
@@ -840,117 +825,46 @@ def is_content_input(path, vault):
             or bool(vault and is_page(path, vault)))
 
 
-def script_hash():
-    try:
-        with open(os.path.abspath(__file__), "rb") as fh:
-            data = fh.read().replace(b"\r\n", b"\n")
-    except OSError:
-        return "unknown"
-    return hashlib.sha256(data).hexdigest()
-
-
 def git_lines(root, args, nul=True):
     out = subprocess.run(["git", "-C", root] + args, capture_output=True, check=True)
     text = out.stdout.decode("utf-8", "replace")
     return [x for x in text.split("\0" if nul else "\n") if x]
 
 
-def flagged_paths(root):
-    """Index entries git doesn't compare with the working tree (assume-unchanged, skip-worktree)."""
-    flagged = set()
-    for entry in git_lines(root, ["ls-files", "-v", "-z"]):
-        tag, _, path = entry.partition(" ")
-        if path and (tag.islower() or tag == "S"):
-            flagged.add(path)
-    return flagged
-
-
 def worktree_differs(root, paths, blobs):
-    """The paths whose working-tree copy exists and isn't the indexed blob."""
-    present = [p for p in paths if "\n" not in p and not link_in_path(root, p)
+    """The paths whose working-tree bytes, as the scan would read them, aren't the indexed blob.
+
+    Raw bytes (git hash-object --no-filters), so a clean filter, assume-unchanged or
+    skip-worktree can't hide a change. Paths go to git as arguments after `--`, never as lines
+    git would unquote. A file whose raw bytes differ is compared with its blob after the scan's
+    own CRLF-to-LF step, so a core.autocrlf checkout isn't a change."""
+    present = [p for p in paths if p in blobs and not link_in_path(root, p)
                and os.path.isfile(os.path.join(root, *p.split("/")))]
-    if not present:
+    raw = []
+    for i in range(0, len(present), 200):  # batched: command lines have a length limit
+        batch = present[i:i + 200]
+        out = subprocess.run(["git", "-C", root, "hash-object", "--no-filters", "--"] + batch,
+                             capture_output=True, check=True)
+        got = out.stdout.decode().split()
+        if len(got) != len(batch):
+            raise GitError("git hash-object returned %d hashes for %d files"
+                           % (len(got), len(batch)))
+        raw += got
+    differs = [p for p, b in zip(present, raw) if b != blobs[p]]
+    if not differs:
         return []
-    out = subprocess.run(["git", "-C", root, "hash-object", "--no-filters", "--stdin-paths"],
-                         capture_output=True, check=True,
-                         input="\n".join(present).encode("utf-8"))
-    return [p for p, b in zip(present, out.stdout.decode().split()) if b != blobs.get(p)]
-
-
-def input_fingerprint(root, entries, vault, out_rel, cfg_text):
-    """Hex digest of the map's inputs, or None when it can't be computed.
-
-    The content inputs are hashed from their raw working-tree bytes (git hash-object
-    --no-filters, one call), the bytes the scan reads, never from git's view of the index: clean
-    filters, assume-unchanged and skip-worktree entries can't hide a change."""
-    if entries is None:
-        return None
-    rows, readable = [], []
-    for mode, _, stage, path in entries:
-        if stage != "0":  # an unresolved merge
-            return None
-        if mode.startswith("120000") or is_map_page(path, out_rel) or path == CONFIG \
-                or skipped(path, out_rel):
-            continue
-        if "\n" in path:
-            return None
-        row = [path]
-        if is_content_input(path, vault):
-            if link_in_path(root, path) or not os.path.isfile(os.path.join(root,
-                                                                           *path.split("/"))):
-                row.append("unreadable")
-            else:
-                row.append(None)
-                readable.append(row)
-        rows.append(row)
-    if readable:
-        try:
-            out = subprocess.run(["git", "-C", root, "hash-object", "--no-filters",
-                                  "--stdin-paths"], capture_output=True, check=True,
-                                 input="\n".join(r[0] for r in readable).encode("utf-8"))
-        except (OSError, subprocess.CalledProcessError):
-            return None
-        blobs = out.stdout.decode().split()
-        if len(blobs) != len(readable):
-            return None
-        for r, b in zip(readable, blobs):
-            r[1] = b
-    h = hashlib.sha256(("codemap %d %s\0%s\0%s\0%s\0" % (FORMAT, script_hash(), vault, out_rel,
-                                                        cfg_text)).encode("utf-8"))
-    for r in rows:
-        h.update(("\0".join(r) + "\n").encode("utf-8"))
-    return h.hexdigest()[:32]
-
-
-def pages_fingerprint(pages):
-    h = hashlib.sha256()
-    for rel in sorted(pages):
-        h.update(("%s\0%s\0" % (rel, strip_fp(pages[rel]))).encode("utf-8"))
-    return h.hexdigest()[:32]
-
-
-def fp_line(inputs, pages):
-    return "%s%s %s -->\n" % (FP_PREFIX, inputs, pages)
-
-
-def fingerprint_current(root, entries, vault, out_rel):
-    """True if the stored fingerprint proves the map current; None if it can't decide."""
-    index = read_text(root, out_rel)
-    if not index:
-        return None
-    stored = [line for line in index.splitlines() if line.startswith(FP_PREFIX)]
-    if len(stored) != 1:
-        return None
-    on_disk = {}
-    for rel in [out_rel] + generated_pages(root, out_rel):
-        text = read_text(root, rel)
-        if text is None:
-            return None
-        on_disk[rel] = text
-    inputs = input_fingerprint(root, entries, vault, out_rel, read_text(root, CONFIG) or "")
-    if inputs and stored[0] == fp_line(inputs, pages_fingerprint(on_disk)).rstrip("\n"):
-        return True
-    return None
+    out = subprocess.run(["git", "-C", root, "cat-file", "--batch"], capture_output=True,
+                         check=True, input="".join(blobs[p] + "\n" for p in differs).encode())
+    data, pos, changed = out.stdout, 0, []
+    for p in differs:
+        end = data.index(b"\n", pos)
+        size = int(data[pos:end].split()[2])
+        blob = data[end + 1:end + 1 + size]
+        pos = end + 2 + size
+        with open(os.path.join(root, *p.split("/")), "rb") as fh:
+            if fh.read().replace(b"\r\n", b"\n") != blob.replace(b"\r\n", b"\n"):
+                changed.append(p)
+    return changed
 
 
 # The git pre-commit hook. A POSIX sh script (Git for Windows runs hooks through its own sh, also
@@ -1204,11 +1118,11 @@ def pre_commit(root):
                                    and is_content_input(p, vault))
         unstaged = [p for p in git_lines(root, ["diff", "--name-only", "--no-renames", "-z"])
                     if relevant(p)]
-        flagged = sorted(p for p in flagged_paths(root) if relevant(p))
-        if flagged:
-            blobs = {path: blob for _, blob, _, path in git_index(root) or []}
-            unstaged += worktree_differs(root, flagged, blobs)
-    except (OSError, subprocess.CalledProcessError, GitError) as exc:
+        blobs = {path: blob for mode, blob, stage, path in git_index(root) or []
+                 if stage == "0" and not mode.startswith(("120000", "160000"))}
+        unstaged += [p for p in worktree_differs(root, sorted(p for p in blobs if relevant(p)),
+                                                 blobs) if p not in unstaged]
+    except (OSError, subprocess.CalledProcessError, GitError, ValueError, IndexError) as exc:
         print("codemap: commit stopped: git failed: %s" % exc, file=sys.stderr)
         return 1
     if unstaged:
@@ -1243,8 +1157,8 @@ def pre_commit(root):
 # "commit_check": true, block the commit while the map is stale. Fails open on anything else.
 # `git` must stand in command position (line start, or after ; & | ( or a newline), outside quotes.
 # Known gaps, where the hook does nothing: a commit after `cd`/`pushd` or with `git -C <dir>`,
-# `--git-dir` or `--work-tree` (another repository than the session's), `/usr/bin/git commit`,
-# and commits inside `sh -c "..."` or scripts. A here-document's lines still count as commands.
+# `--git-dir` or `--work-tree` (another repository than the session's), `GIT_DIR=... git commit`,
+# `env git commit`, `/usr/bin/git commit`, and commits inside `sh -c "..."` or scripts. A here-document's lines still count as commands.
 GIT_COMMIT = re.compile(r"""(?:^|[;&|(\n])\s*git((?:\s+(?:-C\s+(?:"[^"]*"|'[^']*'|[^\s;&|]+)"""
                         r"""|-c\s+[^\s;&|]+|--[\w-]+(?:=[^\s;&|]+)?|-[A-Za-z]))*)\s+commit"""
                         r"""(?=$|[\s;&|)])""")
@@ -1425,7 +1339,7 @@ def main(argv=None):
     ap.add_argument("--redetect", action="store_true", help="build: ignore and rewrite %s" % CONFIG)
     ap.add_argument("--base", help="mentions: use the files changed since this commit")
     ap.add_argument("--quiet", action="store_true",
-                    help="check: print nothing when current, one line otherwise; fast")
+                    help="check: print nothing when current, one line otherwise")
     ap.add_argument("--remove", action="store_true", help="rules-hint: remove the block")
     ap.add_argument("--shared", action="store_true",
                     help="install-hook: allow a core.hooksPath folder outside the repository")
@@ -1496,10 +1410,6 @@ def main(argv=None):
             print("next: no vault; create one with the create-vault skill (Create mode), then "
                   "`build` (`build --redetect` when %s exists)" % CONFIG)
         return 0
-    quick = args.action == "check" and args.quiet and source == CONFIG and out_arg is None \
-        and args.vault is None
-    if quick and fingerprint_current(root, index, vault_dir, out_rel):
-        return 0
     info, importers, entries, files = scan(root, out_rel, tracked)
     cmd = command_label()
     planned = set(render(info, importers, entries, cmd, out_rel))
@@ -1565,7 +1475,7 @@ def main(argv=None):
         bad = []
         for rel, text in sorted(pages.items()):
             current = read_text(root, rel)
-            if current is None or strip_fp(current) != text:
+            if current is None or current.replace("\r\n", "\n") != text:
                 bad.append(rel)
         bad += stale_extra
         if args.quiet:
@@ -1615,11 +1525,6 @@ def main(argv=None):
         with open(os.path.join(root, CONFIG), "w", encoding="utf-8", newline="\n") as fh:
             fh.write(json.dumps(cfg, indent=2) + "\n")
         print("wrote %s (vault: %s, %s)" % (CONFIG, vault_dir or "none", source))
-    cfg = read_config(root) if in_repo and not args.out and not args.vault else None
-    if cfg and cfg.get("commit_check") is True and safe_rel(cfg.get("map"), "map") == out_rel:
-        inputs = input_fingerprint(root, index, vault_dir, out_rel, read_text(root, CONFIG) or "")
-        if inputs:
-            pages[out_rel] += fp_line(inputs, pages_fingerprint(pages))
     for rel, text in sorted(pages.items()):
         path = os.path.join(root, *rel.split("/"))
         current = read_text(root, rel)

@@ -33,7 +33,7 @@ A Claude Code plugin with six skills:
     it rebuilds the map and stages its pages into the same commit; it stops the commit when an
     input has unstaged changes or the build refuses, and keeps an existing hook, run first. A
     Claude Code commit check, versioned (`"commit_check": true` in `.codemap.json`): before a
-    `git commit` it runs a fast fingerprint `check --quiet` and blocks the commit while the map is
+    `git commit` it runs `check --quiet` (the full check) and blocks the commit while the map is
     stale, telling Claude to rebuild and stage it. Exact commands: the `code-map` skill.
   - **In the manager.** At the start of every run the manager checks that the default branch has
     the vault, the map and the rules block. With no vault it asks once, in the model-strategy
