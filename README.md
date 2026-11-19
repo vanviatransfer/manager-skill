@@ -9,7 +9,8 @@ A Claude Code plugin with six skills:
   one: short linked pages of durable facts about the code (index, glossary, decision records, topic
   pages), each with its sources and a `Verified` line, landed through a reviewed PR. The plan's
   phases point to the pages they need, and the manager's implementers keep those pages current in
-  their phase PRs.
+  their phase PRs. The vault holds durable knowledge about the code; progress and history live in
+  the plan and git. In every mode the same PR also sets up the code map and the rules block (below).
 - **`code-map`** — a generated map of the repository: directories, entry points, most imported files
   and top-level symbols per file, plus a vault index (every page with its title, size and inbound
   links), broken links and orphan pages, so agents read one page instead of exploring. `query` finds
@@ -18,10 +19,32 @@ A Claude Code plugin with six skills:
   folder, a known folder name, or the folder with most `[[wikilinks]]`), including vaults made
   without this plugin, and records the layout in `.codemap.json`. It is the plugin's own
   standard-library Python script (3.8+; no packages, nothing sent anywhere; files that may hold
-  secrets are never read). The manager checks at the start of every run whether the map is set up
-  (the committed `.codemap.json` is the guard) and offers to set it up if not; once it is,
-  implementers regenerate the map in every phase PR and reviewers run its `check`. Without Python it
-  offers the install command and skips the map only if you decline.
+  secrets are never read). A map always comes with a vault: in a repository without one, the skill
+  first creates it (`create-vault`, Create mode) in the same PR. Without Python it offers the
+  install command and skips the map only if you decline.
+  - **Rules block.** Sessions don't use the map unless told, so the setup PR adds a short marked
+    block to `AGENTS.md` and `CLAUDE.md` (`codemap.py rules-hint`; created if missing; when
+    `CLAUDE.md` imports `@AGENTS.md`, only a marker line there). It tells every session to read the
+    vault index and use the skill's `query` before broad searches, to rebuild the map after
+    changes, and to use `manager-plugin:worker`, `researcher` or `reviewer` instead of
+    `general-purpose`. It names the skill, never a script path; nothing else in the files changes.
+  - **Commit hooks (opt-in, off by default).** A git pre-commit hook, per clone
+    (`codemap.py install-hook`, off with `uninstall-hook`): when a commit changes the map's inputs
+    it rebuilds the map and stages its pages into the same commit; it stops the commit when an
+    input has unstaged changes or the build refuses, and keeps an existing hook, run first. A
+    Claude Code commit check, versioned (`"commit_check": true` in `.codemap.json`): before a
+    `git commit` it runs `check --quiet` (the full check) and blocks the commit while the map is
+    stale, telling Claude to rebuild and stage it. Exact commands: the `code-map` skill.
+  - **In the manager.** At the start of every run the manager checks that the default branch has
+    the vault, the map and the rules block. With no vault it asks once, in the model-strategy
+    question, whether to set one up (yes / not this time / never in this repo); with a vault, it
+    sets up what is missing without asking. Either lands as one reviewed setup PR before the first
+    phase; the commit hooks are a separate yes. Creating a vault costs the same whether you run
+    `create-vault` yourself or the manager does it; the manager just does it once, at the first
+    run, and later sessions read the index and `query` instead of exploring. For a short-lived or
+    tiny repository, decline it (the "never" answer, a Decided entry or a project rule), and the
+    manager honours that. Once set up, implementers regenerate the map in every phase PR and
+    reviewers run its `check`.
 - **`self-training-skills`** — writes skills for work that repeats in a project (offered when a
   living plan has recurring work): a worker skill in `.claude/skills/<name>/`, per-use records (in
   the vault if there is one) and a labelled lessons table, plus an optional trainer skill for work
@@ -141,7 +164,9 @@ only for manager phases, which the manager dispatches with a brief). A request c
 another plugin or skill that dispatches `general-purpose` needs one retry with that marker. The hook
 writes nothing, touches none of your settings files and goes away with the plugin. It is a plain
 `sh` script; on Windows it runs in Git Bash, and where Git Bash (or `grep`/`sed`) is missing it
-fails open (`onFailure: continue`), so spawns are allowed and nothing is blocked.
+fails open (`onFailure: continue`), so spawns are allowed and nothing is blocked. A second
+`PreToolUse` hook, on Bash, is the code-map commit check above: it does nothing unless a
+repository's `.codemap.json` opts in, and fails open the same way.
 
 Everything runs in one turn with subagents, so it works the same in the Claude desktop app, the
 terminal and cloud sessions.
@@ -249,6 +274,7 @@ rules and secret-file patterns follow ideas from
 
 Tests for the code-map script:
 `python3 -m unittest discover -s plugins/manager-plugin/skills/code-map/scripts`.
-Tests for the subagent hook: `python3 -m unittest discover -s plugins/manager-plugin/hooks`.
+Tests for the plugin hooks (subagent spawns, code-map commit check):
+`python3 -m unittest discover -s plugins/manager-plugin/hooks`.
 Tests for the self-training-skills script:
 `python3 -m unittest discover -s plugins/manager-plugin/skills/self-training-skills/scripts`.

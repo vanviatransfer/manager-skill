@@ -14,7 +14,7 @@ Worktree dir: <temp path outside the repo; only if the project allows worktrees>
 Rulings: <given to the implementer, verbatim | none>
 Plan records: <given to the implementer, verbatim | none | unknown (resumed)>
 Plan change: <exact text or specification file path; plan-only PR only>
-Setup: <code map; code-map setup PR only>
+Setup: <code map | code map + commit check; setup PR only>
 Previous blockers: <titles; re-review only>
 Code map: <python command and quoted codemap.py path | none>
 ```

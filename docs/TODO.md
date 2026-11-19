@@ -101,3 +101,46 @@
   choice and said nothing. The session check now also recommends `/autocompact 300k` when the
   saved value is above 300k, naming the current value; a value of 300k or less is still left alone,
   and the manager never changes a setting itself.
+
+### 8. Code map kept current, vault and rules block set up together (plugin 0.8.0)
+
+- A project repository's map went stale: a session outside a manager phase added scripts and vault
+  notes over several PRs without running `build`, and nothing else guards the map.
+- Two opt-in commit hooks, both off by default. A git pre-commit hook, per clone (`codemap.py
+  install-hook` / `uninstall-hook`): when staged changes touch the map's inputs it runs `build`
+  and stages only the map pages; it stops the commit when an input has unstaged changes or the
+  build refuses, chains an existing hook (run first, restored on uninstall), writes nothing inside
+  the work tree under `core.hooksPath`, and uses a shared `core.hooksPath` folder outside the
+  repository only with `--shared`. A Claude Code `PreToolUse` hook on Bash, versioned
+  (`"commit_check": true` in `.codemap.json`): before a `git commit` it runs `check --quiet` and
+  blocks while the map is stale. It runs only at commit time, not after every edit, and also covers
+  fresh clones and cloud sessions where `.git/hooks` is empty. It does nothing when it can't tell
+  which repository commits (`cd`, `git -C`, a script); those are documented gaps.
+- `check --quiet` is the full check with one line of output or none. A fingerprint fast path
+  (a hash of the inputs on the map page) was tried and removed: review found a soundness hole in
+  three rounds (index flags, a lossy clean filter, `"`-quoted paths, a linked file untracked) for
+  a gain of 0.05–0.1 s; the tests keep all four repros, each checking `check --quiet` agrees with
+  `check`. The git hook compares the raw bytes of every staged input with its blob (`git
+  hash-object --no-filters`, paths as arguments) and refuses on a difference other than CRLF,
+  or when a tracked input isn't a readable file there (sparse checkout, skip-worktree, deleted).
+  Measured on a synthetic repository (230 source files in four languages, 251 vault pages with
+  links, 4 CPUs, three runs): `build` 0.07–0.09 s, `check` and `check --quiet` 0.07 s, the Claude
+  Code hook 0.08–0.09 s on a commit and under 0.01 s on other commands, a commit touching no
+  inputs 0.14–0.19 s with the git hook (0.08–0.11 s without), a vault-page commit with the hook
+  0.20–0.22 s. With files ten times larger (4 MB): `build` 0.17–0.22 s, `check` and `check
+  --quiet` 0.16–0.17 s, the Claude Code hook 0.17–0.21 s, a vault-page commit with the hook
+  0.29–0.30 s.
+- Behaviour changes for repositories that don't opt in, both harmless: `build` leaves a map page
+  whose content is unchanged untouched (no rewrite, same mtime), and `build --redetect` keeps
+  extra `.codemap.json` keys (such as `commit_check`) instead of dropping them.
+- Sessions didn't use the map unless told: `codemap.py rules-hint` adds a short marked block to
+  `AGENTS.md` and `CLAUDE.md` (read the vault index and `query` before broad searches, rebuild
+  after changes, use the plugin's restricted agents instead of `general-purpose`), by skill name,
+  never a script path; idempotent, nothing else in the files changes.
+- Vault, map and rules block now come together: `create-vault` sets up the map and the block in
+  its own PR, the `code-map` skill creates a vault first when there is none, and the manager makes
+  sure a repository has all three in one setup PR before the first phase. A missing vault is the
+  one thing it asks about (yes / not this time / never in this repo); the hooks are a separate yes.
+  A vault costs the same whether `create-vault` is run by hand or by the manager; the manager only
+  moves it to the first run. For a short-lived or tiny repository the owner can decline it (a
+  Decided entry or a project rule), and the manager honours that.

@@ -11,6 +11,17 @@
             "onFailure": "continue"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/codemap-commit-check.sh\"",
+            "timeout": 30,
+            "onFailure": "continue"
+          }
+        ]
       }
     ]
   }
