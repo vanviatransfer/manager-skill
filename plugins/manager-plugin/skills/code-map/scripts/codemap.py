@@ -831,18 +831,34 @@ def git_lines(root, args, nul=True):
     return [x for x in text.split("\0" if nul else "\n") if x]
 
 
+def readable_file(root, path):
+    return not link_in_path(root, path) and os.path.isfile(os.path.join(root, *path.split("/")))
+
+
+def arg_batches(paths, limit=24000):
+    """The paths in runs whose total length stays under a command-line limit (Windows: 32,767)."""
+    batch, size = [], 0
+    for p in paths:
+        if batch and size + len(p) + 3 > limit:
+            yield batch
+            batch, size = [], 0
+        batch.append(p)
+        size += len(p) + 3
+    if batch:
+        yield batch
+
+
 def worktree_differs(root, paths, blobs):
     """The paths whose working-tree bytes, as the scan would read them, aren't the indexed blob.
 
     Raw bytes (git hash-object --no-filters), so a clean filter, assume-unchanged or
     skip-worktree can't hide a change. Paths go to git as arguments after `--`, never as lines
     git would unquote. A file whose raw bytes differ is compared with its blob after the scan's
-    own CRLF-to-LF step, so a core.autocrlf checkout isn't a change."""
-    present = [p for p in paths if p in blobs and not link_in_path(root, p)
-               and os.path.isfile(os.path.join(root, *p.split("/")))]
+    own CRLF-to-LF step, so a core.autocrlf checkout isn't a change. Missing paths and those
+    that aren't readable regular files are left to the caller (see readable_file)."""
+    present = [p for p in paths if p in blobs and readable_file(root, p)]
     raw = []
-    for i in range(0, len(present), 200):  # batched: command lines have a length limit
-        batch = present[i:i + 200]
+    for batch in arg_batches(present):
         out = subprocess.run(["git", "-C", root, "hash-object", "--no-filters", "--"] + batch,
                              capture_output=True, check=True)
         got = out.stdout.decode().split()
@@ -1120,10 +1136,18 @@ def pre_commit(root):
                     if relevant(p)]
         blobs = {path: blob for mode, blob, stage, path in git_index(root) or []
                  if stage == "0" and not mode.startswith(("120000", "160000"))}
-        unstaged += [p for p in worktree_differs(root, sorted(p for p in blobs if relevant(p)),
-                                                 blobs) if p not in unstaged]
+        inputs = sorted(p for p in blobs if relevant(p))
+        missing = [p for p in inputs if not readable_file(root, p)]
+        unstaged += [p for p in worktree_differs(root, inputs, blobs) if p not in unstaged]
     except (OSError, subprocess.CalledProcessError, GitError, ValueError, IndexError) as exc:
         print("codemap: commit stopped: git failed: %s" % exc, file=sys.stderr)
+        return 1
+    if missing:  # sparse checkout, skip-worktree, a deleted or replaced file: the map would lose it
+        more = " and %d more" % (len(missing) - 1) if len(missing) > 1 else ""
+        print("codemap: commit stopped: %s%s is tracked but not a readable file here (sparse "
+              "checkout, skip-worktree or deleted), so the map can't be built from this working "
+              "tree; check it out (or `git rm` it), or run `build` in a full checkout and commit "
+              "with --no-verify" % (missing[0], more), file=sys.stderr)
         return 1
     if unstaged:
         more = " and %d more" % (len(unstaged) - 1) if len(unstaged) > 1 else ""

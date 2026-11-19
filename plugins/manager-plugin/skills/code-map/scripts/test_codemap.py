@@ -973,6 +973,75 @@ class HookTest(unittest.TestCase):
         self.assertNotEqual(p.returncode, 0)
         self.assertIn("src/app.py has unstaged changes", p.stderr.decode())
 
+    def add_other_and_install(self):
+        self.write("src/other.py", "def other():\n    pass\n")
+        self.git("add", "-A")
+        run("build", "--root", self.root)
+        self.git("add", "-A")
+        self.git("commit", "-qm", "other", "--no-verify")
+        self.install()
+
+    def assert_missing_stops_the_commit(self):
+        self.write("vault/new.md", "# New\n")
+        self.git("add", "vault/new.md")
+        p = self.commit()
+        self.assertNotEqual(p.returncode, 0)
+        err = p.stderr.decode()
+        self.assertIn("src/other.py is tracked but not a readable file here", err)
+        self.assertIn("full checkout", err)
+        self.assertEqual(len(err.strip().splitlines()), 1)
+
+    def test_skip_worktree_deleted_input_stops_the_commit(self):
+        self.add_other_and_install()
+        for flag in ("--skip-worktree", "--assume-unchanged"):
+            self.git("update-index", flag, "src/other.py")
+            os.remove(os.path.join(self.root, "src", "other.py"))
+            self.assertEqual(self.git("diff", "--name-only").stdout, b"")  # git sees no change
+            self.assert_missing_stops_the_commit()
+            self.git("reset", "-q", "vault/new.md")
+            os.remove(os.path.join(self.root, "vault", "new.md"))
+            self.git("update-index", flag.replace("--", "--no-"), "src/other.py")
+            self.git("checkout", "--", "src/other.py")
+
+    def test_sparse_checkout_stops_the_commit(self):
+        self.add_other_and_install()
+        p = self.git("sparse-checkout", "set", "--no-cone", "/*", "!/src/other.py", check=False)
+        if p.returncode:
+            self.skipTest("git without sparse-checkout --no-cone")
+        self.assertFalse(os.path.exists(os.path.join(self.root, "src", "other.py")))
+        self.assert_missing_stops_the_commit()
+
+    def test_long_paths_are_batched_by_length(self):
+        paths = ["d%03d/" % i + "x" * 240 + ".py" for i in range(300)]
+        batches = list(codemap.arg_batches(paths))
+        self.assertGreater(len(batches), 2)
+        self.assertEqual(sum(batches, []), paths)
+        self.assertTrue(all(sum(len(p) + 3 for p in b) <= 24000 for b in batches))
+        self.assertEqual(list(codemap.arg_batches(["y" * 30000])), [["y" * 30000]])
+        deep = "/".join(["s" * 40] * 3)
+        for i in range(120):  # about 26,000 characters of paths: more than one git call
+            self.write("%s/m%03d_%s.py" % (deep, i, "z" * 80), "def f%d():\n    pass\n" % i)
+        self.git("add", "-A")
+        run("build", "--root", self.root)
+        self.git("add", "-A")
+        self.git("commit", "-qm", "long", "--no-verify")
+        self.install()
+        old = codemap.arg_batches
+        self.addCleanup(setattr, codemap, "arg_batches", old)
+        codemap.arg_batches = lambda ps: old(ps, limit=4000)
+        rel = "%s/m007_%s.py" % (deep, "z" * 80)
+        self.git("update-index", "--assume-unchanged", rel)
+        self.write(rel, "def changed():\n    pass\n")
+        self.write("vault/new.md", "# New\n")
+        self.git("add", "vault/new.md")
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(codemap.pre_commit(self.root), 1)
+        self.assertIn("m007_", err.getvalue())
+        self.git("update-index", "--no-assume-unchanged", rel)
+        self.git("checkout", "--", rel)
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(codemap.pre_commit(self.root), 0)
+
     def test_crlf_checkout_does_not_stop_the_commit(self):
         self.git("config", "core.autocrlf", "true")
         self.write("src/app.py", "def run():\r\n    pass\r\n", newline="")

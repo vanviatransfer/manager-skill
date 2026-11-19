@@ -157,7 +157,9 @@ time. Both are off until the owner turns them on; turn one on only after the own
 - It stops the commit, with a one-line reason, when an input has unstaged changes (the map would
   be built from the working tree: stage or stash them, then commit; the raw bytes of every input
   are compared with the staged ones, so assume-unchanged, skip-worktree and clean filters can't
-  hide a change, while a CRLF-only difference doesn't count), when `build` refuses (exit 2: a
+  hide a change, while a CRLF-only difference doesn't count), when a tracked input isn't a
+  readable file in the working tree (sparse checkout, skip-worktree, deleted: check it out, or
+  run `build` in a full checkout and commit with `--no-verify`), when `build` refuses (exit 2: a
   hand-written file in the map's page folder, an invalid layout), or for `git commit <paths>` /
   `--only` when the map needs a rebuild (git can't take the map pages into that commit: stage the
   files and commit without paths).
@@ -185,7 +187,9 @@ time. Both are off until the owner turns them on; turn one on only after the own
   can't be sure which repository commits: `cd` / `pushd`, `git -C <dir>`, `--git-dir` or
   `--work-tree` before the commit, `GIT_DIR=... git commit`, `env git commit`,
   `/usr/bin/git commit`, or a commit inside `sh -c "..."` or a script (`git` must stand in command
-  position, so `echo git commit` is no commit).
+  position, so `echo git commit` is no commit). Another known gap: it judges the working tree,
+  not the staged files, so unrelated unstaged edits to inputs can block a commit, and the `build`
+  it asks for then maps them too (stash them first, or use the git hook, which refuses instead).
 
 ## Rules
 

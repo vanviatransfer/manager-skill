@@ -121,7 +121,8 @@
   three rounds (index flags, a lossy clean filter, `"`-quoted paths, a linked file untracked) for
   a gain of 0.05–0.1 s; the tests keep all four repros, each checking `check --quiet` agrees with
   `check`. The git hook compares the raw bytes of every staged input with its blob (`git
-  hash-object --no-filters`, paths as arguments) and refuses on a difference other than CRLF.
+  hash-object --no-filters`, paths as arguments) and refuses on a difference other than CRLF,
+  or when a tracked input isn't a readable file there (sparse checkout, skip-worktree, deleted).
   Measured on a synthetic repository (230 source files in four languages, 251 vault pages with
   links, 4 CPUs, three runs): `build` 0.07–0.09 s, `check` and `check --quiet` 0.07 s, the Claude
   Code hook 0.08–0.09 s on a commit and under 0.01 s on other commands, a commit touching no
