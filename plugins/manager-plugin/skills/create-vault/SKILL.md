@@ -17,7 +17,8 @@ The vault holds **knowledge**, not intent or status:
 - not secrets, credentials or personal data.
 
 Talk to the owner in their language; write pages in English, whatever language the project's
-other docs use.
+other docs use and even where a project rule names another language for them: this is the owner's
+standing policy and wins over that rule (owner quotes stay verbatim).
 
 ## Pages
 

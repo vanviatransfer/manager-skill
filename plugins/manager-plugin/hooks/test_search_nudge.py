@@ -81,6 +81,27 @@ class SearchNudgeTest(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn('query <term> --root "%s"' % self.root, err)
 
+    def test_message_omits_root_when_the_top_cannot_be_quoted(self):
+        # A control character in the repository path: quote_path gives None, so no --root.
+        self.root = os.path.join(self.tmp, "re\tpo")
+        try:
+            for rel in ("src/app.py", "vault/index.md", "vault/map.md"):
+                self.write(rel, "x\n")
+            self.write(".codemap.json", CONFIG)
+            os.makedirs(os.path.join(self.root, ".git"))
+        except OSError:
+            self.skipTest("this filesystem takes no tab in a folder name")
+        code, err = self.hook("Grep", pattern="foo")
+        self.assertEqual(code, 2)
+        self.assertEqual(len(err.strip().splitlines()), 1)
+        script = os.path.join(PLUGIN, "skills", "code-map", "scripts", "codemap.py")
+        self.assertIn('manager-plugin: map first: run python3 "%s" query <term> (or read the '
+                      'vault index or the map page vault/map.md) before a broad search;' % script,
+                      err)
+        self.assertNotIn("--root", err)
+        self.assertNotIn("\t", err)
+        self.assertEqual(self.hook("Grep", pattern="foo")[0], 0, "a repeat is allowed")
+
     def test_message_falls_back_without_a_resolvable_plugin(self):
         self.env["CLAUDE_PLUGIN_ROOT"] = os.path.join(self.tmp, "missing")
         code, err = self.hook("Grep", pattern="foo")

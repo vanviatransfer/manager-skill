@@ -28,6 +28,9 @@ A Claude Code plugin with six skills:
     vault index and use the skill's `query` before broad searches, to rebuild the map after
     changes, and to use `manager-plugin:worker`, `researcher` or `reviewer` instead of
     `general-purpose`. It names the skill, never a script path; nothing else in the files changes.
+    The block's marker carries a template version. When a plugin update changes the template, a
+    session-start hook says so in one line with the command to run (`rules-hint` again, then
+    commit); the manager updates an outdated block in its setup PR.
   - **Commit hooks (opt-in, off by default).** A git pre-commit hook, per clone
     (`codemap.py install-hook`, off with `uninstall-hook`): when a commit changes the map's inputs
     it rebuilds the map and stages its pages into the same commit; it stops the commit when an
@@ -45,9 +48,10 @@ A Claude Code plugin with six skills:
     `"search_nudge": false` in `.codemap.json`. The state is a marker file in the OS temp
     folder, never in the repository.
   - **In the manager.** At the start of every run the manager checks that the default branch has
-    the vault, the map and the rules block. With no vault it asks once, in the model-strategy
-    question, whether to set one up (yes / not this time / never in this repo); with a vault, it
-    sets up what is missing without asking. Either lands as one reviewed setup PR before the first
+    the vault, the map and the current rules block. With no vault it asks once, in the
+    model-strategy question, whether to set one up (yes / not this time / never in this repo); with
+    a vault, it sets up what is missing or outdated without asking. Either lands as one reviewed
+    setup PR before the first
     phase; the commit hooks are a separate yes. Creating a vault costs the same whether you run
     `create-vault` yourself or the manager does it; the manager just does it once, at the first
     run, and later sessions read the index and `query` instead of exploring. For a short-lived or
@@ -66,8 +70,8 @@ A Claude Code plugin with six skills:
 ## Learning from runs
 
 Each manager run appends a compact record (header: repository name, plugin version, model strategy;
-then per phase: risk, models, rounds, tokens, verdicts, blocker classes, skipped validation,
-fallbacks; and a summary line with compactions, owner questions and usage change) to
+then per phase: risk, models, rounds, agent context sizes, verdicts, blocker classes, skipped
+validation, fallbacks; and a summary line with compactions and owner questions) to
 `~/.claude/manager-runs/` in your home directory. It is local to your machine, shared by all your
 projects, outside every repository, and holds no code or file contents; delete the folder to reset
 it. It may not persist in cloud sessions. Two things learn from it:
@@ -98,40 +102,58 @@ Limits that keep a run's tokens down (the thresholds are design choices still to
 against run records, not measurements):
 
 - **Fix rounds:** at most 5 per phase by default (a plan's or project's own limit wins); only rounds
-  after a CHANGES REQUIRED review count, retry rounds included. At the third round the manager asks
-  whether the approach is wrong rather than the last attempt.
+  after a CHANGES REQUIRED review count, retry rounds included. At the third round, and when two
+  reviews in a row report the same blockers while rounds are left, the manager asks whether the
+  approach is wrong rather than the last attempt. An owner decision that unblocks a phase a brake
+  had stopped restarts that phase's counts.
 - **Integration rounds** (bringing a candidate up to a default branch that moved): at most 5 per
   phase, counted separately (a plan's or project's limit on review attempts wins); a 6th needed
   blocks the phase as "default branch moving faster than the phase can land". The review-ledger
   marks these rounds `INTEGRATE`, so the two counts stay apart.
-- **Rotation:** once one implementer's `subagent_tokens` reach about 400k, or after 3 of its fix
-  rounds once they are above about 150k, the next round goes to a fresh implementer with a short
-  `Handoff:` note (PR, branch, candidate SHA, blockers fixed and open, next step), never a
-  transcript. Integration rounds never trigger it by count. `subagent_tokens` is cumulative usage
-  over the agent's rounds, not its current context size, so the thresholds are rough proxies.
+- **Rotation:** `subagent_tokens`, the figure the Agent tool reports, is an agent's context size
+  at its last request, not cumulative usage. A subagent's prompt cache lasts 5 minutes by default,
+  so resuming an implementer later than that re-writes its whole context at 1.25 times the input
+  price, while a fresh one pays only its start. At a round boundary the next round therefore goes
+  to a fresh implementer when the current one's context is about 150k or more, or above about 100k
+  with its last return more than 5 minutes old. The fresh one gets the PR, the blockers and the
+  SHAs in its dispatch, never a transcript; while the cache is still warm the old one first writes
+  a short `Handoff:` note (branch, candidate SHA, blockers fixed and open, next step). Round
+  counts no longer trigger it. The numbers behind the two thresholds are in `docs/TODO.md`
+  (item 11).
 - **Series mode:** up to 3 ready, independent, same-shape `standard` phases may run on one
   implementer one after another, each from the default head on its own branch and PR. Every PR
   still gets its own fresh reviewer, exact-SHA verdict and landing, never one verdict for several.
-  The series stops at a rotation trigger, a blocked phase or an owner decision.
+  The series stops at a rotation, a blocked phase or an owner decision.
 - **Short returns and split briefs:** the implementer writes its full report to a file outside the
   repository and returns only what the manager checks (result, PR, branch, base and candidate SHA,
-  a one-line validation summary, any blocker, the report path); the manager reads from the file
+  a one-line validation summary, one line of risks, any blocker, the report path); the manager
+  reads from the file
   only what a decision needs and still checks every fact against `git` and GitHub. Rare cases in
   the skill and the briefs live in reference files read only when their trigger applies.
-- **Agent caps:** the plugin's agents set `autoCompactWindow` (implementer and worker 300000;
-  reviewer, fallback and researcher 200000) and `maxTurns` (implementer, worker and fallback 500;
+- **Agent caps:** the plugin's agents set `autoCompactWindow` (implementer, worker and fallback
+  300000; reviewer and researcher 200000) and `maxTurns` (implementer, worker and fallback 500;
   reviewer and researcher 300). The window is a ceiling: when the parent session's window is
   smaller, the smaller one wins. `maxTurns` caps one run of an agent: each resume (a fix round sent
   with SendMessage) starts with a fresh budget, so it bounds a run, not a whole phase. Claude
   Code's plugin-agent loader accepts both fields; their effect on real runs is unmeasured.
+- **Reviews that block only on grounds:** a reviewer's blocker must cite its ground: an unmet
+  acceptance criterion, a reproducible bug, a security or data-safety issue, a project-rule breach,
+  a missing required test, an out-of-scope change, or a plan or record misstatement. Anything else
+  is a note, and a review carries at most 3 notes, each with a concrete consequence and a suggested
+  action.
 
 Before a new run starts, the manager recommends a model strategy (Sonnet, Opus or a mix, with a
 one-line reason) and waits for the owner's choice, unless the owner set a standing policy; it never
-picks or escalates a model on its own.
+picks or escalates a model on its own. The plugin's agents name no model: they run on the session's
+model unless a dispatch sets one. Effort is `medium` by default and `high` for the reviewer of a
+`critical` phase, unless the strategy or the owner says otherwise.
 
-Plan and vault text the implementers write during a run (status lines, plan records, plan-only PRs,
-vault pages) is in English when new or changed; owner quotes stay verbatim, and unchanged text is
-not translated unless the phase says so. A project's own rules still win.
+Plan and vault text (the `living-plan` and `create-vault` skills, and what the implementers write
+during a run: status lines, plan records, plan-only PRs, vault pages) is in English when new or
+changed; owner quotes stay verbatim, and unchanged text is not translated unless the phase says so.
+This is the owner's standing policy and the one place where it wins over a project rule: a rule
+naming another language for plan or vault text doesn't apply to it, and reviewers don't flag it.
+Everything else in a project's rules still wins, and the manager talks to you in your language.
 
 Phases are scheduled by their declared dependencies: an owner decision or a stuck phase blocks only
 what depends on it, and everything else keeps running; the open decisions are asked in one batch at
@@ -144,7 +166,10 @@ implementer and reviewer are the plugin's own tool-restricted subagents (`agents
 allowlists narrow the tools available to them instead of inheriting every tool, plugin and MCP
 server (the reviewer gets no Edit/Write or GitHub MCP write tools; staying read-only still comes
 from its brief). Measured once, this lowers their start tokens to about a seventh of
-general-purpose's (numbers below). A third one, `manager-plugin:researcher` (read and search tools,
+general-purpose's (numbers below). All five plugin agents also set `omitClaudeMd`, so none gets the
+session's `CLAUDE.md` files injected (in a session that spans several repositories, those can be
+another project's); each reads the `CLAUDE.md` and `AGENTS.md` of the repository it works in, as
+its brief or instructions say. A third one, `manager-plugin:researcher` (read and search tools,
 web search and fetch, Write for its report; staying read-only comes from its instructions), is for
 research an orchestrating session delegates (evaluating a repository or a library, reading docs):
 use it instead of `general-purpose` so the research agent doesn't inherit every skill and MCP tool.
@@ -177,7 +202,10 @@ fails open (`onFailure: continue`), so spawns are allowed and nothing is blocked
 `PreToolUse` hook, on Bash, is the code-map commit check above: it does nothing unless a
 repository's `.codemap.json` opts in, and fails open the same way. A third, on Grep, Glob and
 Bash, is the code-map "map first" nudge above: it does nothing in a repository without a code map,
-and fails open the same way.
+and fails open the same way. A `SessionStart` hook (startup, resume, clear) reads the repository's
+`AGENTS.md` and `CLAUDE.md` and, when their code-map rules block is older than the plugin's
+template, adds one line with the `rules-hint` command to the session's context; otherwise it
+prints nothing. It writes nothing and fails open too.
 
 Everything runs in one turn with subagents, so it works the same in the Claude desktop app, the
 terminal and cloud sessions.
@@ -274,6 +302,22 @@ can't change them itself):
   cc-plugin-you-should-know@builtin`): while on, it rereads the conversation from time to time in a
   separate request to the same model and shows notes above the prompt for you to answer.
 
+Two habits keep the main session's own cost down:
+
+- Start a run in a new session when the current conversation already holds unrelated work (the
+  manager says so in its first question). A manager run needs no handoff note: it rebuilds its
+  state from git, the plan and the review ledger.
+- On a Claude subscription the main session's prompt cache lasts an hour (5 minutes on an API key,
+  usage credits or a cloud provider, unless you set `promptCacheTtl`). When the manager stops to
+  wait for you and you will answer later than about 50 minutes, run `/compact` before you leave,
+  or answer in a new session (the manager adds this line when it stops). Claude Code's idle
+  compaction (`idleCompaction`, on by default from 2.1.290) does this by itself in local
+  interactive sessions once the context is 200,000 tokens or more; it doesn't run in cloud
+  sessions or on smaller contexts.
+
+At the end of a run the manager leaves a clean shared checkout on `origin/<default>` (detached),
+when the project's rules allow switching it.
+
 ## Credits
 
 The review and planning discipline draws on ideas from
@@ -285,7 +329,8 @@ rules and secret-file patterns follow ideas from
 
 Tests for the code-map script:
 `python3 -m unittest discover -s plugins/manager-plugin/skills/code-map/scripts`.
-Tests for the plugin hooks (subagent spawns, code-map commit check, map-first nudge):
+Tests for the plugin hooks (subagent spawns, code-map commit check, map-first nudge, rules-block
+version hint) and for the shell commands the manager skill and its briefs give:
 `python3 -m unittest discover -s plugins/manager-plugin/hooks`.
 Tests for the self-training-skills script:
 `python3 -m unittest discover -s plugins/manager-plugin/skills/self-training-skills/scripts`.

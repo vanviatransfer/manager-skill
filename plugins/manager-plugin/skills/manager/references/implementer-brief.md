@@ -36,19 +36,28 @@ while their trigger holds (again after compaction):
 - an `Integrate` message, or step 3's branch lacks the base SHA → `brief-integration.md`;
 - you create, work in or remove a git worktree → `brief-worktrees.md`.
 
-1. **Read** only the project rules (`CLAUDE.md`, `AGENTS.md`), this phase's plan section, the
-   plan's binding decisions, its knowledge paths and any `Handoff` note. With a `Code map`
-   command, run `<code map> query <term>` (and read the vault index) before any broad search of
-   code or vault.
+1. **Read** only the project rules (`CLAUDE.md`, `AGENTS.md`), any `Handoff` note and, of the
+   plan, only this phase's section, the constraints and the binding decisions (base SHA missing:
+   fetch as in step 3 first):
+   ```
+   git show <base-sha>:<plan-path> | awk -v id=<id> '
+     /^## /{p=/^## (Constraints|Binding decisions)/; q=0}
+     /^### /{q=index($0,"### " id ".")==1} p||q'
+   ```
+   No phase section printed → `grep -n` its heading and read from there. Read its knowledge
+   paths, and by `grep -n` any entry it cites (`D<n>`). With a `Code map` command, run `<code
+   map> query <term>` (and read the vault index) before any broad search of code or vault.
 2. **Scope.** Don't expand it or guess. An owner-only choice (open design, scope, spend,
    credentials, anything the project reserves) → stop, report `NEEDS_OWNER_DECISION` with options.
    Write the least that meets the acceptance criteria: reuse existing code, the standard library or
    native features before new code; no abstraction, option or scaffolding the plan doesn't need.
-   Before changing a function, grep its callers and keep them working; a root cause outside scope
+   Before changing a function, find its callers (`<code map> query <name>` if set, then grep)
+   and keep them working; a root cause outside scope
    → report it (Risks or `NEEDS_OWNER_DECISION`); don't fix it. Code you move or merge keeps its
    error handling and validation. Acceptance, project rules, required tests,
    validation, error handling and security always win.
-3. **Git.** `git fetch origin` (by refspec: `github-backends.md`, **Fetching a branch**).
+3. **Git.** Fetch each branch by refspec (shallow clone: with a bounded `--depth`):
+   `git fetch origin +refs/heads/<name>:refs/remotes/origin/<name>`.
    Remote `<branch>` exists → `git checkout -B <branch> origin/<branch>`; if it lacks the base SHA
    (`git merge-base --is-ancestor <base-sha> HEAD`), integrate and report the new Base SHA. Else
    `git checkout -B <branch> <base-sha>`. Commit clearly; stage by path (never `git add -A`,
@@ -60,10 +69,12 @@ while their trigger holds (again after compaction):
 4. **PR** against the default branch, or update the branch's open PR (`github-backends.md`;
    MCP tools via ToolSearch; a missing tool → `RESULT: BLOCKED`, Blocker `missing tool <name>`),
    with the repo's PR template if any and a `Run: <run-id>` line. In a phase PR: mark the phase done
-   (status, PR link); write the Plan records exactly (no other decision, status or model-strategy
+   (status, PR link: find the line with `grep -n` and edit only it); write the Plan records
+   exactly (no other decision, status or model-strategy
    edit); update later phases and the change log if facts require; never change this phase's
    objective, scope, risk, acceptance or validation unless a Ruling requires it, then quote it
-   in the change log. New or changed plan text: English (owner quotes verbatim); unchanged
+   in the change log. New or changed plan text: English, even where a project rule names another
+   language (the owner's standing policy; owner quotes verbatim); unchanged
    text stays untranslated unless the phase says so.
 5. **Validate.** With a `Code map` command: run `<code map> build` before the final validation and
    commit what it changes (never hand-edit generated pages). Develop with focused tests; on your
@@ -110,14 +121,15 @@ Branch: <name>
 Base SHA: <sha>
 Candidate SHA: <pushed head>
 Validation: <one line; failing commands and tests named>
+Risks: <one line | none>
 Blocker / decision needed: <one line | none>
 Report: <Report file path>
 ```
 
 ## Handoff
 
-Asked for a handoff: write this note (facts from git, GitHub) to the named path, return only
-the path (none: return the note):
+Message: `Handoff: write the note to <path>.` Write this note (facts from git, GitHub) there
+and return only the path (no path: return the note):
 
 ```
 Handoff: phase <id>

@@ -788,6 +788,74 @@ class HookTest(unittest.TestCase):
         self.assertEqual(self.read("CLAUDE.md"), "@AGENTS.md\n")
         self.assertEqual(self.read("AGENTS.md"), "# Agents\n")
 
+    def test_rules_block_marker_carries_the_template_version(self):
+        marker = "<!-- manager-plugin:code-map:begin v%d (managed by" % codemap.RULES_VERSION
+        self.assertTrue(codemap.RULES_BEGIN.startswith(marker))
+        self.assertTrue(codemap.RULES_BEGIN_CREATED.startswith(marker))
+        self.assertGreaterEqual(codemap.RULES_VERSION, 2)
+        run("rules-hint", "--root", self.root)
+        for name in ("AGENTS.md", "CLAUDE.md"):
+            self.assertEqual(self.read(name).count(marker), 1, name)
+            self.assertEqual(codemap.rules_block_version(self.read(name)), codemap.RULES_VERSION)
+        self.assertIsNone(codemap.rules_block_version("# Rules\n\nNo block here.\n"))
+        self.assertIsNone(codemap.rules_block_version(codemap.RULES_VIA_IMPORT + "\n"))
+        unversioned = "<!-- manager-plugin:code-map:begin (managed by the code-map skill) -->"
+        self.assertEqual(codemap.rules_block_version("x\n" + unversioned + "\n"), 1)
+        self.assertEqual(codemap.rules_block_version(
+            "<!-- manager-plugin:code-map:begin v12 (managed by the code-map skill) -->\n"), 12)
+        check = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "manager",
+                             "references", "code-map-check.md")
+        with open(check, encoding="utf-8") as fh:
+            self.assertIn("`manager-plugin:code-map:begin v%d`" % codemap.RULES_VERSION,
+                          fh.read(), "the manager's setup check names the current marker")
+
+    def test_rules_hint_updates_an_old_unversioned_block(self):
+        old_begin = "<!-- manager-plugin:code-map:begin (managed by the code-map skill) -->"
+        agents = "# Agents\n\nUse tabs.\n"
+        self.write("AGENTS.md", agents + "\n" + old_begin + "\n- a 0.8.1 line\n"
+                   + codemap.RULES_END + "\nAfter the block.\n")
+        self.write("CLAUDE.md", "# Rules\r\n\r\n" + old_begin + "\r\n- old\r\n"
+                   + codemap.RULES_END + "\r\n", newline="")
+        code, out = run("rules-hint", "--root", self.root)
+        self.assertEqual(code, 0)
+        self.assertEqual(out.count("block written"), 2, out)
+        block = "\n".join(codemap.RULES_BLOCK) + "\n"
+        self.assertEqual(self.read("AGENTS.md", "rb").decode(),
+                         agents + "\n" + block + "After the block.\n")
+        self.assertEqual(self.read("CLAUDE.md", "rb").decode(),
+                         "# Rules\r\n\r\n" + block.replace("\n", "\r\n"))
+        self.assertNotIn(old_begin, self.read("AGENTS.md"))
+        self.assertIn("unchanged", run("rules-hint", "--root", self.root)[1])
+        run("rules-hint", "--remove", "--root", self.root)
+        self.assertEqual(self.read("AGENTS.md", "rb").decode(), agents + "After the block.\n")
+
+    def test_rules_hint_leaves_a_newer_block_alone(self):
+        newer = ("# Agents\n\n<!-- manager-plugin:code-map:begin v%d (managed by the code-map "
+                 "skill) -->\n- a later template\n%s\n" % (codemap.RULES_VERSION + 1,
+                                                           codemap.RULES_END))
+        self.write("AGENTS.md", newer)
+        self.write("CLAUDE.md", "@AGENTS.md\n")
+        code, out = run("rules-hint", "--root", self.root)
+        self.assertEqual(code, 0)
+        self.assertIn("AGENTS.md: unchanged", out)
+        self.assertEqual(self.read("AGENTS.md"), newer)
+        run("rules-hint", "--remove", "--root", self.root)
+        self.assertEqual(self.read("AGENTS.md"), "# Agents\n")
+
+    def test_rules_hint_keeps_an_old_created_marker_as_created(self):
+        old_created = ("<!-- manager-plugin:code-map:begin (managed by the code-map skill; "
+                       "it created this file) -->")
+        for name, title in sorted(codemap.RULES_TITLES.items()):
+            self.write(name, title + "\n\n" + old_created + "\n- old\n" + codemap.RULES_END
+                       + "\n")
+        run("rules-hint", "--root", self.root)
+        for name in codemap.RULES_TITLES:
+            self.assertIn(codemap.RULES_BEGIN_CREATED + "\n", self.read(name), name)
+            self.assertNotIn(old_created, self.read(name), name)
+        run("rules-hint", "--remove", "--root", self.root)
+        for name in codemap.RULES_TITLES:  # still known as created: removed with the block
+            self.assertFalse(os.path.exists(os.path.join(self.root, name)), name)
+
     def test_rules_file_symlink_and_broken_markers_are_refused(self):
         self.write("AGENTS.md", "x\n" + codemap.RULES_BEGIN + "\nno end\n")
         with contextlib.redirect_stderr(io.StringIO()):

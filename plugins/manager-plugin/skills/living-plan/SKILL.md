@@ -14,7 +14,8 @@ The plan holds **intent**. Facts like SHAs and test results live in git and GitH
 plan only links to PRs.
 
 Talk to the owner in the owner's language. Write the plan in English, whatever language the
-project's other docs use.
+project's other docs use and even where a project rule names another language for it: this is the
+owner's standing policy and wins over that rule (owner quotes stay verbatim).
 
 ## 1. Understand before writing
 

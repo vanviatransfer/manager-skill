@@ -44,15 +44,19 @@ write otherwise.
 
 ## 2. Measure
 
-Aggregate by plugin version and model: phases; tokens per phase for implementer and reviewer;
+Aggregate by plugin version and model: phases; context sizes per phase for implementer and
+reviewer (`impl context` / `review context`; `impl tokens` / `review tokens` in records before
+plugin 0.8.3: the same figure, an agent's context size at its last request, not cumulative usage);
 review rounds per phase and the share needing a second round; blocker classes with counts and in
-how many projects; skipped `when:` commands; fallback dispatches; compactions; usage change where
-known. Watch item (not yet in the skill, add it only on evidence): a replacement implementer
+how many projects; skipped `when:` commands; fallback dispatches; compactions.
+Watch item (not yet in the skill, add it only on evidence): a replacement implementer
 repeating an approach an earlier round already tried and failed with. The records hold only a
 proxy: a phase with two or more CHANGES REQUIRED verdicts that share a blocker class (rounds
-that only waited on the owner or a device, or only integrated or re-checked a delta, don't count; judge this only as far as the verdicts column or pasted audits
+that only waited on the owner or a device, or only integrated or re-checked a delta, don't count;
+judge this only as far as the verdicts column or pasted audits
 show it, else say it can't be told);
-they don't show which round or which implementer, so call it a proxy in the proposal. If two or more phases show it,
+they don't show which round or which implementer, so call it a proxy in the proposal. If two or
+more phases show it,
 propose a `Tried approaches` dispatch field for replacement implementers. For every change in the
 retro log, compare its expected effect with the records since: a change that didn't help is a
 candidate to revert.

@@ -14,6 +14,8 @@ Usage:
   codemap.py pre-commit                        what that hook runs (refresh and stage the map)
   codemap.py claude-hook                       the opt-in Claude Code hook (JSON on stdin)
   codemap.py rules-hint [--remove]             the marked block in AGENTS.md and CLAUDE.md
+  codemap.py session-hook                      the SessionStart hook: one line when that block
+                                               is older than this template (JSON on stdin)
 
 The vault and map locations come from .codemap.json at the repository root. Without it they
 are detected (a folder with .obsidian/, a known vault folder name, or the folder holding most
@@ -1247,10 +1249,16 @@ def claude_hook(stdin_text, python):
 
 
 # The rules-file block: tells every session to use the map and the plugin's agents.
-RULES_BEGIN = "<!-- manager-plugin:code-map:begin (managed by the code-map skill) -->"
+# RULES_VERSION is the template's version, carried in the begin marker; raise it whenever the
+# block's text changes (and the marker in the skill's template and in the manager skill's
+# code-map-check.md with it). A block whose marker has no version (plugin 0.8.2 and earlier) is 1;
+# one with a higher version comes from a newer plugin and is left alone.
+RULES_VERSION = 2
+RULES_BEGIN_PREFIX = "<!-- manager-plugin:code-map:begin"
+RULES_BEGIN = "%s v%d (managed by the code-map skill) -->" % (RULES_BEGIN_PREFIX, RULES_VERSION)
 # The begin marker of a file rules-hint created: only such a file is deleted by --remove.
-RULES_BEGIN_CREATED = ("<!-- manager-plugin:code-map:begin (managed by the code-map skill; "
-                       "it created this file) -->")
+RULES_CREATED_NOTE = "; it created this file) -->"
+RULES_BEGIN_CREATED = RULES_BEGIN[:-len(") -->")] + RULES_CREATED_NOTE
 RULES_END = "<!-- manager-plugin:code-map:end -->"
 RULES_VIA_IMPORT = "<!-- manager-plugin:code-map: the code-map block comes via @AGENTS.md -->"
 RULES_BLOCK = [
@@ -1269,6 +1277,16 @@ RULES_TITLES = {"AGENTS.md": "# Agent instructions", "CLAUDE.md": "# Project ins
 IMPORTS_AGENTS = re.compile(r"^\s*@(?:\./)?AGENTS\.md\s*$")
 
 
+def rules_block_version(text):
+    """The template version in a rules file's begin marker: 1 for a marker without one, None
+    when the file has no block."""
+    for line in text.splitlines():
+        if line.startswith(RULES_BEGIN_PREFIX):
+            m = re.match(re.escape(RULES_BEGIN_PREFIX) + r" v(\d+)[ >]", line)
+            return int(m.group(1)) if m else 1
+    return None
+
+
 def rules_update(text, name, remove=False):
     """New text of a rules file (None = delete it) with the block added, updated or removed.
 
@@ -1280,7 +1298,7 @@ def rules_update(text, name, remove=False):
     start = end = None
     if marks:
         start = marks[0]
-        if lines[start].startswith(RULES_BEGIN.split(" (")[0]):
+        if lines[start].startswith(RULES_BEGIN_PREFIX):
             ends = [i for i in marks if lines[i].startswith(RULES_END)]
             if not ends or len(marks) != 2 or ends[0] != marks[1]:
                 raise LayoutError("%s: the code-map block's markers are broken; fix them by hand"
@@ -1290,9 +1308,12 @@ def rules_update(text, name, remove=False):
             end = start
         else:
             raise LayoutError("%s: more than one code-map marker; fix them by hand" % name)
+    if not remove and (rules_block_version(text or "") or 0) > RULES_VERSION:
+        return text  # a newer plugin's template: never downgrade it
     outside = [line for i, line in enumerate(lines) if start is None or not start <= i <= end]
     via_import = name == "CLAUDE.md" and any(IMPORTS_AGENTS.match(line) for line in outside)
-    created = text is None or (start is not None and lines[start].startswith(RULES_BEGIN_CREATED))
+    created = text is None or (start is not None and lines[start].startswith(RULES_BEGIN_PREFIX)
+                               and lines[start].rstrip().endswith(RULES_CREATED_NOTE))
     block = [] if remove else ([RULES_VIA_IMPORT] if via_import else RULES_BLOCK)
     if created and block is RULES_BLOCK:
         block = [RULES_BEGIN_CREATED] + RULES_BLOCK[1:]
@@ -1352,11 +1373,50 @@ def rules_hint(root, remove=False):
     return msgs
 
 
+def session_hook(python, stdin_text=None):
+    """The SessionStart hook. When the block in AGENTS.md or CLAUDE.md at the top of the
+    session's repository is older than RULES_VERSION, print one line (stdout goes into the
+    session's context) with the command that updates it. Reads those two files only, writes
+    nothing, always returns 0: no repository, no block, a current block or any error prints
+    nothing."""
+    try:
+        from search_nudge import find_top, quote_path
+        if stdin_text is None:
+            stdin_text = sys.stdin.buffer.read().decode("utf-8", "replace")
+        data = json.loads(stdin_text)
+        cwd = data.get("cwd") if isinstance(data, dict) else None
+        if not isinstance(cwd, str) or not cwd:
+            cwd = os.getcwd()
+        top = find_top(cwd)
+        if not top or python not in PYTHONS:
+            return 0
+        old = []
+        for name in ("AGENTS.md", "CLAUDE.md"):
+            path = os.path.join(top, name)
+            if is_link(path) or not os.path.isfile(path) or os.path.getsize(path) > MAX_BYTES:
+                continue
+            with open(path, "rb") as fh:
+                version = rules_block_version(fh.read().decode("utf-8", "replace"))
+            if version is not None and version < RULES_VERSION:
+                old.append(name)
+        script = quote_path(os.path.abspath(__file__), os.name == "nt")
+        if not old or not script:
+            return 0
+        qtop = quote_path(top, os.name == "nt")
+        cmd = "%s %s rules-hint%s" % (python, script, " --root %s" % qtop if qtop else "")
+        print("manager-plugin: the code-map rules block in %s is older than this plugin's "
+              "template; run `%s`%s and commit the change."
+              % (" and ".join(old), cmd, "" if qtop else " in the repository's top folder"))
+    except Exception:  # fail open: a session never fails or gets noise from a hook error
+        pass
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="codemap.py", description="Deterministic code map.")
     ap.add_argument("action", choices=["build", "check", "query", "mentions", "detect",
                                        "install-hook", "uninstall-hook", "pre-commit",
-                                       "claude-hook", "rules-hint"])
+                                       "claude-hook", "rules-hint", "session-hook"])
     ap.add_argument("terms", nargs="*")
     ap.add_argument("--root", default=".")
     ap.add_argument("--out", help="map path (default: from %s, else detected)" % CONFIG)
@@ -1368,7 +1428,8 @@ def main(argv=None):
     ap.add_argument("--remove", action="store_true", help="rules-hint: remove the block")
     ap.add_argument("--shared", action="store_true",
                     help="install-hook: allow a core.hooksPath folder outside the repository")
-    ap.add_argument("--python", default="python3", help="claude-hook: Python command to print")
+    ap.add_argument("--python", default="python3",
+                    help="claude-hook, session-hook: Python command to print")
     args = ap.parse_args(argv)
     for stream in (sys.stdout, sys.stderr):
         try:
@@ -1377,6 +1438,8 @@ def main(argv=None):
             pass
     if args.action == "claude-hook":
         return claude_hook(sys.stdin.read(), args.python)
+    if args.action == "session-hook":
+        return session_hook(args.python)
     root = os.path.abspath(args.root)
     if not os.path.isdir(root):
         ap.error("no such directory: %s" % args.root)

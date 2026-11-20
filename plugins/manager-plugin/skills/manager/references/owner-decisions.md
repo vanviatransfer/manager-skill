@@ -45,6 +45,9 @@ quoted words and a date. Anything else — missing quote or date, the same D und
 different answers — is **unresolved**: don't act on either version; put it in the final batch and
 show the conflict in one line. A valid Decided entry is never asked again.
 
+A decision that unblocks a phase a brake had blocked restarts that phase's brake counts: only the
+review-ledger lines after its `blocked:` line count (**Brakes**).
+
 ## Asking the batch
 
 Once, at the end, when no ready phase is left; only unresolved decisions. In the owner's language
