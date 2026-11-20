@@ -470,8 +470,13 @@ def run(data):
     if not mark(key, keep_out):
         return 0
     cmd = map_command()
-    use = "%s query <term>" % cmd if cmd else \
-        "the `manager-plugin:code-map` skill's `query <term>`"
+    qtop = quote_path(top, os.name == "nt") if cmd else None
+    if cmd and qtop:  # --root: the map's answers are repo-wide even from a subfolder
+        use = "%s query <term> --root %s" % (cmd, qtop)
+    elif cmd:
+        use = "%s query <term>" % cmd
+    else:
+        use = "the `manager-plugin:code-map` skill's `query <term>`"
     print("manager-plugin: map first: run %s (or read the vault index or the map page %s) before "
           "a broad search; if that doesn't answer it, repeat the search and it will be allowed."
           % (use, cfg["map"]), file=sys.stderr)

@@ -59,7 +59,8 @@ class SearchNudgeTest(unittest.TestCase):
         self.assertEqual(code, 2, (tool, tool_input))
         self.assertEqual(len(err.strip().splitlines()), 1)
         script = os.path.join(PLUGIN, "skills", "code-map", "scripts", "codemap.py")
-        self.assertIn('run python3 "%s" query <term> (or read' % script, err)
+        self.assertIn('run python3 "%s" query <term> --root "%s" (or read'
+                      % (script, self.root), err)
         self.assertIn("vault/map.md", err)
         self.assertEqual(self.hook(tool, **tool_input)[0], 0, "a repeat is allowed")
 
@@ -72,8 +73,13 @@ class SearchNudgeTest(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertEqual(len(err.strip().splitlines()), 1)
         self.assertIn('manager-plugin: map first: run python3 "%s/skills/code-map/scripts/'
-                      'codemap.py" query <term> (or read the vault index or the map page '
-                      'vault/map.md) before a broad search;' % plugin, err)
+                      'codemap.py" query <term> --root "%s" (or read the vault index or the '
+                      'map page vault/map.md) before a broad search;' % (plugin, self.root), err)
+
+    def test_message_roots_the_query_at_the_repository_from_a_subfolder(self):
+        code, err = self.hook("Grep", cwd=os.path.join(self.root, "src"), pattern="foo")
+        self.assertEqual(code, 2)
+        self.assertIn('query <term> --root "%s"' % self.root, err)
 
     def test_message_falls_back_without_a_resolvable_plugin(self):
         self.env["CLAUDE_PLUGIN_ROOT"] = os.path.join(self.tmp, "missing")

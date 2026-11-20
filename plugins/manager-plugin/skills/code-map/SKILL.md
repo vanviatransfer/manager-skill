@@ -203,9 +203,10 @@ plugin's `PreToolUse` hook on Grep, Glob and Bash (`hooks/codemap-search-nudge.s
   `query <term>` (or read the vault index or the map page) first, and if that doesn't answer it,
   repeat the search, which is then allowed. Every later search in that session is allowed. The
   line names the runnable command, `<python> "<plugin>/skills/code-map/scripts/codemap.py" query
-  <term>` (the Python the wrapper found; the plugin folder from `CLAUDE_PLUGIN_ROOT`, quoted,
-  forward slashes on Windows), so agents without the Skill tool can run it; when that path
-  can't be resolved it names the skill instead.
+  <term> --root "<repo top>"` (the Python the wrapper found; the plugin folder from
+  `CLAUDE_PLUGIN_ROOT`; quoted, forward slashes on Windows; `--root` keeps answers repo-wide
+  from a subfolder), so agents without the Skill tool can run it; when that path can't be
+  resolved it names the skill instead.
 - A `codemap.py query` or `mentions` run earlier in the session counts as using the map: no block.
 - Each subagent counts on its own: the state key is the hook input's `session_id`, its `agent_id`
   (set inside a subagent) and `transcript_path`, plus the repository's top folder. The state is an
