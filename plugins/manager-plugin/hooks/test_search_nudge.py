@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOOK = os.path.join(HERE, "codemap-search-nudge.sh")
@@ -191,6 +192,57 @@ class SearchNudgeTest(unittest.TestCase):
         self.write(".codemap.json", "{broken")
         self.new_session("s10")
         self.assertEqual(self.hook("Grep", pattern="foo")[0], 0, "invalid .codemap.json")
+
+    def folder(self):
+        return os.path.join(self.state, search_nudge.STATE_DIR
+                            + ("-%d" % os.getuid() if hasattr(os, "getuid") else ""))
+
+    def data(self):
+        return {"session_id": self.session, "cwd": self.root, "tool_name": "Grep",
+                "tool_input": {"pattern": "foo"}}
+
+    def test_temp_dir_inside_the_repository_fails_open(self):
+        before = sorted(os.listdir(self.root))
+        for inside in (self.root, os.path.join(self.root, "src")):
+            with mock.patch("tempfile.gettempdir", return_value=inside):
+                self.assertEqual(search_nudge.run(self.data()), 0, inside)
+        self.assertEqual(sorted(os.listdir(self.root)), before)
+        self.assertEqual(sorted(os.listdir(os.path.join(self.root, "src"))), ["app.py", "pkg"])
+        with mock.patch("tempfile.gettempdir", return_value=self.state):
+            self.assertEqual(search_nudge.run(self.data()), 2)
+
+    @unittest.skipUnless(hasattr(os, "symlink") and hasattr(os, "getuid"), "POSIX")
+    def test_symlinked_state_folder_fails_open(self):
+        target = os.path.join(self.tmp, "elsewhere")
+        os.mkdir(target, 0o700)
+        os.symlink(target, self.folder())
+        self.assertEqual(self.hook("Grep", pattern="foo")[0], 0)
+        self.assertEqual(os.listdir(target), [])
+
+    @unittest.skipUnless(hasattr(os, "getuid"), "POSIX")
+    def test_state_folder_owned_by_another_user_fails_open(self):
+        with mock.patch("tempfile.gettempdir", return_value=self.state), \
+                mock.patch.object(search_nudge.os, "getuid", return_value=os.getuid() + 1):
+            self.assertEqual(search_nudge.run(self.data()), 0)
+        for name in os.listdir(self.state):
+            self.assertEqual(os.listdir(os.path.join(self.state, name)), [])
+
+    @unittest.skipUnless(hasattr(os, "symlink") and hasattr(os, "getuid"), "POSIX")
+    def test_planted_symlink_as_marker_fails_open(self):
+        import hashlib
+        os.mkdir(self.folder(), 0o700)
+        key = search_nudge.state_key(dict(self.data(), transcript_path="/t/s1.jsonl"),
+                                     os.path.abspath(self.root))
+        marker = os.path.join(self.folder(), hashlib.sha256(key.encode()).hexdigest()[:40])
+        victim = os.path.join(self.tmp, "victim")
+        os.symlink(victim, marker)  # dangling: O_EXCL must not create it
+        self.assertEqual(self.hook("Grep", pattern="foo")[0], 0)
+        self.assertFalse(os.path.lexists(victim))
+        with open(victim, "w") as fh:
+            fh.write("keep")
+        self.assertEqual(self.hook("Grep", pattern="foo")[0], 0)
+        with open(victim) as fh:
+            self.assertEqual(fh.read(), "keep")
 
     def test_state_lives_outside_the_repository(self):
         before = sorted(os.listdir(self.root))

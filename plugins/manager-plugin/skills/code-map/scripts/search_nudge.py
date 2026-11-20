@@ -354,14 +354,24 @@ def state_key(data, top):
     return "\0".join(parts)
 
 
-def mark(key):
+def within(path, folder):
+    path, folder = os.path.normcase(path), os.path.normcase(folder)
+    return path == folder or path.startswith(folder.rstrip(os.sep) + os.sep)
+
+
+def mark(key, keep_out=()):
     """Record that this session was nudged. True only if this call created the record; False
-    when it existed already or can't be written (then nothing is blocked)."""
+    when it existed already or can't be written (then nothing is blocked). Nothing is written
+    at or below a folder in keep_out (the repository, the hook's cwd): tempfile.gettempdir()
+    falls back to the cwd when no temp folder is usable."""
     import hashlib
     import stat
     import tempfile
     name = STATE_DIR + ("-%d" % os.getuid() if hasattr(os, "getuid") else "")
-    folder = os.path.join(tempfile.gettempdir(), name)
+    base = os.path.realpath(tempfile.gettempdir())
+    if any(within(base, os.path.realpath(d)) for d in keep_out):
+        return False
+    folder = os.path.join(base, name)
     try:
         os.mkdir(folder, 0o700)
     except FileExistsError:
@@ -430,12 +440,13 @@ def run(data):
     key = state_key(data, top)
     if not cfg or not key:
         return 0
+    keep_out = (top, cwd)
     if used_map:
-        mark(key)
+        mark(key, keep_out)
         return 0
     if not any(is_broad(p, c, top, cfg, g) for p, c, g in targets):
         return 0
-    if not mark(key):
+    if not mark(key, keep_out):
         return 0
     print("manager-plugin: map first: run the `manager-plugin:code-map` skill's `query <term>` "
           "(or read the vault index or the map page %s) before a broad search; if that doesn't "

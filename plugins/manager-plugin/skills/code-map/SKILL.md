@@ -208,8 +208,9 @@ plugin's `PreToolUse` hook on Grep, Glob and Bash (`hooks/codemap-search-nudge.s
   600, entries older than 7 days are pruned), never inside the repository.
 - Off: set `"search_nudge": false` in `.codemap.json` and commit it.
 - It fails open: no Python, no session id, invalid JSON, an unreadable or unwritable state folder
-  (or one not owned by you alone) or any other error allows the search. Without a search command
-  in the input it doesn't start Python (about 4 ms); otherwise about 25–35 ms.
+  (a symlink, one not owned by you alone, or one that would fall inside the repository) or any
+  other error allows the search. Without a search command in the input it doesn't start Python
+  (about 4 ms); otherwise about 25–35 ms.
 
 What counts as broad (kept simple; when unsure it allows):
 - Broad: a search whose path resolves to the repository root or a top-level folder. No path means
