@@ -38,10 +38,12 @@ A Claude Code plugin with six skills:
   - **Map first (on by default).** In a repository whose `.codemap.json` has a `map`, a Claude
     Code hook on Grep, Glob and Bash blocks the first broad search of each session (or subagent)
     once: the whole repository or a top-level folder, by the Grep or Glob tool or by `grep -r`,
-    `rg`, `ag`, `ack`, `find` or `git grep`. Its one line says to run the skill's `query` (or read
-    the vault index or map page) first and then repeat the search, which is allowed; a `query`
-    run first means no block. Narrow searches pass. Off: `"search_nudge": false` in
-    `.codemap.json`. The state is a marker file in the OS temp folder, never in the repository.
+    `rg`, `ag`, `ack`, `find` or `git grep`. Its one line gives the exact `codemap.py query`
+    command to run (so agents without the Skill tool can run it; the skill's name when the path
+    can't be resolved), or the vault index or map page to read, and then says to repeat the
+    search, which is allowed; a `query` run first means no block. Narrow searches pass. Off:
+    `"search_nudge": false` in `.codemap.json`. The state is a marker file in the OS temp
+    folder, never in the repository.
   - **In the manager.** At the start of every run the manager checks that the default branch has
     the vault, the map and the rules block. With no vault it asks once, in the model-strategy
     question, whether to set one up (yes / not this time / never in this repo); with a vault, it

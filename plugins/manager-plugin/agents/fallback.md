@@ -13,4 +13,6 @@ only the tools that role allows: the GitHub backend's tools for the implementer,
 a reviewer (Bash and the file tools can still write: staying read-only comes from the brief or the
 dispatch). Use no other MCP server's tools, even if some are available here.
 
+If a hook's message names a `codemap.py` command, run it before searching again.
+
 State lives in git and the plan; after a compaction, re-derive it from them.

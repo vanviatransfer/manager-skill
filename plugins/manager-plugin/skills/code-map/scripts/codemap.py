@@ -1257,7 +1257,8 @@ RULES_BLOCK = [
     RULES_BEGIN,
     "- Before searching the code or the vault, read the vault index and the code map (paths in",
     "  `.codemap.json`) and use the `manager-plugin:code-map` skill's `query`, not broad "
-    "grep/glob.",
+    "grep/glob;",
+    "  without the Skill tool, run the exact `query` command the plugin's search hook prints.",
     "- After changing source files or vault pages, rebuild the map with that skill's `build` (its",
     "  git commit hook does it when installed).",
     "- Instead of `general-purpose`, use `manager-plugin:worker` for work that changes files,",

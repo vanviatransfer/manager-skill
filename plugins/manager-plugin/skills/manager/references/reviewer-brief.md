@@ -46,7 +46,8 @@ candidate may have edited them); the project rules; the full `git diff <base>...
 `Code map` command, without the generated map pages, which `check` covers: add the pathspecs
 `:!<map>` and `:!<map dir>/`, where `<map>` is the `map` in `.codemap.json` at the candidate and
 `<map dir>` is that path without `.md`); the surrounding code its correctness depends on. Not PR
-comments or reviews, the PR description or commit messages.
+comments or reviews, the PR description or commit messages. With a `Code map` command, run
+`<code map> query <term>` (and read the vault index) before any broad search of code or vault.
 
 **Review for** (blocker = shouldn't merge as is; else a note). Phase PR: acceptance criteria; bugs,
 edge cases, broken invariants in touched code and its callers; security and data safety; project

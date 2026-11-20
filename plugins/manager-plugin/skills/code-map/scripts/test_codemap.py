@@ -809,6 +809,11 @@ class HookTest(unittest.TestCase):
         skill = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "SKILL.md")
         with open(skill, encoding="utf-8") as fh:
             self.assertTrue("\n".join(codemap.RULES_BLOCK) in fh.read(), "SKILL.md template")
+        block = "\n".join(codemap.RULES_BLOCK)
+        self.assertIn("without the Skill tool, run the exact `query` command the plugin's search "
+                      "hook prints", block)
+        self.assertNotIn("codemap.py", block, "no path to the script: it differs per machine")
+        self.assertTrue(all(len(line) <= 100 for line in codemap.RULES_BLOCK))
 
     def test_assume_unchanged_and_skip_worktree_never_hide_a_change(self):
         self.opt_in()

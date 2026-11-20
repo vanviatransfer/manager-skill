@@ -3,8 +3,9 @@
 
 In a repository whose .codemap.json has a "map" and doesn't set "search_nudge": false, the first
 broad search of a session (each subagent counts as its own) is blocked once, with one line on
-stderr: use the code map's `query` first, then repeat the search. Every later search in that
-session is allowed, and a `codemap.py query` or `mentions` run first means no block at all.
+stderr: run the code map's `query` first (the exact command, when the sh wrapper passes the
+Python and the plugin folder), then repeat the search. Every later search in that session is
+allowed, and a `codemap.py query` or `mentions` run first means no block at all.
 
 JSON hook input on stdin; exit 2 = block, 0 = allow. Any error, or any doubt, allows. Standard
 library only (Python 3.8+); the state modules are imported only when a search in a mapped
@@ -55,6 +56,7 @@ OPTIONS = {
 }
 OPTIONS["egrep"] = OPTIONS["fgrep"] = OPTIONS["grep"]
 INFO = {"--help", "--version", "-V"}
+PYTHONS = ("python3", "python", "py -3")  # as the sh wrapper tries them
 
 
 def is_drive(p):
@@ -467,10 +469,45 @@ def run(data):
         return 0
     if not mark(key, keep_out):
         return 0
-    print("manager-plugin: map first: run the `manager-plugin:code-map` skill's `query <term>` "
-          "(or read the vault index or the map page %s) before a broad search; if that doesn't "
-          "answer it, repeat the search and it will be allowed." % cfg["map"], file=sys.stderr)
+    cmd = map_command()
+    qtop = quote_path(top, os.name == "nt") if cmd else None
+    if cmd and qtop:  # --root: the map's answers are repo-wide even from a subfolder
+        use = "%s query <term> --root %s" % (cmd, qtop)
+    elif cmd:
+        use = "%s query <term>" % cmd
+    else:
+        use = "the `manager-plugin:code-map` skill's `query <term>`"
+    print("manager-plugin: map first: run %s (or read the vault index or the map page %s) before "
+          "a broad search; if that doesn't answer it, repeat the search and it will be allowed."
+          % (use, cfg["map"]), file=sys.stderr)
     return 2
+
+
+def quote_path(path, windows=False):
+    """The path in double quotes for a shell; on Windows with forward slashes (Git Bash and
+    PowerShell take them). None if it holds a control character (the message stays one line)."""
+    if any(ord(c) < 32 or ord(c) == 127 for c in path):
+        return None
+    if windows:
+        path = path.replace("\\", "/")
+    for c in '\\"$`':
+        path = path.replace(c, "\\" + c)
+    return '"%s"' % path
+
+
+def map_command():
+    """`<python> "<plugin>/skills/code-map/scripts/codemap.py"`, from the Python and the plugin
+    folder the sh wrapper passes (CODEMAP_NUDGE_PYTHON, CODEMAP_NUDGE_ROOT), or None when either
+    is missing or the script isn't there."""
+    python = os.environ.get("CODEMAP_NUDGE_PYTHON")
+    root = os.environ.get("CODEMAP_NUDGE_ROOT")
+    if python not in PYTHONS or not root or not os.path.isabs(root):
+        return None
+    script = os.path.normpath(os.path.join(root, "skills", "code-map", "scripts", "codemap.py"))
+    if not os.path.isfile(script):
+        return None
+    quoted = quote_path(script, os.name == "nt")
+    return "%s %s" % (python, quoted) if quoted else None
 
 
 def main():
