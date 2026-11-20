@@ -35,6 +35,13 @@ A Claude Code plugin with six skills:
     Claude Code commit check, versioned (`"commit_check": true` in `.codemap.json`): before a
     `git commit` it runs `check --quiet` (the full check) and blocks the commit while the map is
     stale, telling Claude to rebuild and stage it. Exact commands: the `code-map` skill.
+  - **Map first (on by default).** In a repository whose `.codemap.json` has a `map`, a Claude
+    Code hook on Grep, Glob and Bash blocks the first broad search of each session (or subagent)
+    once: the whole repository or a top-level folder, by the Grep or Glob tool or by `grep -r`,
+    `rg`, `ag`, `ack`, `find` or `git grep`. Its one line says to run the skill's `query` (or read
+    the vault index or map page) first and then repeat the search, which is allowed; a `query`
+    run first means no block. Narrow searches pass. Off: `"search_nudge": false` in
+    `.codemap.json`. The state is a marker file in the OS temp folder, never in the repository.
   - **In the manager.** At the start of every run the manager checks that the default branch has
     the vault, the map and the rules block. With no vault it asks once, in the model-strategy
     question, whether to set one up (yes / not this time / never in this repo); with a vault, it
@@ -166,7 +173,9 @@ writes nothing, touches none of your settings files and goes away with the plugi
 `sh` script; on Windows it runs in Git Bash, and where Git Bash (or `grep`/`sed`) is missing it
 fails open (`onFailure: continue`), so spawns are allowed and nothing is blocked. A second
 `PreToolUse` hook, on Bash, is the code-map commit check above: it does nothing unless a
-repository's `.codemap.json` opts in, and fails open the same way.
+repository's `.codemap.json` opts in, and fails open the same way. A third, on Grep, Glob and
+Bash, is the code-map "map first" nudge above: it does nothing in a repository without a code map,
+and fails open the same way.
 
 Everything runs in one turn with subagents, so it works the same in the Claude desktop app, the
 terminal and cloud sessions.
@@ -274,7 +283,7 @@ rules and secret-file patterns follow ideas from
 
 Tests for the code-map script:
 `python3 -m unittest discover -s plugins/manager-plugin/skills/code-map/scripts`.
-Tests for the plugin hooks (subagent spawns, code-map commit check):
+Tests for the plugin hooks (subagent spawns, code-map commit check, map-first nudge):
 `python3 -m unittest discover -s plugins/manager-plugin/hooks`.
 Tests for the self-training-skills script:
 `python3 -m unittest discover -s plugins/manager-plugin/skills/self-training-skills/scripts`.

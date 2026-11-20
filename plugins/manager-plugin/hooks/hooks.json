@@ -22,6 +22,17 @@
             "onFailure": "continue"
           }
         ]
+      },
+      {
+        "matcher": "Bash|Grep|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/codemap-search-nudge.sh\"",
+            "timeout": 10,
+            "onFailure": "continue"
+          }
+        ]
       }
     ]
   }
