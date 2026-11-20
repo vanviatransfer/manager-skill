@@ -6,8 +6,8 @@
 
 ## Goal
 Cut the orchestrator's token use further and make the manager loop survive compaction, using the
-findings of two independent audits and a research report on 0.8.x (summarised in the phases), without
-weakening the invariants (independent exact-SHA review, owner authority, Git safety, required
+findings of two independent audits and a research report on 0.8.x (summarised in the phases),
+without weakening the invariants (independent exact-SHA review, owner authority, Git safety, required
 validation).
 
 ## Done means
@@ -41,7 +41,7 @@ Out (deliberately not doing now):
 - Version: only P8 bumps `plugins/manager-plugin/.claude-plugin/plugin.json` (to 0.9.0).
 
 ## Model strategy
-Model strategy: Fable xhigh for both roles — scope: run R2026-11-20-2300 — owner: "uygulatalim : worker (fable xhigh) review ettirelim bağımsız baska ajana o zaman tercihen başka bir bağımsız fable xhigh review etsin"
+Model strategy: Fable xhigh — scope: run R2026-11-20-2300 — owner: "worker (fable xhigh)… fable xhigh review etsin"
 
 ## Binding decisions
 - B1. Invariant text is moved, never reworded weaker: exact-SHA review, owner authority, Git safety,
@@ -163,7 +163,8 @@ the awk as the no-Python fallback); living-plan SKILL.md runs `check` before a p
 Depends on: P1
 Risk: standard — new script; briefs change one line each.
 Acceptance: tests on the template shape, this plan and a malformed plan; the briefs' fallback kept.
-Validation: standard; plus `python3 -m unittest discover -s plugins/manager-plugin/skills/living-plan/scripts`.
+Validation: standard; plus
+`python3 -m unittest discover -s plugins/manager-plugin/skills/living-plan/scripts`.
 
 ### P6. Code-map "changed" command for reviewers
 Status: todo
