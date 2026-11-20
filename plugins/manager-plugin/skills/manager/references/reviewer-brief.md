@@ -33,25 +33,44 @@ trigger holds (again after a compaction while it still holds):
   `.claude/skills/` → `brief-skill-records.md`;
 - a Worktree dir → `brief-worktrees.md`.
 
-**Shared checkout: read-only.** There only: fetch `<default>` and `<branch>` (`github-backends.md`,
-**Fetching a branch**); read-only `diff`, `show <sha>:<path>`, `log`, `rev-parse`, `status`,
+**Shared checkout: read-only.** There only: fetch `<default>` and `<branch>` by refspec (`git
+fetch origin +refs/heads/<name>:refs/remotes/origin/<name>`; shallow clone: with a bounded
+`--depth`); read-only `diff`, `show <sha>:<path>`, `log`, `rev-parse`, `status`,
 `merge-base`, `rev-list`; validation below; `git worktree add/remove` only if a Worktree dir was
 given. No checkout, switch, reset, rebase, stash, commit, push or edits. Read the diff from GitHub
 (`gh pr diff <n>` / MCP `pull_request_read get_diff`) only if the candidate can't be fetched, and
 say so. GitHub backend read-only: no comments, reviews or merges.
 
-**Read:** this phase's plan section (objective, scope, out-of-scope, risk, acceptance, validation)
-and the plan's binding decisions **at the base SHA** (`git show <base-sha>:<plan-path>`; the
-candidate may have edited them); the project rules; the full `git diff <base>...<candidate>` (with a
+**Read at the base SHA** (the candidate may have edited them): the project rules (`git show
+<base-sha>:<path>`) and, of the plan, only this phase's section (objective, scope, out-of-scope,
+risk, acceptance, validation), the constraints and the binding decisions:
+
+```
+git show <base-sha>:<plan-path> | awk -v id=<id> '
+  /^## /{p=/^## (Constraints|Binding decisions)/; q=0}
+  /^### /{q=index($0,"### " id ".")==1} p||q'
+```
+
+No phase section printed → `grep -n` its heading and read from there; an entry it cites (`D<n>`)
+→ `grep -n` it. **Read at the candidate:** the full `git diff <base>...<candidate>` (with a
 `Code map` command, without the generated map pages, which `check` covers: add the pathspecs
 `:!<map>` and `:!<map dir>/`, where `<map>` is the `map` in `.codemap.json` at the candidate and
 `<map dir>` is that path without `.md`); the surrounding code its correctness depends on. Not PR
 comments or reviews, the PR description or commit messages. With a `Code map` command, run
 `<code map> query <term>` (and read the vault index) before any broad search of code or vault.
 
-**Review for** (blocker = shouldn't merge as is; else a note). Phase PR: acceptance criteria; bugs,
+**Review for.** Phase PR: acceptance criteria; bugs,
 edge cases, broken invariants in touched code and its callers; security and data safety; project
 rules; tests covering the risky parts; out-of-scope changes; plan updates that misstate reality.
+A **blocker** (shouldn't merge as is) cites its ground, one of: unmet acceptance criterion;
+reproducible bug (give the reproduction or the failing path; a real validation failure counts);
+security or data-safety issue; project-rule breach; missing required test; out-of-scope change;
+plan or record misstatement; or one that "Always blockers" below or a `brief-*.md` file names.
+Anything else is a note. **Notes:** at most 3 (lean ones included), each with a concrete
+consequence and a suggested action; none that is cosmetic, needs no action or is "for awareness",
+and never this phase's own `done (PR #n)` status line (the implementer brief requires it).
+English plan or vault text is never a blocker or a note, whatever language a project rule names
+(the owner's standing policy).
 Lean notes, from the diff only (no extra exploration to find them): code the plan doesn't need, as
 `N<k>. lean: delete | reuse <existing path> | yagni — <file:line> — <what to remove>`; never a
 blocker on their own, never for what the plan requires (e.g. an expand–contract shim), and not for
@@ -93,10 +112,10 @@ VERDICT: PASS | PASS WITH NOTES | CHANGES REQUIRED
 Reviewed SHA: <full candidate sha>
 Base SHA: <full base sha>
 Blockers:
-  B1. <title> — <file:line> — <what is wrong, how to reproduce, what would fix it>
+  B1. <title> — <ground> — <file:line> — <what is wrong, how to reproduce, what would fix it>
   (or "none"; any blocker means CHANGES REQUIRED)
 Notes (non-blocking):
-  N1. <title> — <file:line> — <detail>
+  N1. <title> — <file:line> — <consequence> — <suggested action>
   (or "none")
 Acceptance: <criterion → met / not met>
 Validation: <command → pass/fail (exit code) at the candidate | fail, known flaky: <tests> |

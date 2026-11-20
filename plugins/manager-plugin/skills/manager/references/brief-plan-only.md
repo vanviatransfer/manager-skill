@@ -1,11 +1,14 @@
 # Plan-only PR
 
-Read when the dispatch has a `Plan change` field.
+Read when the dispatch has a `Plan change` field. The plan has no section for this phase id:
+besides the constraints and binding decisions, read its goal and scope and the parts the Plan
+change touches, by heading (`grep -n '^#'`; the reviewer at the base SHA).
 
 **Implementer.** The PR holds exactly the Plan change, nothing else (a specification: draft from
 it, adding no scope, decision or acceptance beyond it). The phase-PR plan, vault and skill-record
-edits and the code-map build don't apply. Plan text you draft is in English (owner quotes stay
-verbatim, in the owner's words); don't translate unchanged text unless the Plan change says so.
+edits and the code-map build don't apply. Plan text you draft is in English, even where a project
+rule names another language (the owner's standing policy; owner quotes stay verbatim, in the
+owner's words); don't translate unchanged text unless the Plan change says so.
 
 **Reviewer**, instead of the phase-PR review: blocker if the diff isn't exactly the Plan change (a
 specification: the draft doesn't realize it, adds scope, decisions or acceptance beyond it, lacks

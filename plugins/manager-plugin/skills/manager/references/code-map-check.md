@@ -5,12 +5,16 @@ the check or a setup PR is still open. It covers the vault, the code map and the
 (the `code-map` skill's **The rules block**); they are set up together, in one setup PR.
 
 - **Set up** = on the default branch: a vault (`.codemap.json`'s `vault`), `.codemap.json` with a
-  `map` (`git show origin/<default>:.codemap.json`), and the rules block (`git show
-  origin/<default>:AGENTS.md` holds `manager-plugin:code-map:begin`; `CLAUDE.md` holds it or the
-  `manager-plugin:code-map:` import line). Those committed files are the guard: once they land,
-  later runs only resolve the command and never ask again. Resolve it as the `code-map` skill says
-  (script `${CLAUDE_SKILL_DIR}/../code-map/scripts/codemap.py`, a Python 3.8+) and send `Code map:
-  <cmd>` in every dispatch. No Python: offer the install (the gate's Python line, or its own
+  `map` (`git show origin/<default>:.codemap.json`), and the current rules block (`git show
+  origin/<default>:AGENTS.md` holds `manager-plugin:code-map:begin v2`, or a higher version;
+  `CLAUDE.md` holds it or the `manager-plugin:code-map:` import line). A block whose marker has a
+  lower version, or none, is outdated and counts as missing. Those committed files are the guard:
+  once they land, later runs only resolve the command and never ask again. The command is
+  `<python> "<script>"`: the script is `${CLAUDE_SKILL_DIR}/../code-map/scripts/codemap.py` (quote
+  the path: it may hold spaces); the Python is the first of `python3`, `python` and `py -3` whose
+  `--version` exits 0 and prints `Python 3.8` or later (on Windows, `python3` may be a store stub
+  that fails this). Send `Code map: <cmd>` in every dispatch. No Python: offer the install (the
+  gate's Python line, or its own
   question when the gate isn't asked); declined → `Code map: none` this run, and say in the final
   report that the map stays stale until a run with Python rebuilds it.
 - **Not a plain file** (`git ls-tree origin/<default> .codemap.json` shows mode `120000`, a
@@ -26,13 +30,17 @@ the check or a setup PR is still open. It covers the vault, the code map and the
   - **Bir daha sorma:** record it as a Decided owner decision (owner's words, date) through the
     next landing PR's `Plan records`, or the end-of-run plan-only PR. A valid one stops the
     question in later runs; the owner can still ask for a vault with the `create-vault` skill.
-- **A vault, but no map or no rules block:** the setup PR below without asking; only the hooks
-  line (and the Python line if Python is missing) goes into the gate. Python declined → the PR
+- **A vault, but no map or no current rules block:** the setup PR below without asking (`<cmd>
+  rules-hint` there replaces an outdated block); only the hooks line (and the Python line if
+  Python is missing) goes into the gate. Python declined → the PR
   holds the rules block only; report that the map isn't set up.
-- **Hooks line** (only when a setup PR is to be made): yes → dispatch `Setup: code map + commit
+- **Hooks line** (only when a setup PR is to be made, and not for one that only updates an
+  outdated rules block): yes → dispatch `Setup: code map + commit
   check`, so the PR sets `"commit_check": true` in `.codemap.json`; the git hook is per clone, so
   the final report gives the owner `<cmd> install-hook` (off: `<cmd> uninstall-hook`) to run in
-  their clone. Never install it yourself or let an agent do it. No → `Setup: code map`.
+  their clone. Never install it yourself or let an agent do it. No → `Setup: code map`. The gate
+  isn't asked this run → don't ask and never end a turn for this line alone: `Setup: code map`
+  (the commit check stays off), and the final report gives `<cmd> install-hook`.
 
 **Setup PR.** Install Python if the owner said yes, then land the setup PR before any phase (and
 before a step-0 plan-only PR): a new implementer and reviewer, each with the `Setup` field, the

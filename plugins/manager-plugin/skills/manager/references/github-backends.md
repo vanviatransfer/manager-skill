@@ -9,7 +9,7 @@ and pass the same choice to every subagent brief.
    This is the normal case on a local machine.
 2. **GitHub MCP** — otherwise, look for the `mcp__github__*` tools (in cloud / remote sessions they
    are usually deferred: load them with ToolSearch, e.g.
-   `select:mcp__github__pull_request_read,mcp__github__list_pull_requests,mcp__github__create_pull_request,mcp__github__merge_pull_request`).
+   `select:mcp__github__pull_request_read,mcp__github__list_pull_requests,mcp__github__create_pull_request,mcp__github__merge_pull_request,mcp__github__add_issue_comment`).
    If they load, use MCP. This is the normal case in a Claude Code cloud session, where `gh` may be
    installed but not authenticated.
 3. **Neither** → environment failure. Report it (stop condition); don't fall back to raw `curl`

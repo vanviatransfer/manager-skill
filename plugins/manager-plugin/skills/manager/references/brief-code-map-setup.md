@@ -2,6 +2,7 @@
 
 Read when the dispatch has `Setup: code map` (or `Setup: code map + commit check`). The paths
 below are beside this file's folder: `../../create-vault/SKILL.md`, `../../code-map/SKILL.md`.
+The plan has no phase section to read for it.
 
 **Implementer.** On the dispatch's branch:
 1. No vault (`<code map> detect` says `vault: none`; with `Code map: none`, no vault folder): create
@@ -11,7 +12,8 @@ below are beside this file's folder: `../../create-vault/SKILL.md`, `../../code-
    when a `.codemap.json` exists without a `map` or a `vault`); add one line for the map to the
    vault's index page. With `+ commit check`: add `"commit_check": true` to `.codemap.json` and
    run `build` again. Never run `install-hook`.
-3. `<code map> rules-hint`; with `Code map: none`, write the block by hand from the `code-map`
+3. `<code map> rules-hint` (it also replaces an outdated block); with `Code map: none`, write the
+   block by hand (in place of an outdated one) from the `code-map`
    skill's **The rules block** template into `AGENTS.md` and `CLAUDE.md`, with the same separator
    lines `rules-hint` would add (nothing else changes there).
 4. Commit by path only the vault pages, `.codemap.json`, the generated pages and the two rules

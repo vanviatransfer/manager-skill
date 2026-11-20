@@ -47,7 +47,8 @@ Model strategy: Opus — scope: run R2026-11-15-0000 — owner: "sonnet kullanma
 - B2. Measured facts used for decisions (small samples): restricted agents start at about 9–14k
   tokens and general-purpose about 77k (measured once, one session); an implementer phase median
   is about 207k (Sonnet, n=5) / 353k (Opus, n=11) and 61% of phases need 2+ review rounds (one
-  project's run records); `subagent_tokens` is cumulative usage, not context size (CLI binary).
+  project's run records); `subagent_tokens` is an agent's context size at its last request, not
+  cumulative usage (corrected in plugin 0.8.3: this line said the opposite; see the change log).
   The thresholds in P1–P4 (25%, 3 rounds, about 400k, 3-phase series, the window caps, 200–300k)
   are design choices to be checked against later run records, not measurements. (orchestrator,
   2026-11-15)
@@ -101,16 +102,20 @@ Objective: the orchestrator spends fewer rounds and smaller contexts.
 Scope: `plugins/manager-plugin/skills/manager/SKILL.md` and the references from P1/P2:
 - default fix-round limit 5 (plan or project limits still win), with the approach question at
   round 3;
-- implementer rotation (as revised in 0.7.3, see the change log): at about 400k cumulative
-  `subagent_tokens`, or after 3 fix rounds once above about 150k, the next round goes to a fresh
-  implementer with the previous one's `Handoff:` note and the `Fix round` field, never a transcript;
+- implementer rotation (as revised in 0.8.3, see the change log): at a round boundary, when the
+  implementer's context (`subagent_tokens`) is about 150k or more, or above about 100k with its
+  last return more than 5 minutes old, the next round goes to a fresh implementer with the `Fix
+  round` field (and the previous one's `Handoff:` note while its cache is warm), never a
+  transcript;
 - series mode: up to 3 ready, independent, same-shape `standard` phases go to one implementer in
   sequence, each from the default head on its own branch and PR; each PR gets its own fresh
   reviewer dispatch, exact-SHA verdict and landing; the series stops at a rotation trigger, a
   blocker or an owner decision; never one verdict for several PRs;
-- every dispatch states `model` (and `effort` when the strategy sets one) explicitly;
-- the session check recommends an orchestrator window of 200–300k (`/autocompact 250k`) instead of
-  600k, leaves an owner's own value alone, and doesn't claim it covers subagents;
+- every dispatch states `model` and `effort` explicitly (`effort`: `medium`, a critical phase's
+  reviewer `high`, unless the strategy or the owner says otherwise; since 0.8.3);
+- the session check recommends an orchestrator window of 300k (`/autocompact 300k`; 200–300k and
+  `250k` until 0.7.1) instead of 600k, leaves an owner's own value of 300k or less alone, and
+  doesn't claim it covers subagents;
 - step 0 reads the plan's headings, remaining phases, binding decisions, open and decided owner
   decisions, the model-strategy record and the fix-round limit (always, at the default branch),
   and the rest only when needed; the overhead and session checks run once per run;
@@ -129,7 +134,8 @@ Status: done ([PR #32](https://github.com/vanviatransfer/manager-skill/pull/32))
 Objective: subagents can't grow or run away unbounded.
 Scope: `plugins/manager-plugin/agents/implementer.md`, `reviewer.md`, `worker.md`, `fallback.md`,
 `researcher.md`: `autoCompactWindow` (plain integers within 100000–1000000; implementer and worker
-300000, reviewer, fallback and researcher 200000) and a generous `maxTurns` safety cap that a
+300000, reviewer, fallback and researcher 200000; fallback 300000 since 0.8.3) and a generous
+`maxTurns` safety cap that a
 normal phase never reaches. No default `model` in frontmatter (the dispatch sets it). One line in
 each body: state lives in git and the plan; after a compaction re-derive it from them.
 Depends on: none
@@ -150,8 +156,8 @@ log).
 Depends on: P1, P2, P3, P4
 Risk: standard — docs only.
 Acceptance: no stale mention of 600k or 12 rounds anywhere in the repository outside this plan;
-rotation, series mode, caps and short returns described with their limits (`subagent_tokens` is
-cumulative; the caps' effect is unmeasured).
+rotation, series mode, caps and short returns described with their limits (`subagent_tokens` as
+then understood, corrected in 0.8.3: it is a context size; the caps' effect is unmeasured).
 Validation: standard.
 Notes: B2.
 
@@ -174,6 +180,13 @@ Notes: B2.
 - 2026-11-16: after a live test, plugin 0.7.3 (PR #36) counts integration rounds separately from
   fix rounds (at most 5 per phase), and rotates on tokens (about 400k, or 3 fix rounds above about
   150k) instead of 3 resumed rounds; P3's rotation line is updated to match.
+- 2026-11-20: plugin 0.8.3 corrects B2: `subagent_tokens` is an agent's context size at its last
+  request, not cumulative usage (36 of 36 Agent results in one session's transcripts equal the
+  subagent's last request; none a sum). Rotation now follows the prompt cache instead of round
+  counts and 400k (about 150k, or above about 100k once the 5-minute subagent cache has expired;
+  numbers in `docs/TODO.md`, item 11); P3's rotation, effort and window lines and P4's fallback
+  cap (300000) are updated to match. Plan and vault text is English even where a project rule
+  names another language (owner, 2026-11-20).
 
 ## How to keep this plan alive
 - A phase PR updates its own status line and links itself; other status lines only to correct facts.
