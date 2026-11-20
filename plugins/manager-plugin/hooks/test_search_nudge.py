@@ -12,6 +12,7 @@ from unittest import mock
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOOK = os.path.join(HERE, "codemap-search-nudge.sh")
 SCRIPTS = os.path.join(HERE, "..", "skills", "code-map", "scripts")
+PLUGIN = os.path.normpath(os.path.join(HERE, ".."))
 sys.dont_write_bytecode = True
 sys.path.insert(0, SCRIPTS)
 import search_nudge  # noqa: E402
@@ -28,6 +29,7 @@ class SearchNudgeTest(unittest.TestCase):
         os.makedirs(self.state)
         self.env = dict(os.environ, TMPDIR=self.state, TEMP=self.state, TMP=self.state,
                         PYTHONDONTWRITEBYTECODE="1")
+        self.env.pop("CLAUDE_PLUGIN_ROOT", None)  # the wrapper's own folder then
         for rel in ("src/pkg/mod.py", "src/app.py", "vault/index.md", "vault/map.md",
                     "vault/map/src.md", "README.md"):
             self.write(rel, "x\n")
@@ -56,10 +58,50 @@ class SearchNudgeTest(unittest.TestCase):
         code, err = self.hook(tool, **tool_input)
         self.assertEqual(code, 2, (tool, tool_input))
         self.assertEqual(len(err.strip().splitlines()), 1)
-        self.assertIn("manager-plugin:code-map", err)
-        self.assertIn("query <term>", err)
+        script = os.path.join(PLUGIN, "skills", "code-map", "scripts", "codemap.py")
+        self.assertIn('run python3 "%s" query <term> (or read' % script, err)
         self.assertIn("vault/map.md", err)
         self.assertEqual(self.hook(tool, **tool_input)[0], 0, "a repeat is allowed")
+
+    def test_message_names_the_plugin_root_command(self):
+        plugin = os.path.join(self.tmp, "my plugins", "manager-plugin")
+        os.makedirs(os.path.join(plugin, "skills", "code-map", "scripts"))
+        open(os.path.join(plugin, "skills", "code-map", "scripts", "codemap.py"), "w").close()
+        self.env["CLAUDE_PLUGIN_ROOT"] = plugin
+        code, err = self.hook("Grep", pattern="foo")
+        self.assertEqual(code, 2)
+        self.assertEqual(len(err.strip().splitlines()), 1)
+        self.assertIn('manager-plugin: map first: run python3 "%s/skills/code-map/scripts/'
+                      'codemap.py" query <term> (or read the vault index or the map page '
+                      'vault/map.md) before a broad search;' % plugin, err)
+
+    def test_message_falls_back_without_a_resolvable_plugin(self):
+        self.env["CLAUDE_PLUGIN_ROOT"] = os.path.join(self.tmp, "missing")
+        code, err = self.hook("Grep", pattern="foo")
+        self.assertEqual(code, 2)
+        self.assertEqual(err.strip(), "manager-plugin: map first: run the `manager-plugin:code-map`"
+                         " skill's `query <term>` (or read the vault index or the map page "
+                         "vault/map.md) before a broad search; if that doesn't answer it, repeat "
+                         "the search and it will be allowed.")
+        for env in ({}, {"CODEMAP_NUDGE_PYTHON": "python3"}, {"CODEMAP_NUDGE_ROOT": PLUGIN},
+                    {"CODEMAP_NUDGE_PYTHON": "rm -rf", "CODEMAP_NUDGE_ROOT": PLUGIN},
+                    {"CODEMAP_NUDGE_PYTHON": "python3", "CODEMAP_NUDGE_ROOT": "relative"}):
+            with mock.patch.dict(os.environ, env):
+                for k in ("CODEMAP_NUDGE_PYTHON", "CODEMAP_NUDGE_ROOT"):
+                    if k not in env:
+                        os.environ.pop(k, None)
+                self.assertIsNone(search_nudge.map_command(), env)
+        with mock.patch.dict(os.environ, {"CODEMAP_NUDGE_PYTHON": "py -3",
+                                          "CODEMAP_NUDGE_ROOT": PLUGIN}):
+            self.assertTrue(search_nudge.map_command().startswith('py -3 "'))
+
+    def test_quote_path(self):
+        q = search_nudge.quote_path
+        self.assertEqual(q("/a b/c.py"), '"/a b/c.py"')
+        self.assertEqual(q('/a"$`\\b'), '"/a\\"\\$\\`\\\\b"')
+        self.assertEqual(q(r"C:\Program Files\x\codemap.py", windows=True),
+                         '"C:/Program Files/x/codemap.py"')
+        self.assertIsNone(q("/a\nb"))
 
     def new_session(self, name):
         self.session = name

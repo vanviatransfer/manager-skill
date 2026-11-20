@@ -135,7 +135,8 @@ block by hand:
 ```
 <!-- manager-plugin:code-map:begin (managed by the code-map skill) -->
 - Before searching the code or the vault, read the vault index and the code map (paths in
-  `.codemap.json`) and use the `manager-plugin:code-map` skill's `query`, not broad grep/glob.
+  `.codemap.json`) and use the `manager-plugin:code-map` skill's `query`, not broad grep/glob;
+  without the Skill tool, run the exact `query` command the plugin's search hook prints.
 - After changing source files or vault pages, rebuild the map with that skill's `build` (its
   git commit hook does it when installed).
 - Instead of `general-purpose`, use `manager-plugin:worker` for work that changes files,
@@ -200,7 +201,11 @@ plugin's `PreToolUse` hook on Grep, Glob and Bash (`hooks/codemap-search-nudge.s
   whose `.codemap.json` is a plain file with a `map`. Everywhere else it does nothing.
 - The first broad search of a session is blocked once, with one line: run this skill's
   `query <term>` (or read the vault index or the map page) first, and if that doesn't answer it,
-  repeat the search, which is then allowed. Every later search in that session is allowed.
+  repeat the search, which is then allowed. Every later search in that session is allowed. The
+  line names the runnable command, `<python> "<plugin>/skills/code-map/scripts/codemap.py" query
+  <term>` (the Python the wrapper found; the plugin folder from `CLAUDE_PLUGIN_ROOT`, quoted,
+  forward slashes on Windows), so agents without the Skill tool can run it; when that path
+  can't be resolved it names the skill instead.
 - A `codemap.py query` or `mentions` run earlier in the session counts as using the map: no block.
 - Each subagent counts on its own: the state key is the hook input's `session_id`, its `agent_id`
   (set inside a subagent) and `transcript_path`, plus the repository's top folder. The state is an

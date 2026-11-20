@@ -162,3 +162,18 @@
 - Measured (4 CPUs, 20 runs, median): a Bash command without a search word 4 ms (no Python
   started), one that reaches Python but isn't a search 23–24 ms, Grep in a repository without a map
   23–24 ms, the first broad Grep in a mapped repository 30–31 ms (blocked), a later Grep 30 ms.
+
+### 10. Map first, runnable by every agent (plugin 0.8.2)
+
+- The plugin's agents have no Skill tool, so a nudge saying "run the `code-map` skill's `query`"
+  left them repeating the search. The `sh` wrapper now passes the Python it found and the plugin
+  folder (`CLAUDE_PLUGIN_ROOT`, else its own absolute path) to `search_nudge.py`, and the one-line
+  message names the command: `<python> "<plugin>/skills/code-map/scripts/codemap.py" query
+  <term>` (double-quoted, forward slashes on Windows). When the script can't be found there, the
+  message keeps the 0.8.1 wording.
+- The implementer and reviewer briefs say to run `<code map> query <term>` (and read the vault
+  index) before any broad search; the worker, researcher and fallback agents run a command a hook
+  names before searching again; the rules block tells agents without the Skill tool that the hook
+  prints the exact command (still no path in the block).
+- Measured (4 CPUs, 20 runs, median): the first broad Grep in a mapped repository 28 ms (blocked,
+  with the command), a later Grep 27 ms.

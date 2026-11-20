@@ -1,10 +1,12 @@
 #!/bin/sh
 # manager-plugin PreToolUse hook for Grep, Glob and Bash: "map first". In a repository whose
 # .codemap.json has a "map" (and no "search_nudge": false), it blocks the first broad search of a
-# session once (exit 2, one line on stderr: use the code map's `query` first, then repeat the
+# session once (exit 2, one line on stderr: run the code map's `query` first, then repeat the
 # search); every later search is allowed. Plain POSIX sh; the logic is search_nudge.py beside the
 # code-map script, run only when the input names Grep, Glob or a search command. It finds Python
-# as the code-map skill does (python3, python, py -3) and fails open (exit 0) on any error.
+# as the code-map skill does (python3, python, py -3) and fails open (exit 0) on any error. It
+# passes that Python and the plugin folder (CLAUDE_PLUGIN_ROOT, else this script's own when its
+# path is absolute) so the message can name the runnable `codemap.py query` command.
 
 input=$(cat) || exit 0
 words='(e?grep|fgrep|rg|ag|ack|find|codemap\.py)'
@@ -14,8 +16,13 @@ if command -v grep >/dev/null 2>&1; then
 fi
 script="${0%/*}/../skills/code-map/scripts/search_nudge.py"
 [ -f "$script" ] || exit 0
+root=${CLAUDE_PLUGIN_ROOT:-}
+case "$root:$0" in
+  :/*) root="${0%/*}/.." ;;
+esac
 for c in python3 python "py -3"; do
-  err=$(printf '%s' "$input" | PYTHONDONTWRITEBYTECODE=1 $c "$script" 2>&1 >/dev/null)
+  err=$(printf '%s' "$input" | CODEMAP_NUDGE_PYTHON="$c" CODEMAP_NUDGE_ROOT="$root" \
+    PYTHONDONTWRITEBYTECODE=1 $c "$script" 2>&1 >/dev/null)
   status=$?
   case "$status:$err" in
     0:*) exit 0 ;;
