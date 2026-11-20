@@ -144,3 +144,21 @@
   A vault costs the same whether `create-vault` is run by hand or by the manager; the manager only
   moves it to the first run. For a short-lived or tiny repository the owner can decline it (a
   Decided entry or a project rule), and the manager honours that.
+
+### 9. Map first: a nudge before the first broad search (plugin 0.8.1)
+
+- In repositories with a code map, sessions still began with broad grep and glob exploration;
+  the rules block that says to use `query` and the vault index first is only advice.
+- A `PreToolUse` hook on Grep, Glob and Bash (`codemap-search-nudge.sh`, logic in
+  `search_nudge.py`), on by default wherever `.codemap.json` has a `map`, off with
+  `"search_nudge": false`. It blocks the first broad search of a session once with one line
+  (`query` or the vault index first, then repeat the search) and allows every later one; a
+  `codemap.py query` or `mentions` run first means no block. Each subagent gets its own nudge
+  (key: `session_id`, `agent_id`, `transcript_path`, repository top folder). State is a marker
+  file in the OS temp folder, never in the repository; any error allows the search.
+- Broad: the repository root or a top-level folder (no path = the working directory), a Glob
+  reaching `**` from there, `grep` only with `-r`. Narrow: files, paths two or more levels deep,
+  the vault and the map pages. When unsure it allows; the gaps are in the `code-map` skill.
+- Measured (4 CPUs, 20 runs, median): a Bash command without a search word 4 ms (no Python
+  started), one that reaches Python but isn't a search 23–24 ms, Grep in a repository without a map
+  23–24 ms, the first broad Grep in a mapped repository 30–31 ms (blocked), a later Grep 30 ms.
