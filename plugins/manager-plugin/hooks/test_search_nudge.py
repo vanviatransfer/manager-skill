@@ -233,6 +233,26 @@ class SearchNudgeTest(unittest.TestCase):
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertEqual(os.listdir(inside), [])
 
+    def test_temp_dir_inside_another_repository_fails_open(self):
+        """E.g. a home directory that is a git repository (dotfiles) and TMPDIR=~/tmp."""
+        other = os.path.join(self.tmp, "dotfiles")
+        inside = os.path.join(other, "tmp")
+        os.makedirs(inside)
+        os.makedirs(os.path.join(other, ".git"))
+        self.env["TMPDIR"] = self.env["TEMP"] = self.env["TMP"] = inside
+        self.new_session("other-repo")
+        self.assertEqual(self.hook("Grep", pattern="foo")[0], 0)
+        self.assertEqual(os.listdir(inside), [])
+
+    def test_state_folder_that_is_a_repository_fails_open(self):
+        folder = os.path.join(self.state, search_nudge.STATE_DIR + (
+            "-%d" % os.getuid() if hasattr(os, "getuid") else ""))
+        os.makedirs(os.path.join(folder, ".git"))
+        os.chmod(folder, 0o700)
+        self.new_session("repo-state")
+        self.assertEqual(self.hook("Grep", pattern="foo")[0], 0)
+        self.assertEqual(sorted(os.listdir(folder)), [".git"])
+
     def test_no_file_is_opened_inside_the_repository(self):
         """The real lookup, spied on: no probe file, no gettempdir(), no open under the repo."""
         inside = os.path.join(self.root, "tmpin")

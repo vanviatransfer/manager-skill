@@ -209,8 +209,8 @@ plugin's `PreToolUse` hook on Grep, Glob and Bash (`hooks/codemap-search-nudge.s
   first existing one of `TMPDIR`, `TEMP`, `TMP` and the OS defaults, never the working directory.
 - Off: set `"search_nudge": false` in `.codemap.json` and commit it.
 - It fails open: no Python, no session id, invalid JSON, an unreadable or unwritable state folder
-  (a symlink, one not owned by you alone, or one that would fall inside the repository or the
-  hook's working directory) or any
+  (a symlink, one not owned by you alone on POSIX, or one that would fall inside any repository
+  or the hook's working directory) or any
   other error allows the search. Without a search command in the input it doesn't start Python
   (about 4 ms); otherwise about 25–35 ms.
 

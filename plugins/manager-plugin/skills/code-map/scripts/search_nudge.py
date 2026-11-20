@@ -380,8 +380,8 @@ def temp_base():
 def mark(key, keep_out=()):
     """Record that this session was nudged. True only if this call created the record; False
     when it existed already or can't be written (then nothing is blocked). Nothing is written
-    at or below a folder in keep_out (the repository, the input cwd, the process cwd), e.g.
-    with TMPDIR set inside the repository."""
+    at or below a folder in keep_out (the repository, the input cwd, the process cwd), nor
+    inside any other repository, e.g. with TMPDIR set inside a repository."""
     import hashlib
     import stat
     name = STATE_DIR + ("-%d" % os.getuid() if hasattr(os, "getuid") else "")
@@ -389,6 +389,8 @@ def mark(key, keep_out=()):
     if not base or any(within(base, os.path.realpath(d)) for d in keep_out):
         return False
     folder = os.path.join(base, name)
+    if find_top(base) or os.path.lexists(os.path.join(folder, ".git")):
+        return False  # the temp folder is inside some repository: write nothing there
     try:
         os.mkdir(folder, 0o700)
     except FileExistsError:
