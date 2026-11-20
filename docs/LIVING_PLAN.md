@@ -1,192 +1,208 @@
-# manager-skill — Living Plan: token economy
+# manager-skill — Living Plan: 0.9.0
 
 > Single source of intent for this work. Every phase PR updates its own status line here.
 > Facts (SHAs, test results) live in git/GitHub; this file only links PRs.
+> The previous plan (0.7.x token economy) is in `docs/archive/LIVING_PLAN-0.7-token-economy.md`.
 
 ## Goal
-Make the manager plugin spend as few tokens as possible per landed phase, without weakening its
-invariants (independent exact-SHA review, owner authority, Git safety, required validation).
+Cut the orchestrator's token use further and make the manager loop survive compaction, using the
+findings of two independent audits and a research report on 0.8.x (summarised in the phases), without
+weakening the invariants (independent exact-SHA review, owner authority, Git safety, required
+validation).
 
 ## Done means
-- The orchestrator loads and carries less: the manager skill and both briefs are at least 25%
-  shorter in words, and rare material is read on trigger from references.
-- Long phases rotate to a fresh implementer instead of growing one context without bound; subagents
-  have a compaction cap; the fix-round brake defaults to 5.
-- Independent same-shape phases can run in series on one implementer, each PR reviewed at its own
-  exact SHA with its own verdict.
-- The run-start advice no longer pushes a large auto-compact window.
+- After a compaction the orchestrator still has every rule it needs: the manager skill fits the
+  re-attach budget, and compaction hooks keep the working-notes state.
+- The orchestrator's own token use is measured per run, and its context size is watched.
+- Plans are validated and a phase's brief section is extracted by a script instead of read in full.
+- Reviewers get a capped list of what a diff touches from the code map.
+- The plugin's invariants are covered by eval cases.
 
 ## Scope
-In: plugins/manager-plugin (skills/manager and its references, agents,
-skills/living-plan/references/plan-template.md), the root README.md and
-.claude-plugin/marketplace.json, docs/TODO.md.
+In: plugins/manager-plugin (skills, references, agents, hooks, scripts, tests), README.md,
+.claude-plugin/marketplace.json, docs/TODO.md, this plan.
 Out (deliberately not doing now):
-- delta-only re-review (weakens review independence; full review stays every round);
-- skipping the reviewer's own first validation run (required validation);
-- one combined verdict for several PRs (exact-SHA review is per PR).
+- delta-only re-review (weakens review independence);
+- a 1-hour cache TTL for subagents (measured: costs more for reviewers and implementers);
+- dynamic workflows for the phase loop (large, unverified with plugin agents; revisit later).
 
 ## Constraints and project rules
 - Rules: this repository is public: no project-specific details. Markdown lines at most 100
   characters, except frontmatter and code-block templates. Do not reflow paragraphs a phase doesn't
-  change; never merge a heading or a list into a paragraph.
+  change; never merge a heading or a list into a paragraph. Plugin code: Python standard library
+  only, Python 3.8+, no network; hooks fail open and write nothing inside any repository.
 - Validation: `python3 -m unittest discover -s plugins/manager-plugin/hooks`,
   `python3 -m unittest discover -s plugins/manager-plugin/skills/code-map/scripts`,
   `python3 -m unittest discover -s plugins/manager-plugin/skills/self-training-skills/scripts`,
-  `claude plugin validate plugins/manager-plugin`.
+  `claude plugin validate plugins/manager-plugin` (run Python with `PYTHONDONTWRITEBYTECODE=1`); a
+  phase that adds a script folder with tests adds its `unittest discover` command to its own
+  validation.
 - Merge: squash via PR, pinned to the reviewed SHA.
-- Version: only P5 bumps `plugins/manager-plugin/.claude-plugin/plugin.json` (to 0.7.0), so the
-  other phases don't conflict there.
+- Version: only P8 bumps `plugins/manager-plugin/.claude-plugin/plugin.json` (to 0.9.0).
 
 ## Model strategy
-Model strategy: Opus — scope: run R2026-11-15-0000 — owner: "sonnet kullanma opus kullan"
+Model strategy: Fable xhigh for both roles — scope: run R2026-11-20-2300 — owner: "uygulatalim : worker (fable xhigh) review ettirelim bağımsız baska ajana o zaman tercihen başka bir bağımsız fable xhigh review etsin"
 
 ## Binding decisions
-- B1. Every rule text that encodes an invariant is moved, never reworded weaker: exact-SHA review,
-  owner authority, Git safety, required validation, the plan-at-base reads. (owner, 2026-11-15:
-  "token tasarrufu ... unutma" with the invariants kept)
-- B2. Measured facts used for decisions (small samples): restricted agents start at about 9–14k
-  tokens and general-purpose about 77k (measured once, one session); an implementer phase median
-  is about 207k (Sonnet, n=5) / 353k (Opus, n=11) and 61% of phases need 2+ review rounds (one
-  project's run records); `subagent_tokens` is an agent's context size at its last request, not
-  cumulative usage (corrected in plugin 0.8.3: this line said the opposite; see the change log).
-  The thresholds in P1–P4 (25%, 3 rounds, about 400k, 3-phase series, the window caps, 200–300k)
-  are design choices to be checked against later run records, not measurements. (orchestrator,
+- B1. Invariant text is moved, never reworded weaker: exact-SHA review, owner authority, Git safety,
+  required validation, the plan-at-base reads — they carry the plugin's guarantees. (owner,
   2026-11-15)
+- B2. Plan and vault text is English, whatever language a project's rules name for it — models work
+  in English and translation costs tokens. (owner, 2026-11-20: "ingilizce çünkü modeller İngilizce
+  düşünüyor, çeviri token harcar")
+- B3. Every plugin agent sets `omitClaudeMd: true`; agents read the working repository's rules
+  explicitly — no agent may follow another project's rules. (owner, 2026-11-20: "tüm ajanlarda
+  varsayılan. Baska proje okunmamali")
 
 ## Phases
 
 Status values: `todo` · `in progress (PR #n)` · `done (PR #n)` · `blocked (Dn)`
 Fix-round limit per phase: 5
 
-### P1. Move rare manager sections into references
-Status: done ([PR #29](https://github.com/vanviatransfer/manager-skill/pull/29))
-Objective: the manager skill keeps only what every run needs; rare sections live in
-`skills/manager/references/` and are read when their trigger applies.
-Scope: `plugins/manager-plugin/skills/manager/SKILL.md`, new files in
-`plugins/manager-plugin/skills/manager/references/`. Candidates: code-map check details, plan-only
-and specification PRs, no-report recovery, integration and landing branches (merge, rebase,
-fast-forward), recurring blocker class, run-record format, session-check details, self-training
-pointer. Out of scope: rule changes (P2).
+### P1. 0.8.3 follow-ups
+Status: todo
+Objective: close the review notes and audit findings on 0.8.3's own changes.
+Scope: plugins/manager-plugin/skills/manager (SKILL.md, references), skills/code-map
+(codemap.py session-hook text and rules-hint versioning, SKILL.md), skills/self-training-skills
+SKILL.md, agents, docs/TODO.md:
+- the SessionStart rules-version line is information, not an order ("… is older; `<cmd>` updates
+  it; a manager run does this in its setup PR");
+- an unversioned rules block whose text equals the current template counts as current (the marker
+  is rewritten when the block is next written), so 0.8.x repositories don't each pay a setup PR for
+  a marker bump; a real text change still triggers it;
+- the brake-reset rule stated once (SKILL.md Brakes; owner-decisions.md points to it);
+- the awk plan read gets a fallback: if no `## Constraints…` or `## Binding decisions` section is
+  printed, `grep -n '^## '` and read them; it also prints the `## Phases` preamble (status values,
+  fix-round limit);
+- the implementer dispatch gets a `Project rules: <paths>` field like the reviewer's; the
+  orchestrator lists every rules file the repository has (CLAUDE.md, AGENTS.md,
+  `.claude/CLAUDE.md`, `.claude/rules/*.md`, and the files they import with `@path`), since
+  `omitClaudeMd` drops the whole instruction block (B3);
+- the final report reads a phase's report file only when its short-return `Risks:` line is not
+  `none`;
+- step 2's fact checks run in one Bash call (say so);
+- self-training skill files and records follow B2 (English);
+- `github-backends.md` PR-facts row and SKILL.md's `gh pr view` line agree on `files`.
 Depends on: none
-Risk: standard — text moved, rules unchanged.
-Acceptance: SKILL.md word count at least 25% below 7,383; each moved section leaves a one-line
-pointer naming its trigger and file; every moved rule exists in exactly one place; the dispatch,
-review and landing invariants are unchanged in meaning; the skill says to re-read a reference after
-a compaction when its trigger still applies.
+Risk: standard — wording and small logic changes; tests cover the rules-version logic.
+Acceptance: every listed item done once, all references updated; tests for the identical-text
+unversioned block (current) and a changed-text block (outdated); the session-hook line contains no
+imperative to commit.
 Validation: standard.
-Notes: B1. Keep step numbering and section headings that other files cite.
+Notes: B1, B2, B3.
 
-### P2. Slim and split the briefs; short implementer return
-Status: done ([PR #30](https://github.com/vanviatransfer/manager-skill/pull/30))
-Objective: each subagent loads only the brief parts its dispatch needs; the implementer returns a
-short report and writes the full one to a file.
-Scope: `plugins/manager-plugin/skills/manager/references/implementer-brief.md`,
-`reviewer-brief.md`, new rare-case files beside them (worktree and junction cleanup, code-map setup
-PR, plan-only PR, self-training records, vault rules), each read only when its dispatch field or
-condition is set. The implementer's full report goes to a file outside the repository whose path the
-orchestrator passes; the return keeps RESULT, Phase, PR, Branch, Base SHA, Candidate SHA, a one-line
-validation summary, Blocker / decision needed, and the report path. Add a `Handoff:` note format
-(PR, branch, candidate SHA, blockers fixed and open, next step) the implementer writes when asked.
-Out of scope: SKILL.md (P3 adapts the orchestrator side).
-Depends on: P1 (both add files to `skills/manager/references/`: P2 uses its own file names and
-links to P1's files instead of restating a rule)
-Risk: standard — moves text; the report fields the orchestrator checks stay in the return.
-Acceptance: each brief at least 25% fewer words; the dispatch-field block stays at the top; the
-reviewer's verdict format is unchanged and stays inline; nothing an invariant needs is lost.
+### P2. Manager skill survives compaction
+Status: todo
+Objective: the manager skill fits the compaction re-attach budget and the loop's state survives a
+compaction.
+Scope: plugins/manager-plugin/skills/manager/SKILL.md and references/, hooks (hooks.json or the
+skill's own `hooks` frontmatter if the installed CLI supports it for plugin skills — verify), tests:
+- SKILL.md under 18,000 characters (Claude Code re-attaches the first ~5,000 tokens, ~20,000
+  characters, of each invoked skill after a compaction): invariants and the loop skeleton (steps
+  0–5 with landing, brakes and stop conditions) stay in the skill; step detail moves to references
+  read at the step, each with a one-line pointer naming its trigger;
+- step 0 reads the plan's headings and every `Status`/`Depends on`/`Risk` line plus the binding
+  decisions, decisions, strategy record and fix-round limit, not every remaining phase's section; a
+  phase's section is read (awk or P5's script) when it is scheduled;
+- a PreCompact hook prints instructions to keep the working-notes lines verbatim (≤10,000
+  characters), and a SessionStart hook with matcher `compact` prints one line telling the session to
+  re-read the manager skill and the references whose triggers apply, both only when a manager run
+  is in progress (detect it cheaply, e.g. a marker the skill writes outside the repository; fail
+  open);
+- a test with size ceilings: manager SKILL.md ≤18,000 characters, implementer-brief.md and
+  reviewer-brief.md ≤ their current word counts, code-map SKILL.md ≤20,000 characters.
+Depends on: P1
+Risk: critical — moves the loop's rules; a lost rule weakens an invariant.
+Acceptance: SKILL.md ≤18,000 characters; every moved rule exists exactly once with a pointer from
+the skill; no invariant weakened (B1); the hooks are tested (fire only in a manager run, fail open,
+write nothing in a repository); the size test passes.
 Validation: standard.
 Notes: B1.
 
-### P3. Loop rules for tokens
-Status: done ([PR #31](https://github.com/vanviatransfer/manager-skill/pull/31))
-Objective: the orchestrator spends fewer rounds and smaller contexts.
-Scope: `plugins/manager-plugin/skills/manager/SKILL.md` and the references from P1/P2:
-- default fix-round limit 5 (plan or project limits still win), with the approach question at
-  round 3;
-- implementer rotation (as revised in 0.8.3, see the change log): at a round boundary, when the
-  implementer's context (`subagent_tokens`) is about 150k or more, or above about 100k with its
-  last return more than 5 minutes old, the next round goes to a fresh implementer with the `Fix
-  round` field (and the previous one's `Handoff:` note while its cache is warm), never a
-  transcript;
-- series mode: up to 3 ready, independent, same-shape `standard` phases go to one implementer in
-  sequence, each from the default head on its own branch and PR; each PR gets its own fresh
-  reviewer dispatch, exact-SHA verdict and landing; the series stops at a rotation trigger, a
-  blocker or an owner decision; never one verdict for several PRs;
-- every dispatch states `model` and `effort` explicitly (`effort`: `medium`, a critical phase's
-  reviewer `high`, unless the strategy or the owner says otherwise; since 0.8.3);
-- the session check recommends an orchestrator window of 300k (`/autocompact 300k`; 200–300k and
-  `250k` until 0.7.1) instead of 600k, leaves an owner's own value of 300k or less alone, and
-  doesn't claim it covers subagents;
-- step 0 reads the plan's headings, remaining phases, binding decisions, open and decided owner
-  decisions, the model-strategy record and the fix-round limit (always, at the default branch),
-  and the rest only when needed; the overhead and session checks run once per run;
-- after a compaction, re-read the dispatch-field block, the ledger and the working-notes lines;
-- the orchestrator side of P2's short return (the implementer's `Report file` dispatch field;
-  facts still checked from git).
-Depends on: P1, P2
-Risk: critical — changes the loop and its brakes.
-Acceptance: each rule stated once; no invariant text weakened (B1); the 600k recommendation is gone
-from the skill; series mode cannot land a PR without its own exact-SHA PASS.
-Validation: standard.
-Notes: B1, B2.
-
-### P4. Agent frontmatter caps
-Status: done ([PR #32](https://github.com/vanviatransfer/manager-skill/pull/32))
-Objective: subagents can't grow or run away unbounded.
-Scope: `plugins/manager-plugin/agents/implementer.md`, `reviewer.md`, `worker.md`, `fallback.md`,
-`researcher.md`: `autoCompactWindow` (plain integers within 100000–1000000; implementer and worker
-300000, reviewer, fallback and researcher 200000; fallback 300000 since 0.8.3) and a generous
-`maxTurns` safety cap that a
-normal phase never reaches. No default `model` in frontmatter (the dispatch sets it). One line in
-each body: state lives in git and the plan; after a compaction re-derive it from them.
+### P3. Real token accounting
+Status: todo
+Objective: each run records what the orchestrator and every subagent actually spent.
+Scope: a stdlib script (e.g. plugins/manager-plugin/skills/manager-retro/scripts/usage.py or under
+skills/manager/scripts/) that reads the session transcript and its `subagents/agent-*.jsonl` (+
+`.meta.json`) under the Claude config folder (`CLAUDE_CONFIG_DIR` or `~/.claude`), de-duplicates
+requests by message id, and prints per agent and for the orchestrator: requests, cache reads, cache
+writes by TTL, output, context at return, and cold resumes (a request whose cache read is 0 after a
+gap); unknown when files are missing. references/run-record.md and the manager-retro skill use it
+(one Bash call at run end and per phase if cheap); record warm/cold resumes and review duration so
+rotation can be re-tuned.
 Depends on: none
-Risk: critical — a wrong cap can break phases.
-Acceptance: `claude plugin validate` passes; the fields are confirmed honoured for plugin agents
-from the CLI (binary schema or loader), or the phase says what is unverified; caps documented.
-Validation: standard.
-Notes: B2.
+Risk: standard — read-only script; the transcript format is undocumented, so fail soft.
+Acceptance: the script runs on a synthetic transcript fixture in tests and on this repository's
+real transcripts when present; run-record columns documented; no write outside the run-record file.
+Validation: standard; plus the new script folder's `unittest discover`.
+Notes: measured facts in docs/TODO.md items 4 and 11.
 
-### P5. README, TODO and version
-Status: done ([PR #33](https://github.com/vanviatransfer/manager-skill/pull/33))
-Objective: the documentation matches the new behaviour.
-Scope: `README.md`, `docs/TODO.md`, `plugins/manager-plugin/.claude-plugin/plugin.json` (0.7.0),
-`.claude-plugin/marketplace.json` description if it changes, and
-`plugins/manager-plugin/skills/living-plan/references/plan-template.md` (fix-round limit 12 → 5),
-and three small `plugins/manager-plugin/skills/manager/SKILL.md` fixes from P3's review (change
-log).
-Depends on: P1, P2, P3, P4
-Risk: standard — docs only.
-Acceptance: no stale mention of 600k or 12 rounds anywhere in the repository outside this plan;
-rotation, series mode, caps and short returns described with their limits (`subagent_tokens` as
-then understood, corrected in 0.8.3: it is a context size; the caps' effect is unmeasured).
+### P4. Watch the orchestrator's context
+Status: todo
+Objective: the orchestrator learns when its own context is large before it pays for it.
+Scope: a PostToolUse hook on `Agent` (plugins/manager-plugin/hooks) that reads the last request's
+usage from the hook input's `transcript_path` (reuse P3's reader) and, above a budget (default
+200,000 tokens; `.codemap.json`-independent; documented), prints one `additionalContext` line: write
+the working-notes lines, then suggest `/compact` to the owner at the next stop; only during a
+manager run (P2's marker); fail open; fast.
+Depends on: P2, P3
+Risk: standard — advisory hook.
+Acceptance: tested below/above budget, outside a run, missing transcript; under 50 ms on the common
+path.
 Validation: standard.
-Notes: B2.
+
+### P5. Plan validation and phase extraction
+Status: todo
+Objective: a script checks a living plan and prints one phase's brief section.
+Scope: plugins/manager-plugin/skills/living-plan/scripts/plan.py (+ tests): `check` (unique phase
+ids, every `Depends on` resolves, no cycle, each phase has Status/Objective/Scope/Depends
+on/Risk/Acceptance/Validation, scope overlap warning for phases with no dependency between them)
+and `phase <id>` (the phase section plus the constraints, binding decisions, Phases preamble, open
+decisions and model-strategy record). The briefs use `phase <id>` instead of the awk command (keep
+the awk as the no-Python fallback); living-plan SKILL.md runs `check` before a plan PR.
+Depends on: P1
+Risk: standard — new script; briefs change one line each.
+Acceptance: tests on the template shape, this plan and a malformed plan; the briefs' fallback kept.
+Validation: standard; plus `python3 -m unittest discover -s plugins/manager-plugin/skills/living-plan/scripts`.
+
+### P6. Code-map "changed" command for reviewers
+Status: todo
+Objective: reviewers get a capped pointer list of what a diff touches.
+Scope: codemap.py `changed --base <sha> --head <sha>` (changed files, top-level definitions touched,
+files importing them, matching tests, vault pages mentioning them; output capped, e.g. 60 lines,
+with a count of what was cut); reviewer-brief.md: run it when a Code map command is set, as
+pointers only, never a filter; code-map SKILL.md documents it.
+Depends on: P1
+Risk: standard — read-only command.
+Acceptance: tests on a temp repo; output cap respected; works from a subfolder with `--root`.
+Validation: standard.
+
+### P7. Eval cases for the invariants
+Status: todo
+Objective: regressions in the plugin's invariants are caught by eval cases.
+Scope: plugin eval cases (verify the installed CLI's `claude plugin eval` format and the plugin
+manifest key first) for: no general-purpose spawn when a plugin agent fits; a reviewer after every
+implementer round; merge pinned to the reviewed SHA; brake at the fix-round limit; no Edit/Write by
+the orchestrator in a manager run. Authoring and a format check only; running them is a paid session
+and is out of this phase (document the command).
+Depends on: P2, P3, P4, P5, P6
+Risk: standard — new files; no behaviour change.
+Acceptance: the cases pass the CLI's validation (or, if the CLI has no offline check, a test parses
+them against the documented schema); README documents how to run them.
+Validation: standard.
+
+### P8. Docs and version 0.9.0
+Status: todo
+Objective: documentation matches 0.9.0.
+Scope: README.md, docs/TODO.md (Done entry), .claude-plugin/marketplace.json description if it
+changes, plugins/manager-plugin/.claude-plugin/plugin.json (0.9.0).
+Depends on: P1, P2, P3, P4, P5, P6, P7
+Risk: standard — docs.
+Acceptance: no stale description of anything 0.9.0 changed; version 0.9.0.
+Validation: standard.
 
 ## Change log
-- 2026-11-15: plan created from a docs/binary study, a GitHub study and a repository audit.
-- 2026-11-15: P2 names the report path field `Report file` (absent or `none` → the full report is
-  returned) and moves the implementer's integration steps to `brief-integration.md`; P3 uses both.
-- 2026-11-15: P3 adds a `Handoff:` dispatch field to the implementer brief (the rotation note's
-  path); P5 describes it with rotation.
-- 2026-11-15: P4 caps: `autoCompactWindow` implementer and worker 300000, reviewer, fallback and
-  researcher 200000; `maxTurns` implementer, worker and fallback 500, reviewer and researcher 300.
-  The installed CLI's plugin-agent loader accepts both (a value outside 100000–1000000 or not a
-  positive integer is warned about and ignored), the agent's window is a ceiling over the parent's
-  (the smaller wins) and `maxTurns` ends the subagent's loop; not run against a live session.
-- 2026-11-15: P5 scope also includes three small SKILL.md fixes from P3's review: (a) record
-  rotations and the series' PRs in the working notes (e.g. `rotated at round <k>` and the series PR
-  list) so the rotation count and the series survive a compaction; (b) before the final report,
-  read the Risks section of each phase's report file (the short return omits it); (c) when rotating
-  during an integration round, the `Fix round` field says `blockers: none (integration)`.
-- 2026-11-16: after a live test, plugin 0.7.3 (PR #36) counts integration rounds separately from
-  fix rounds (at most 5 per phase), and rotates on tokens (about 400k, or 3 fix rounds above about
-  150k) instead of 3 resumed rounds; P3's rotation line is updated to match.
-- 2026-11-20: plugin 0.8.3 corrects B2: `subagent_tokens` is an agent's context size at its last
-  request, not cumulative usage (36 of 36 Agent results in one session's transcripts equal the
-  subagent's last request; none a sum). Rotation now follows the prompt cache instead of round
-  counts and 400k (about 150k, or above about 100k once the 5-minute subagent cache has expired;
-  numbers in `docs/TODO.md`, item 11); P3's rotation, effort and window lines and P4's fallback
-  cap (300000) are updated to match. Plan and vault text is English even where a project rule
-  names another language (owner, 2026-11-20).
+- 2026-11-20: plan created from two independent audits and a research report on 0.8.x.
 
 ## How to keep this plan alive
 - A phase PR updates its own status line and links itself; other status lines only to correct facts.
