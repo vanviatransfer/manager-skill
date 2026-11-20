@@ -359,17 +359,34 @@ def within(path, folder):
     return path == folder or path.startswith(folder.rstrip(os.sep) + os.sep)
 
 
+def temp_base():
+    """The OS temp folder: the first existing one of TMPDIR, TEMP, TMP and the platform
+    defaults, as a real path; None if there is none. Unlike tempfile.gettempdir(), it never
+    probes a folder by writing a file there and never falls back to the cwd."""
+    names = [os.environ.get(v) for v in ("TMPDIR", "TEMP", "TMP")]
+    names = [d for d in names if d and os.path.isabs(d)]  # a relative one means the cwd
+    if os.name == "nt":
+        local = os.environ.get("LOCALAPPDATA")
+        names += [os.path.join(local, "Temp") if local else None,
+                  r"C:\TEMP", r"C:\TMP", r"\TEMP", r"\TMP"]
+    else:
+        names += ["/tmp", "/var/tmp", "/usr/tmp"]
+    for d in names:
+        if d and os.path.isdir(d):
+            return os.path.realpath(d)
+    return None
+
+
 def mark(key, keep_out=()):
     """Record that this session was nudged. True only if this call created the record; False
     when it existed already or can't be written (then nothing is blocked). Nothing is written
-    at or below a folder in keep_out (the repository, the hook's cwd): tempfile.gettempdir()
-    falls back to the cwd when no temp folder is usable."""
+    at or below a folder in keep_out (the repository, the hook's cwd), e.g. with TMPDIR set
+    inside the repository."""
     import hashlib
     import stat
-    import tempfile
     name = STATE_DIR + ("-%d" % os.getuid() if hasattr(os, "getuid") else "")
-    base = os.path.realpath(tempfile.gettempdir())
-    if any(within(base, os.path.realpath(d)) for d in keep_out):
+    base = temp_base()
+    if not base or any(within(base, os.path.realpath(d)) for d in keep_out):
         return False
     folder = os.path.join(base, name)
     try:

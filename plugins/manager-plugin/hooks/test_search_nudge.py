@@ -201,15 +201,50 @@ class SearchNudgeTest(unittest.TestCase):
         return {"session_id": self.session, "cwd": self.root, "tool_name": "Grep",
                 "tool_input": {"pattern": "foo"}}
 
+    def listing(self):
+        return sorted(os.path.relpath(os.path.join(d, f), self.root)
+                      for d, dirs, files in os.walk(self.root) for f in dirs + files)
+
     def test_temp_dir_inside_the_repository_fails_open(self):
-        before = sorted(os.listdir(self.root))
-        for inside in (self.root, os.path.join(self.root, "src")):
-            with mock.patch("tempfile.gettempdir", return_value=inside):
-                self.assertEqual(search_nudge.run(self.data()), 0, inside)
-        self.assertEqual(sorted(os.listdir(self.root)), before)
-        self.assertEqual(sorted(os.listdir(os.path.join(self.root, "src"))), ["app.py", "pkg"])
-        with mock.patch("tempfile.gettempdir", return_value=self.state):
+        before = self.listing()
+        for rel in ("tmpin", "src/tmpin"):
+            inside = os.path.join(self.root, *rel.split("/"))
+            os.mkdir(inside)
+            os.chmod(inside, 0o500)  # any write attempt there fails (for non-root users)
+            self.addCleanup(os.chmod, inside, 0o700)
+            self.env["TMPDIR"] = self.env["TEMP"] = self.env["TMP"] = inside
+            self.new_session("in-" + rel)
+            self.assertEqual(self.hook("Grep", pattern="foo")[0], 0, rel)
+            self.assertEqual(self.bash("rg foo ."), 0, rel)
+            self.assertEqual(os.listdir(inside), [], rel)
+        self.assertEqual(self.listing(), sorted(before + ["tmpin", "src/tmpin"]))
+
+    def test_no_file_is_opened_inside_the_repository(self):
+        """The real lookup, spied on: no probe file, no gettempdir(), no open under the repo."""
+        inside = os.path.join(self.root, "tmpin")
+        os.mkdir(inside)
+        opened, real_open = [], os.open
+
+        def spy(path, *args, **kw):
+            opened.append(os.path.realpath(path))
+            return real_open(path, *args, **kw)
+        import tempfile
+        with mock.patch.dict(os.environ, {"TMPDIR": inside, "TEMP": inside, "TMP": inside}), \
+                mock.patch("os.open", side_effect=spy), \
+                mock.patch.object(tempfile, "gettempdir", side_effect=AssertionError):
+            self.assertEqual(search_nudge.temp_base(), os.path.realpath(inside))
+            self.assertEqual(search_nudge.run(self.data()), 0)
+        root = os.path.realpath(self.root)
+        self.assertEqual([p for p in opened if search_nudge.within(p, root)], [])
+        self.assertEqual(os.listdir(inside), [])
+        with mock.patch.dict(os.environ, {"TMPDIR": self.state}):
             self.assertEqual(search_nudge.run(self.data()), 2)
+
+    def test_temp_base_skips_relative_and_missing_folders(self):
+        env = {"TMPDIR": "relative", "TEMP": os.path.join(self.tmp, "missing"),
+               "TMP": self.state}
+        with mock.patch.dict(os.environ, env):
+            self.assertEqual(search_nudge.temp_base(), os.path.realpath(self.state))
 
     @unittest.skipUnless(hasattr(os, "symlink") and hasattr(os, "getuid"), "POSIX")
     def test_symlinked_state_folder_fails_open(self):
@@ -221,7 +256,7 @@ class SearchNudgeTest(unittest.TestCase):
 
     @unittest.skipUnless(hasattr(os, "getuid"), "POSIX")
     def test_state_folder_owned_by_another_user_fails_open(self):
-        with mock.patch("tempfile.gettempdir", return_value=self.state), \
+        with mock.patch.dict(os.environ, {"TMPDIR": self.state}), \
                 mock.patch.object(search_nudge.os, "getuid", return_value=os.getuid() + 1):
             self.assertEqual(search_nudge.run(self.data()), 0)
         for name in os.listdir(self.state):

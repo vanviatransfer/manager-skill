@@ -205,7 +205,8 @@ plugin's `PreToolUse` hook on Grep, Glob and Bash (`hooks/codemap-search-nudge.s
 - Each subagent counts on its own: the state key is the hook input's `session_id`, its `agent_id`
   (set inside a subagent) and `transcript_path`, plus the repository's top folder. The state is an
   empty marker file under the OS temp folder (`manager-plugin-search-nudge-<uid>`, mode 700, files
-  600, entries older than 7 days are pruned), never inside the repository.
+  600, entries older than 7 days are pruned), never inside the repository. The temp folder is the
+  first existing one of `TMPDIR`, `TEMP`, `TMP` and the OS defaults, never the working directory.
 - Off: set `"search_nudge": false` in `.codemap.json` and commit it.
 - It fails open: no Python, no session id, invalid JSON, an unreadable or unwritable state folder
   (a symlink, one not owned by you alone, or one that would fall inside the repository) or any
