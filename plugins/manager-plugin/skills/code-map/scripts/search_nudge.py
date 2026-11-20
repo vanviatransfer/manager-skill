@@ -380,8 +380,8 @@ def temp_base():
 def mark(key, keep_out=()):
     """Record that this session was nudged. True only if this call created the record; False
     when it existed already or can't be written (then nothing is blocked). Nothing is written
-    at or below a folder in keep_out (the repository, the hook's cwd), e.g. with TMPDIR set
-    inside the repository."""
+    at or below a folder in keep_out (the repository, the input cwd, the process cwd), e.g.
+    with TMPDIR set inside the repository."""
     import hashlib
     import stat
     name = STATE_DIR + ("-%d" % os.getuid() if hasattr(os, "getuid") else "")
@@ -457,7 +457,7 @@ def run(data):
     key = state_key(data, top)
     if not cfg or not key:
         return 0
-    keep_out = (top, cwd)
+    keep_out = (top, cwd, os.getcwd())
     if used_map:
         mark(key, keep_out)
         return 0

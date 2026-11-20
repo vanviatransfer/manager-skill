@@ -219,6 +219,20 @@ class SearchNudgeTest(unittest.TestCase):
             self.assertEqual(os.listdir(inside), [], rel)
         self.assertEqual(self.listing(), sorted(before + ["tmpin", "src/tmpin"]))
 
+    def test_temp_dir_inside_the_process_cwd_fails_open(self):
+        """The hook process runs elsewhere (e.g. after a Bash cd): its own cwd is kept out too."""
+        other = os.path.join(self.tmp, "other")
+        inside = os.path.join(other, "t")
+        os.makedirs(inside)
+        env = dict(self.env, TMPDIR=inside, TEMP=inside, TMP=inside)
+        data = json.dumps({"session_id": "proc-cwd", "transcript_path": "/t/proc-cwd.jsonl",
+                           "cwd": self.root, "hook_event_name": "PreToolUse",
+                           "tool_name": "Grep", "tool_input": {"pattern": "x"}})
+        p = subprocess.run(["sh", HOOK], input=data.encode(), capture_output=True, env=env,
+                           cwd=other)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(os.listdir(inside), [])
+
     def test_no_file_is_opened_inside_the_repository(self):
         """The real lookup, spied on: no probe file, no gettempdir(), no open under the repo."""
         inside = os.path.join(self.root, "tmpin")
