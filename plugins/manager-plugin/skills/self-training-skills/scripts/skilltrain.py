@@ -2,18 +2,19 @@
 """skilltrain: check and measure a project's self-training skills.
 
 Usage:
-  skilltrain.py check SKILL_DIR [--root DIR]   exit 0 if the skill (or trainer) is well formed,
+  skilltrain.py check SKILL_DIR [--root DIR]   exit 0 if the skill is well formed,
                                                1 with one line per problem, 2 for a bad path
   skilltrain.py stats SKILL_DIR [--root DIR]   records, outcomes and tags since the last
                                                training, and whether training is due
   skilltrain.py due REPO_ROOT                  one line per marked skill under .claude/skills/:
-                                               its training-due state, with its trainer if any
+                                               its training-due state
 
 A worker skill is SKILL.md with the marker <!-- self-training-skill v1 --> right after its
-frontmatter, lessons.md beside it, and the records file its "## Record" section names. A trainer
-is SKILL.md with the marker <!-- self-training-trainer v1 --> whose "## Trains" section names one
-worker. A SKILL.md without either marker is not checked; one whose first body line is an HTML
-comment naming self-training, or with a marker further down, is reported.
+frontmatter, lessons.md beside it, and the records file its "## Record" section names. A SKILL.md
+with the old trainer marker <!-- self-training-trainer v1 --> is a retired trainer: check, stats
+and due report it for deletion (exit 1 for check and stats). A SKILL.md without a marker is not
+checked; one whose first body line is an HTML comment naming self-training, or with a marker
+further down, is reported.
 
 SKILL_DIR is normally <repo>/.claude/skills/<name>; the repository root is then three folders up,
 or --root gives it. Paths in the files are relative to the repository root.
@@ -33,11 +34,8 @@ import re
 import sys
 
 MARKER = "<!-- self-training-skill v1 -->"
-TRAINER_MARKER = "<!-- self-training-trainer v1 -->"
 MARKER_RE = re.compile(r"^<!-- self-training-(skill|trainer) v\d+ -->$")
 SECTIONS = ("Purpose", "Steps", "Rules", "Knowledge", "Record", "Changelog")
-TRAINER_SECTIONS = ("Trains", "Every use the owner reacts to", "Domain record fields",
-                    "Next experiment", "Turning records into skill changes")
 RECORDS_HEADER = ("date", "context", "outcome", "tags", "note")
 LESSONS_HEADER = ("id", "lesson", "label", "evidence", "status")
 OUTCOMES = ("pending-review", "pass", "changes-required", "owner-good", "owner-bad", "failed",
@@ -61,12 +59,14 @@ BULLET = re.compile(r"^(?:[-*+]|\d+[.)])\s+")
 SUB_BULLET = re.compile(r"^(?:[-*+]|1[.)])\s+")
 LESSON_CITE = re.compile(r"\((L\d+(?:,\s*L\d+)*)\)\s*$")
 OWNER_CITE = re.compile(r"\(owner: \".+\", " + DATE + r"\)\s*$")
-PATH_LINE = re.compile(r"^(Skill|Records|Lessons):\s*`([^`]+)`")
+PATH_LINE = re.compile(r"^(Records):\s*`([^`]+)`")
 CELL_SPLIT = re.compile(r"(?<!\\)\|")
 
 
-NEAR_MISS = ("the marker doesn't match: the line right after the frontmatter must be exactly %s "
-             "or %s" % (MARKER, TRAINER_MARKER))
+NEAR_MISS = ("the marker doesn't match: the line right after the frontmatter must be exactly %s"
+             % MARKER)
+RETIRED = ("retired trainer (self-training-skills 0.9.3 dropped trainers): delete this folder; "
+           "its worker's Record section now holds its rules")
 
 
 class PathError(Exception):
@@ -149,7 +149,7 @@ def split_frontmatter(text):
 
 
 def marker_kind(body):
-    """'skill', 'trainer', 'near-miss' or None, from the first non-empty body line.
+    """'skill', 'trainer' (retired), 'near-miss' or None, from the first non-empty body line.
 
     near-miss: that line is an HTML comment naming self-training without matching a marker, or
     a marker stands elsewhere in the body."""
@@ -427,48 +427,6 @@ def check_worker(sk):
                            % (counts[-1][0], counts[-1][1], len(rows)))
 
 
-def worker_for_trainer(sk):
-    """(worker rel dir, paths dict) from ## Trains, with problems recorded."""
-    lines = section(sk.secs, "Trains") or []
-    paths = section_paths(lines)
-    name = paths.get("Skill")
-    if not name:
-        sk.problems.append("## Trains names no skill (a line `Skill: `<name>``)")
-        return None, paths
-    if "/" in name or "\\" in name or name in (".", ".."):
-        sk.problems.append("## Trains skill must be a folder name: %s" % name)
-        return None, paths
-    return posixpath.join(posixpath.dirname(sk.rel_dir), name), paths
-
-
-def check_trainer(sk):
-    check_frontmatter(sk)
-    check_order(sk.secs, TRAINER_SECTIONS, sk.problems)
-    worker_dir, paths = worker_for_trainer(sk)
-    if worker_dir:
-        try:
-            worker = Skill(sk.root, worker_dir)
-            if worker.kind != "skill":
-                sk.problems.append("trained skill %s is not a marked self-training skill"
-                                   % worker_dir)
-        except ValueError as exc:
-            sk.problems.append("trained skill: %s" % exc)
-    for key in ("Records", "Lessons"):
-        path = paths.get(key)
-        if not path:
-            sk.problems.append("## Trains names no %s path (a line `%s: `<path>``)"
-                               % (key.lower(), key))
-            continue
-        rel = safe_rel(path)
-        if rel is None:
-            sk.problems.append("%s path is not inside the repository: %s" % (key.lower(), path))
-            continue
-        try:
-            read_rel(sk.root, rel)
-        except ValueError as exc:
-            sk.problems.append("%s: %s" % (key.lower(), exc))
-
-
 def resolve(skill_dir, root_arg):
     """(root, skill rel dir). Raises PathError."""
     full = os.path.abspath(skill_dir)
@@ -509,13 +467,13 @@ def run_check(root, rel):
     if sk.kind == "near-miss":
         sk.problems.append(NEAR_MISS)
     elif sk.kind == "trainer":
-        check_trainer(sk)
+        sk.problems.append(RETIRED)
     else:
         check_worker(sk)
     for p in sk.problems:
         print("%s: %s" % (rel, p))
     if not sk.problems:
-        print("ok: %s (%s)" % (rel, "trainer" if sk.kind == "trainer" else "skill"))
+        print("ok: %s (skill)" % rel)
     return 1 if sk.problems else 0
 
 
@@ -586,12 +544,11 @@ def measure(sk):
 
 def run_stats(root, rel):
     sk = load(root, rel)
-    if sk.kind == "near-miss":
-        print("%s: %s" % (rel, NEAR_MISS))
+    if sk.kind in ("near-miss", "trainer"):
+        print("%s: %s" % (rel, NEAR_MISS if sk.kind == "near-miss" else RETIRED))
         return 1
     if sk.kind != "skill":
-        print("not a self-training skill" if sk.kind is None else
-              "a trainer: run stats on the skill it trains")
+        print("not a self-training skill")
         return 0
     m = measure(sk)
     if m is None:
@@ -629,7 +586,7 @@ def run_due(root):
     if not os.path.isdir(folder):
         print("no self-training skills")
         return 0
-    workers, trainers = {}, {}
+    workers = {}
     for name in sorted(os.listdir(folder)):
         rel = base + "/" + name
         if not os.path.isfile(os.path.join(folder, name, "SKILL.md")):
@@ -643,8 +600,7 @@ def run_due(root):
             workers[name] = "error: %s" % exc
             continue
         if sk.kind == "trainer":
-            worker_dir, _ = worker_for_trainer(sk)
-            trainers.setdefault(posixpath.basename(worker_dir or ""), []).append(name)
+            workers[name] = RETIRED
         elif sk.kind == "near-miss":
             workers[name] = "error: %s" % NEAR_MISS
         elif sk.kind == "skill":
@@ -657,15 +613,10 @@ def run_due(root):
                 workers[name] = "not due (%d records since v%d)" % (m["since"], m["last"][0])
             if m is not None and m["skipped"]:
                 workers[name] += " (skipped rows that don't parse: %s)" % ", ".join(m["skipped"])
-    if not workers and not trainers:
+    if not workers:
         print("no self-training skills")
     for name in sorted(workers):
-        extra = trainers.pop(name, [])
-        print("%s: %s%s" % (name, workers[name],
-                            " [trainer: %s]" % ", ".join(extra) if extra else ""))
-    for name in sorted(trainers):
-        for t in trainers[name]:
-            print("%s: trainer of %s, which is not a marked skill" % (t, name or "nothing"))
+        print("%s: %s" % (name, workers[name]))
     return 0
 
 

@@ -171,13 +171,7 @@ class SkilltrainTest(unittest.TestCase):
         sample = os.path.join(self.root, ".claude", "skills", "sample")
         code, out = run("check", sample)
         self.assertEqual(code, 0, out)
-        self.write(".claude/skills/sample-trainer/SKILL.md", from_template(
-            "trainer-template.md",
-            [("<name>", "sample"), ("<the worker's records path>", records)]))
-        code, out = run("check", sample + "-trainer")
-        self.assertEqual(code, 0, out)
-        self.assertIn("sample: not due (0 records since v1) [trainer: sample-trainer]",
-                      run("due", self.root)[1])
+        self.assertIn("sample: not due (0 records since v1)\n", run("due", self.root)[1])
 
     def test_wrapped_rule_starting_with_a_number_is_not_a_sub_bullet(self):
         rules, stray = skilltrain.bullets(["- Keep the summary to at most",
@@ -462,32 +456,21 @@ class SkilltrainTest(unittest.TestCase):
         os.makedirs(empty)
         self.assertEqual(run("due", empty), (0, "no self-training skills\n"))
 
-    def test_trainer_passes_and_is_listed(self):
-        self.write(".claude/skills/release-notes-trainer/SKILL.md", TRAINER)
-        code, out = run("check", os.path.join(self.root, ".claude/skills/release-notes-trainer"))
+    def test_old_trainer_is_retired(self):
+        retired = ("retired trainer (self-training-skills 0.9.3 dropped trainers): delete this "
+                   "folder; its worker's Record section now holds its rules")
+        rel = ".claude/skills/release-notes-trainer"
+        self.write(rel + "/SKILL.md", TRAINER)
+        tdir = os.path.join(self.root, rel)
+        for action in ("check", "stats"):
+            code, out = run(action, tdir)
+            self.assertEqual((code, out), (1, "%s: %s\n" % (rel, retired)), action)
+        code, out = run("due", self.root)
         self.assertEqual(code, 0, out)
-        self.assertIn("(trainer)", out)
-        self.assertIn("[trainer: release-notes-trainer]", run("due", self.root)[1])
-
-    def test_trainer_names_missing_worker(self):
-        self.write(".claude/skills/release-notes-trainer/SKILL.md",
-                   TRAINER.replace("Skill: `release-notes`", "Skill: `missing`"))
-        code, out = run("check", os.path.join(self.root, ".claude/skills/release-notes-trainer"))
-        self.assertEqual(code, 1, out)
-        self.assertIn("trained skill: .claude/skills/missing/SKILL.md does not exist", out)
-        self.assertIn("trainer of missing, which is not a marked skill", run("due", self.root)[1])
-
-    def test_trainer_problems(self):
-        rel = ".claude/skills/release-notes-trainer/SKILL.md"
-        tdir = os.path.join(self.root, ".claude/skills/release-notes-trainer")
-        self.write(rel, TRAINER.replace("## Next experiment", "## Next"))
-        self.assertIn("missing section: ## Next experiment", run("check", tdir)[1])
-        self.write(rel, TRAINER.replace("lessons.md`", "nope.md`"))
-        self.assertIn("lessons: .claude/skills/release-notes/nope.md does not exist",
-                      run("check", tdir)[1])
-        self.edit("<!-- self-training-skill v1 -->\n", "")
-        self.write(rel, TRAINER)
-        self.assertIn("is not a marked self-training skill", run("check", tdir)[1])
+        self.assertEqual(out, "release-notes: not due (0 records since v1)\n"
+                         "release-notes-trainer: %s\n" % retired)
+        self.assertNotIn("[trainer:", out)
+        self.assertEqual(run("check", self.dir)[0], 0)
 
 
 if __name__ == "__main__":

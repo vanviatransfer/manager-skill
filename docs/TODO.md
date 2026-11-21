@@ -584,3 +584,33 @@ first led to.
   drop the staged-map check for exactly those pages.
 - **Not verified.** As in entry 13: no compaction of a real manager run has been observed, and
   no run of this version is recorded.
+
+### 15. Trainer skills removed (plugin 0.9.3)
+
+The owner's call: the optional per-skill trainer skill (`<name>-trainer`) did not work in
+practice, so self-training-skills no longer offers or writes one.
+
+- **Removed.** Create mode's trainer step and its Turkish question template (the later step is
+  renumbered; Train's step numbers are unchanged), the trainer in the skill's **What it is**,
+  **Formats**, **Adopt** and **Report** texts and in the script's usage, the file
+  `references/trainer-template.md`, the README's "optional trainer skill", and "their trainers"
+  in the manager's `references/self-training-due.md`. `skilltrain.py` loses its trainer checks
+  (the five trainer sections, the `## Trains` pairing with a worker) and `due` no longer adds
+  `[trainer: ...]` to a worker's line. The skill's text went from 12,008 to 10,434 characters.
+- **Moved into the worker template.** The trainer's three rules that held up now sit in the
+  `## Record` section of `references/skill-template.md`, as three bullets: an owner reaction in
+  conversation ("kaydet", "iyi oldu", "kötü oldu", "hangisi daha iyi") gets one row (`owner
+  session`, `owner-good` / `owner-bad` else `n/a`, the owner's words verbatim, domain
+  measurements as `key=value` in the note); compared with the previous attempt, more than one
+  change gets the tag `confounded`; the next experiment changes one variable at a time, with the
+  same seed and inputs. `records-format.md`, `evidence-rules.md` and the script already accepted
+  these outcomes and the tag; they are unchanged.
+- **Existing trainers are retired, not validated.** The script still knows the old marker
+  `<!-- self-training-trainer v1 -->`, only to report it: `check` and `stats` on such a folder
+  print one line, `<path>: retired trainer (self-training-skills 0.9.3 dropped trainers): delete
+  this folder; its worker's Record section now holds its rules`, and exit 1; `due` prints the
+  same as that folder's line and exits 0 as before. Tests: the three trainer-validation tests
+  went, one test covers the retired behaviour of `check`, `stats` and `due`, and the template
+  test no longer writes a trainer.
+- **Not verified.** [not measured] No live session has used the new `## Record` bullets, and no
+  project's existing trainer has been retired with this version.
