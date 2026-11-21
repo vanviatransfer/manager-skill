@@ -79,20 +79,20 @@ strategy allows, read `references/model-strategy.md`: **Which strategy applies**
 **Applying**, **Not enough model**.
 
 **Run marker.** Once the strategy is settled, write the run id to this session's marker file,
-`~/.claude/manager-runs/active/${CLAUDE_SESSION_ID}` (`mkdir -p` its folder; outside every
-repository; can't be written → go on without it). While it exists, the plugin's hooks tell a
-compaction to keep your working-notes lines verbatim and the session afterwards what to re-read.
-Remove it (`rm -f`) with a final report that leaves no decision batch open, or when the owner
-ends the run.
+`~/.claude/manager-runs/active/${CLAUDE_SESSION_ID}`, only once
+(`[ -e <file> ] || echo <id> > <file>`; `mkdir -p` its folder; outside every repository; can't be
+written → go on without it). While it exists, the plugin's hooks tell a compaction to keep your
+working-notes lines verbatim and the session afterwards what to re-read. Remove it (`rm -f`) with
+a final report that leaves no decision batch open, or when the owner ends the run.
 
 ## 0. Establish state (also how you resume after compaction or in a new session)
 
 A file in `references/` is read when its trigger (named where this skill points to it) applies; in
 those files, bold section names, step numbers and `${CLAUDE_SKILL_DIR}` are this skill's. After a
 compaction, before acting, re-read the brief files' dispatch-field blocks, the review-ledger
-comments of the PR in flight, the in-flight phase's section as on its base SHA (loop step 1's
-`awk`), your working-notes lines (as the summary carries them) and every reference whose trigger
-still applies; never work from a summary of a file.
+comments of the PR in flight, the in-flight phase's section as on its base SHA (loop step 1),
+your working-notes lines (as the summary carries them) and every reference whose trigger still
+applies; never work from a summary of a file.
 
 Derive state from durable sources only — never from memory of an earlier context. At the start of
 a run (a new session included) and again after a compaction, read
@@ -135,8 +135,8 @@ ready phase.
 ## The loop, per phase
 
 ### 1. Implement
-Record the default head as the phase's **base SHA**. Read the phase's section as on it (the `awk`
-command in the implementer brief's step 1) and, when the default head has moved since the `Project
+Record the default head as the phase's **base SHA**. Read the phase's section as on it (the
+implementer brief's step 1: `plan.py`) and, when the default head has moved since the `Project
 rules` line was taken, list the rules files again as on it (`references/establish-state.md`, item
 3). Dispatch a fresh implementer with the brief's dispatch fields. Keep the agent id: fix rounds go
 to the same agent until **Rotation** (4b).

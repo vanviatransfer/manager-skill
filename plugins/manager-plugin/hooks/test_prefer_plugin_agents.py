@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -381,7 +382,8 @@ def command_in(path, marker):
 @unittest.skipUnless(shutil.which("awk") and shutil.which("git"), "needs awk and git")
 class PlanSectionCommandTest(unittest.TestCase):
     """The briefs' section-only plan read: `git show <base-sha>:<plan-path> | awk ...`
-    (the constraints, the binding decisions, the `## Phases` preamble and one phase's section)."""
+    (the constraints, the binding decisions, the `## Phases` preamble and one phase's section),
+    the fallback of `git show <base-sha>:<plan-path> | <python> "<plan.py>" phase <id>`."""
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
@@ -393,14 +395,19 @@ class PlanSectionCommandTest(unittest.TestCase):
                          command_in(os.path.join(refs, "reviewer-brief.md"), "awk -v id=<id>"),
                          "both briefs give the same command")
         self.assertTrue(self.command.startswith("git show <base-sha>:<plan-path> | awk "))
+        self.script = command_in(os.path.join(refs, "implementer-brief.md"), "plan.py")
+        self.assertEqual(self.script,
+                         command_in(os.path.join(refs, "reviewer-brief.md"), "plan.py"),
+                         "both briefs give the same command")
 
     def git(self, *args):
         p = subprocess.run(["git", "-C", self.tmp] + list(args), check=True,
                            capture_output=True, env=self.env)
         return p.stdout.decode().strip()
 
-    def extract(self, plan_text, phase):
-        """Run the briefs' command, placeholders filled, on the plan as committed."""
+    def extract(self, plan_text, phase, command=None):
+        """Run the briefs' command (the `awk` one unless another is given), placeholders filled,
+        on the plan as committed."""
         if not os.path.isdir(os.path.join(self.tmp, ".git")):
             self.git("init", "-q")
         os.makedirs(os.path.join(self.tmp, "docs"), exist_ok=True)
@@ -410,7 +417,8 @@ class PlanSectionCommandTest(unittest.TestCase):
         self.git("add", "docs/LIVING PLAN.md")
         self.git("commit", "-qm", "plan", "--allow-empty")
         sha = self.git("rev-parse", "HEAD")
-        command = (self.command.replace("<base-sha>:<plan-path>", '%s:"docs/LIVING PLAN.md"' % sha)
+        command = ((command or self.command)
+                   .replace("<base-sha>:<plan-path>", '%s:"docs/LIVING PLAN.md"' % sha)
                    .replace("<id>", phase))
         p = subprocess.run(["sh", "-c", command], capture_output=True, env=self.env, cwd=self.tmp)
         self.assertEqual((p.returncode, p.stderr.decode()), (0, ""))
@@ -472,6 +480,44 @@ class PlanSectionCommandTest(unittest.TestCase):
                 text = " ".join(fh.read().split())
             self.assertRegex(text, r"(?i)no `## Constraints…` or `## Binding decisions` section "
                              r"printed → `grep -n '\^## '` and read them", brief)
+
+    def test_the_plan_script_reads_first_and_the_awk_is_its_fallback(self):
+        """`plan.py phase` takes the plan from standard input and no path, so it is still the
+        plan as on the base SHA; it prints what the `awk` prints, and the open owner decisions
+        and the model-strategy record too. The `awk` stays for a machine without Python."""
+        self.assertEqual(self.script,
+                         'git show <base-sha>:<plan-path> | <python> "<plan.py>" phase <id>')
+        refs = os.path.join(MANAGER, "references")
+        script = os.path.join(refs, "..", "..", "living-plan", "scripts", "plan.py")
+        self.assertTrue(os.path.isfile(script))
+        for brief in ("implementer-brief.md", "reviewer-brief.md"):
+            with open(os.path.join(refs, brief), encoding="utf-8") as fh:
+                text = " ".join(fh.read().split())
+            self.assertIn("``` %s ``` `<plan.py>`: `../../living-plan/scripts/plan.py` from this "
+                          "file's folder; `<python>`: `python3`, else `python` or `py -3`. It also "
+                          "prints the open owner decisions and the model-strategy record. No "
+                          "Python → the same read without those two: ``` git show "
+                          "<base-sha>:<plan-path> | awk -v id=<id> '" % self.script, text, brief)
+        filled = self.script.replace("<python>", '"%s"' % sys.executable).replace("<plan.py>",
+                                                                                  script)
+        template = command_in(os.path.join(SKILLS, "living-plan", "references",
+                                           "plan-template.md"), "## Binding decisions")
+        plan = template.replace("### P2. <title>\n...\n",
+                                "### P2. Second\nStatus: todo\nObjective: the second thing\n")
+        other = (plan.replace("## Model strategy\n", "## The model strategy\n")
+                 .replace("## Open owner decisions\n", "## The open owner decisions\n"))
+        for phase in ("P1", "P2"):
+            awk, more = self.extract(plan, phase), self.extract(plan, phase, filled)
+            for added in ("## Model strategy\n<Written by the manager: ",
+                          "## Open owner decisions\n\n### D1. <question>\nBlocks: P<n>\n"):
+                self.assertNotIn(added, awk)
+                self.assertIn(added, more)
+            self.assertIn("### %s. " % phase, more)
+            self.assertEqual(more.count("\n### P"), 1)
+            self.assertNotIn("## Decided", more)
+            # a plan without those two sections: both reads print the same
+            self.assertEqual(self.extract(other, phase, filled), self.extract(other, phase))
+            self.assertEqual(self.extract(other, phase), awk)
 
     def test_this_repository_plan(self):
         path = os.path.join(HERE, "..", "..", "..", "docs", "LIVING_PLAN.md")

@@ -206,6 +206,25 @@ class ManagerRunCompactHookTest(unittest.TestCase):
                       "open, or when the owner ends the run", skill)
         self.assertIn('"$HOME/.claude/manager-runs/active/$id"', read(HOOK))
 
+    def test_the_marker_is_written_only_once(self):
+        """Step 0 runs again after a compaction; a second write would move the marker's time,
+        which bounds the orchestrator's usage line (`usage.py --since <marker>`)."""
+        skill = " ".join(read(os.path.join(MANAGER, "SKILL.md")).split())
+        form = "[ -e <file> ] || echo <id> > <file>"
+        self.assertIn("`%s`, only once (`%s`; `mkdir -p` its folder;" % (MARKER, form), skill)
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        marker = os.path.join(tmp, "active", SESSION)
+        os.makedirs(os.path.dirname(marker))
+        write = form.replace("<file>", '"%s"' % marker)
+        subprocess.run(["sh", "-c", write.replace("<id>", "R2026-01-01-0900")], check=True)
+        self.assertEqual(read(marker), "R2026-01-01-0900\n")
+        os.utime(marker, (1000, 1000))
+        for run in ("R2026-01-01-0900", "R2026-01-02-1000"):  # step 0 again; a wrong id
+            subprocess.run(["sh", "-c", write.replace("<id>", run)], check=True)
+        self.assertEqual(read(marker), "R2026-01-01-0900\n")
+        self.assertEqual(os.path.getmtime(marker), 1000)
+
 
 class SizeCeilingTest(unittest.TestCase):
     """Claude Code re-attaches about the first 5,000 tokens (some 20,000 characters) of an invoked
@@ -219,7 +238,7 @@ class SizeCeilingTest(unittest.TestCase):
         self.assertLessEqual(len(read(os.path.join(SKILLS, "code-map", "SKILL.md"))), 20000)
 
     def test_briefs(self):
-        for name, words in (("implementer-brief.md", 1284), ("reviewer-brief.md", 1291)):
+        for name, words in (("implementer-brief.md", 1327), ("reviewer-brief.md", 1334)):
             self.assertLessEqual(len(read(os.path.join(REFS, name)).split()), words, name)
 
 
@@ -318,12 +337,13 @@ class ReferencePointerTest(unittest.TestCase):
             for trigger in (pointer.group(0), own):
                 self.assertIn("again after a compaction", trigger, name)
                 self.assertNotIn("compaction that", trigger, name)
-        self.assertRegex(self.skill, r"After a compaction, before acting, re-read [^.;]*"
-                                     r"the in-flight phase's section [^.;]*`awk`")
+        self.assertRegex(self.skill, r"After a compaction, before acting, re-read [^.;]*the "
+                                     r"in-flight phase's section as on its base SHA \(loop "
+                                     r"step 1\)")
         resumed = self.texts["establish-state.md"].split(" - open PR → ")[1].split("; - ")[0]
         self.assertIn("that phase resumes at loop step 2", resumed)
-        self.assertIn("read the phase's section as on that base SHA (the `awk` command in the "
-                      "implementer brief's step 1)", resumed)
+        self.assertIn("read the phase's section as on that base SHA (the `plan.py` command in "
+                      "the implementer brief's step 1, or its `awk`)", resumed)
 
     def test_the_invariants_stay_in_the_skill(self):
         for rule in (
@@ -421,8 +441,8 @@ class StepZeroCommandTest(unittest.TestCase):
     def test_the_skill_reads_a_phase_section_only_when_the_phase_is_scheduled(self):
         skill = " ".join(read(os.path.join(MANAGER, "SKILL.md")).split())
         self.assertIn("of the plan, no phase's section before that phase is scheduled", skill)
-        self.assertIn("Read the phase's section as on it (the `awk` command in the implementer "
-                      "brief's step 1)", skill)
+        self.assertIn("Read the phase's section as on it (the implementer brief's step 1: "
+                      "`plan.py`)", skill)
         self.assertNotIn("the remaining phases' sections", " ".join(manager_texts().values()))
 
     def rules_files(self, sha):
