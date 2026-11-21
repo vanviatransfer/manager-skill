@@ -3,7 +3,11 @@
 A Claude Code plugin with six skills:
 
 - **`living-plan`** — writes a project's living plan: goal, scope, binding decisions, phases sized
-  for one PR each (with acceptance criteria and validation), and open owner decisions.
+  for one PR each (with acceptance criteria and validation), and open owner decisions. Its
+  `plan.py` (standard-library Python) checks the plan before its PR: every phase id used once,
+  every `Depends on` naming phases of the plan (or `none`), no dependency cycle, every phase with
+  its seven required lines, and a warning when two phases that are not done and don't depend on
+  each other name the same path in their scope.
 - **`manager`** — runs that plan to completion.
 - **`create-vault`** — creates a project vault in `docs/vault/`, or adopts or refreshes an existing
   one: short linked pages of durable facts about the code (index, glossary, decision records, topic
@@ -15,7 +19,10 @@ A Claude Code plugin with six skills:
   and top-level symbols per file, plus a vault index (every page with its title, size and inbound
   links), broken links and orphan pages, so agents read one page instead of exploring. `query` finds
   where a name is defined, who imports a file and which vault pages mention it; `mentions` lists the
-  vault pages to check after a change. It finds an existing vault wherever it is (a `.obsidian/`
+  vault pages to check after a change; `changed` gives a reviewer pointers into a diff (the changed
+  files, each with the top-level definitions whose text differs, its importers, its tests and the
+  vault lines that mention it; at most 60 lines; approximate, so never a filter on what is
+  reviewed). It finds an existing vault wherever it is (a `.obsidian/`
   folder, a known folder name, or the folder with most `[[wikilinks]]`), including vaults made
   without this plugin, and records the layout in `.codemap.json`. It is the plugin's own
   standard-library Python script (3.8+; no packages, nothing sent anywhere; files that may hold
@@ -29,8 +36,10 @@ A Claude Code plugin with six skills:
     changes, and to use `manager-plugin:worker`, `researcher` or `reviewer` instead of
     `general-purpose`. It names the skill, never a script path; nothing else in the files changes.
     The block's marker carries a template version. When a plugin update changes the template, a
-    session-start hook says so in one line with the command to run (`rules-hint` again, then
-    commit); the manager updates an outdated block in its setup PR.
+    session-start hook says so in one line of information, not an order: it names the command
+    that updates the block (`rules-hint` again) and says that a manager run does this in its
+    setup PR. A block without a version (plugin 0.8.2 and earlier) whose text equals the template
+    counts as current and needs no setup PR.
   - **Commit hooks (opt-in, off by default).** A git pre-commit hook, per clone
     (`codemap.py install-hook`, off with `uninstall-hook`): when a commit changes the map's inputs
     it rebuilds the map and stages its pages into the same commit; it stops the commit when an
@@ -57,7 +66,7 @@ A Claude Code plugin with six skills:
     run, and later sessions read the index and `query` instead of exploring. For a short-lived or
     tiny repository, decline it (the "never" answer, a Decided entry or a project rule), and the
     manager honours that. Once set up, implementers regenerate the map in every phase PR and
-    reviewers run its `check`.
+    reviewers run its `check` and, for pointers into the diff, its `changed`.
 - **`self-training-skills`** — writes skills for work that repeats in a project (offered when a
   living plan has recurring work): a worker skill in `.claude/skills/<name>/`, per-use records (in
   the vault if there is one) and a labelled lessons table, plus an optional trainer skill for work
@@ -71,10 +80,27 @@ A Claude Code plugin with six skills:
 
 Each manager run appends a compact record (header: repository name, plugin version, model strategy;
 then per phase: risk, models, rounds, agent context sizes, verdicts, blocker classes, skipped
-validation, fallbacks; and a summary line with compactions and owner questions) to
-`~/.claude/manager-runs/` in your home directory. It is local to your machine, shared by all your
-projects, outside every repository, and holds no code or file contents; delete the folder to reset
-it. It may not persist in cloud sessions. Two things learn from it:
+validation, fallbacks; `usage` lines, below; and a summary line with compactions and owner
+questions) to `~/.claude/manager-runs/` in your home directory. It is local to your machine, shared
+by all your projects, outside every repository, and holds no code or file contents; delete the
+folder to reset it (between runs: its `active/` subfolder holds the markers of runs in progress).
+It may not persist in cloud sessions.
+
+**What a run spent.** An agent's context size is not what it cost, so the record also holds
+`usage` lines. The manager skill's `usage.py` (standard-library Python; it only reads) takes them
+from the session's transcript and its subagents' transcripts under the Claude config folder
+(`CLAUDE_CONFIG_DIR`, else `~/.claude`): for the orchestrator and for each subagent, the API
+requests, the uncached input, the cache reads, the cache writes by lifetime (5 minutes, 1 hour),
+the output, the context at the last return, the warm and cold resumes (a request sent 60 seconds
+or more after the previous one: cold when the cache had expired and the context was written
+again) and the seconds from its first record to its last. The orchestrator's line counts the run
+only, from the time its run marker (under **How `manager` works**) was written. `manager-retro`
+measures these lines too, among other things to re-tune the rotation thresholds. Limits: the
+transcript format is undocumented, so a line or a field that can't be read is skipped and a
+missing value is `unknown`; the script is tested on synthetic transcripts and was run on one real
+session's; and no threshold has been changed from these figures yet.
+
+Two things learn from the record:
 
 - **Within a project:** when reviewers find the same class of defect in two phases, the manager
   proposes what would prevent it (an automated check for a mechanical pattern, else a written rule),
@@ -130,6 +156,30 @@ against run records, not measurements):
   reads from the file
   only what a decision needs and still checks every fact against `git` and GitHub. Rare cases in
   the skill and the briefs live in reference files read only when their trigger applies.
+- **Section-only plan reads:** at the start of a run the manager reads the plan's headings and
+  every phase's `Status`, `Depends on` and `Risk` lines, with the decisions and the
+  model-strategy record, not the phases' text. A phase's section is read when the phase is
+  scheduled, by the command the implementer and the reviewer use too:
+  `git show <base-sha>:<plan> | plan.py phase <id>` prints that section with the constraints, the
+  binding decisions, the `## Phases` preamble, the open owner decisions and the model-strategy
+  record. `plan.py` reads the plan from standard input and takes no path, so a phase is always
+  read from the plan as the base commit has it, never from a working tree. Without Python the
+  briefs' `awk` command does the same read without the last two.
+- **A skill that fits after a compaction:** after a compaction Claude Code re-attaches only the
+  first 5,000 tokens of each invoked skill (its skills documentation, checked 2026-11-21), and
+  the manager skill had about 35,000 characters. It now has under 18,000: the invariants and the
+  loop's skeleton (the steps with landing, brakes and stop conditions) stay in it, and each
+  step's detail is in a reference file that the skill names with its trigger, read at that step
+  and again after a compaction. Tests hold that ceiling, and one each for both briefs and the
+  `code-map` skill.
+- **A run carried across a compaction:** the plan, `git` and the review ledger hold the durable
+  state; what is in flight (the run's id and model strategy, owner answers not yet in the plan,
+  the current phase's PR and SHAs) is a few working-notes lines in the conversation. During a
+  run, one hook tells a compaction's summary to keep those lines verbatim, a second tells the
+  session afterwards to re-read the skill and the references whose triggers apply, and a third
+  watches the orchestrator's own context: above 200,000 tokens it has the manager write its
+  notes out and suggest `/compact` to you at its next stop. The three hooks and their limits
+  (none has been exercised in a live session yet) are described with the other hooks, below.
 - **Agent caps:** the plugin's agents set `autoCompactWindow` (implementer, worker and fallback
   300000; reviewer and researcher 200000) and `maxTurns` (implementer, worker and fallback 500;
   reviewer and researcher 300). The window is a ceiling: when the parent session's window is
@@ -153,6 +203,7 @@ during a run: status lines, plan records, plan-only PRs, vault pages) is in Engl
 changed; owner quotes stay verbatim, and unchanged text is not translated unless the phase says so.
 This is the owner's standing policy and the one place where it wins over a project rule: a rule
 naming another language for plan or vault text doesn't apply to it, and reviewers don't flag it.
+The same holds for the skill files, lessons and records that `self-training-skills` writes.
 Everything else in a project's rules still wins, and the manager talks to you in your language.
 
 Phases are scheduled by their declared dependencies: an owner decision or a stuck phase blocks only
@@ -168,8 +219,11 @@ server (the reviewer gets no Edit/Write or GitHub MCP write tools; staying read-
 from its brief). Measured once, this lowers their start tokens to about a seventh of
 general-purpose's (numbers below). All five plugin agents also set `omitClaudeMd`, so none gets the
 session's `CLAUDE.md` files injected (in a session that spans several repositories, those can be
-another project's); each reads the `CLAUDE.md` and `AGENTS.md` of the repository it works in, as
-its brief or instructions say. A third one, `manager-plugin:researcher` (read and search tools,
+another project's); each reads the rules files of the repository it works in (`CLAUDE.md`,
+`AGENTS.md`, `.claude/CLAUDE.md`, `.claude/rules/*.md` and the files they import with `@path`):
+the implementer and the reviewer the ones the manager lists in their dispatch's `Project rules`
+field, as on the phase's base commit, the others as their instructions say.
+A third one, `manager-plugin:researcher` (read and search tools,
 web search and fetch, Write for its report; staying read-only comes from its instructions), is for
 research an orchestrating session delegates (evaluating a repository or a library, reading docs):
 use it instead of `general-purpose` so the research agent doesn't inherit every skill and MCP tool.
@@ -204,8 +258,33 @@ repository's `.codemap.json` opts in, and fails open the same way. A third, on G
 Bash, is the code-map "map first" nudge above: it does nothing in a repository without a code map,
 and fails open the same way. A `SessionStart` hook (startup, resume, clear) reads the repository's
 `AGENTS.md` and `CLAUDE.md` and, when their code-map rules block is older than the plugin's
-template, adds one line with the `rules-hint` command to the session's context; otherwise it
-prints nothing. It writes nothing and fails open too.
+template, adds one line of information to the session's context (the `rules-hint` command that
+updates the block, and that a manager run does this in its setup PR); otherwise it prints
+nothing. It writes nothing and fails open too.
+
+Three more hooks act only inside a manager run. Once a run's model strategy is settled, the
+manager writes a marker file, `~/.claude/manager-runs/active/<session id>` (outside every
+repository), and removes it when the run ends; the hooks test for that file and stay silent in
+every other session, in subagents and on any error.
+
+- `PreCompact`: its output becomes extra instructions for the compaction's summary, to keep the
+  run's working-notes lines verbatim (the run id and model strategy, the rules files and rulings
+  sent with every dispatch, owner answers not yet in the plan, the phase in flight with its PR,
+  branch and SHAs).
+- `SessionStart` with matcher `compact`: one line after the compaction, to re-read the manager
+  skill and the references whose triggers apply, and never to work from a summary of a file.
+- `PostToolUse` on the Agent tool: after a subagent returns, it reads the orchestrator's last
+  request from the end of the session's transcript and, when that context is above 200,000
+  tokens (the environment variable `MANAGER_CONTEXT_BUDGET` sets another budget), adds one line:
+  write the working-notes lines out now, and suggest `/compact` to the owner at the next stop.
+
+None of the three writes anything. Their limits: they are tested through their scripts with
+synthetic hook input, not yet inside a live session, so no real compaction of a manager run has
+been observed with them; a summary can still drop a line, which is why a resumed run is rebuilt
+from the plan, `git` and the review ledger and not from the notes alone; the context line comes
+again after every subagent while the context stays above the budget; and a marker left behind
+by a run that ended without removing it keeps the hooks speaking in that session (the two
+context lines say how to remove it).
 
 Everything runs in one turn with subagents, so it works the same in the Claude desktop app, the
 terminal and cloud sessions.
@@ -302,7 +381,7 @@ can't change them itself):
   cc-plugin-you-should-know@builtin`): while on, it rereads the conversation from time to time in a
   separate request to the same model and shows notes above the prompt for you to answer.
 
-Two habits keep the main session's own cost down:
+Three habits keep the main session's own cost down:
 
 - Start a run in a new session when the current conversation already holds unrelated work (the
   manager says so in its first question). A manager run needs no handoff note: it rebuilds its
@@ -314,6 +393,10 @@ Two habits keep the main session's own cost down:
   compaction (`idleCompaction`, on by default from 2.1.290) does this by itself in local
   interactive sessions once the context is 200,000 tokens or more; it doesn't run in cloud
   sessions or on smaller contexts.
+- During a run, once the orchestrator's context is above 200,000 tokens the manager suggests
+  `/compact` at its next stop (the context hook, above). Run it before you answer: every later
+  turn then carries a smaller context, and the compaction hooks ask the summary to keep the
+  run's working notes.
 
 At the end of a run the manager leaves a clean shared checkout on `origin/<default>` (detached),
 when the project's rules allow switching it.
@@ -330,10 +413,16 @@ rules and secret-file patterns follow ideas from
 Tests for the code-map script:
 `python3 -m unittest discover -s plugins/manager-plugin/skills/code-map/scripts`.
 Tests for the plugin hooks (subagent spawns, code-map commit check, map-first nudge, rules-block
-version hint) and for the shell commands the manager skill and its briefs give:
+version hint, the manager-run compaction and context hooks), for the size ceilings of the manager
+skill, both briefs and the code-map skill, and for the shell commands the manager skill, its
+references and its briefs give:
 `python3 -m unittest discover -s plugins/manager-plugin/hooks`.
 Tests for the self-training-skills script:
 `python3 -m unittest discover -s plugins/manager-plugin/skills/self-training-skills/scripts`.
+Tests for the manager's `usage.py`, on synthetic transcripts:
+`python3 -m unittest discover -s plugins/manager-plugin/skills/manager/scripts`.
+Tests for the living-plan skill's `plan.py`:
+`python3 -m unittest discover -s plugins/manager-plugin/skills/living-plan/scripts`.
 Tests that hold the eval cases (below) to the CLI's case format:
 `python3 -m unittest discover -s plugins/manager-plugin/evals`.
 
@@ -357,6 +446,10 @@ Both manager cases also fail on any `Edit` or `Write` call (the orchestrator nev
 the one subagent they need is the reviewer, which has neither tool. Their `scaffold.sh` builds a
 small repository with a living plan in the run's folder, and `mocks/github/` answers the GitHub
 MCP tools from a recording, so no real repository or pull request is involved.
+
+Prerequisite: Claude Code's shell sandbox. The command below grants `Bash`, and the eval runner
+(2.1.329) refuses a run whose shell tool it can't confine, so where the platform has no sandbox
+backend, or it isn't installed, every case is refused.
 
 Running the cases starts paid sessions, and the two manager cases are long ones. From the
 repository root:
