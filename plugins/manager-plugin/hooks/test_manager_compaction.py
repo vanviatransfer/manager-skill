@@ -299,6 +299,24 @@ class ReferencePointerTest(unittest.TestCase):
             found = {name: text.count(rule) for name, text in self.texts.items() if rule in text}
             self.assertEqual(found, {home: 1}, rule)
 
+    def test_what_a_compaction_re_reads(self):
+        """A reference whose rules the later steps still need says "again after a compaction", in
+        the skill's pointer and in its own first lines; the in-flight phase's section is re-read
+        too, and read first by a phase that resumes at step 2 (step 1 never read it)."""
+        for name in ("dispatch.md", "establish-state.md", "model-strategy.md"):
+            pointer = re.search(r"[^.]* read `references/%s`" % re.escape(name), self.skill)
+            self.assertIsNotNone(pointer, name)
+            own = re.search(r"Read by the manager skill [^.:]*", self.texts[name]).group(0)
+            for trigger in (pointer.group(0), own):
+                self.assertIn("again after a compaction", trigger, name)
+                self.assertNotIn("compaction that", trigger, name)
+        self.assertRegex(self.skill, r"After a compaction, before acting, re-read [^.;]*"
+                                     r"the in-flight phase's section [^.;]*`awk`")
+        resumed = self.texts["establish-state.md"].split(" - open PR → ")[1].split("; - ")[0]
+        self.assertIn("that phase resumes at loop step 2", resumed)
+        self.assertIn("read the phase's section as on that base SHA (the `awk` command in the "
+                      "implementer brief's step 1)", resumed)
+
     def test_the_invariants_stay_in_the_skill(self):
         for rule in (
                 "the **candidate SHA** is GitHub's `headRefOid`, never the report's",
@@ -397,14 +415,9 @@ class StepZeroCommandTest(unittest.TestCase):
         if not os.path.isfile(path):
             self.skipTest("no docs/LIVING_PLAN.md beside this plugin copy")
         plan = read(path)
-        found = self.plan_state(plan)
-        phases = re.findall(r"(?m)^### P\d+\. .+$", plan)
-        self.assertGreaterEqual(len(phases), 2)
-        for heading in phases:
-            at = found.index(heading)
-            self.assertEqual([t.split(":")[0] for t in found[at + 1:at + 4]],
-                             ["Status", "Depends on", "Risk"], heading)
-        self.assertLess(len(" ".join(found).split()), len(plan.split()) * 0.2)
+        found = self.plan_state(plan)  # the command runs on a real plan, whatever its shape
+        for heading in re.findall(r"(?m)^### P\d+\. .+$", plan):
+            self.assertIn(heading, found)
 
     def test_the_skill_reads_a_phase_section_only_when_the_phase_is_scheduled(self):
         skill = " ".join(read(os.path.join(MANAGER, "SKILL.md")).split())

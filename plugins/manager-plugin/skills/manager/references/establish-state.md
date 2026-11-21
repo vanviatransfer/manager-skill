@@ -1,8 +1,8 @@
 # Establishing state
 
-Read by the manager skill at step 0, at the start of every run (a new session included): the
-detail of its items 1, 3 and 5. Item 3's rules-files list is read again when loop step 1 or step 2
-lists the rules files again.
+Read by the manager skill at step 0, at the start of every run (a new session included) and again
+after a compaction: the detail of its items 1, 3 and 5. Item 3's rules-files list is read again
+when loop step 1 or step 2 lists the rules files again.
 
 ## Item 1: the plugin copy
 
@@ -46,7 +46,9 @@ phase is scheduled (loop step 1), as on its base SHA. Read the rest only when a 
   report, and its Plan records are unknown: send the reviewer `unknown (resumed)`), with base
   SHA = `git merge-base origin/<default> <headRefOid>`, then a fresh review; a ledger PASS is
   never a reason to skip it, and a ledger `blocked` entry keeps the phase parked unless the
-  decision behind it is now decided;
+  decision behind it is now decided; loop step 1 is skipped, so first read the phase's section
+  as on that base SHA (the `awk` command in the implementer brief's step 1): step 2's scope
+  check needs it;
 - a remote `phase/*` branch or the designated branch with no open PR: look up closed PRs for
   it (`gh pr list --state closed --head <branch> --json number,headRefOid,mergedAt`). Head =
   a merged PR's head → landed work, at most a designated branch still to reconcile (loop step

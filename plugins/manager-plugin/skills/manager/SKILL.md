@@ -74,28 +74,29 @@ run gets an id at the gate, `R<YYYY-MM-DD-HHMM>`, whichever rule settles its str
 every PR body the run opens (`Run:` dispatch field) and every review-ledger comment. Keep one line
 in your working notes, `Run <id>: model strategy <strategy> (owner: "<quote>" | standing)`.
 
-At the gate (step 0 item 6), after a compaction that lost that line, and when a phase needs more
-model than the strategy allows, read `references/model-strategy.md`: **Which strategy applies**,
-**Asking**, **Applying**, **Not enough model**.
+At the gate (step 0 item 6), again after a compaction, and when a phase needs more model than the
+strategy allows, read `references/model-strategy.md`: **Which strategy applies**, **Asking**,
+**Applying**, **Not enough model**.
 
 **Run marker.** Once the strategy is settled, write the run id to this session's marker file,
 `~/.claude/manager-runs/active/${CLAUDE_SESSION_ID}` (`mkdir -p` its folder; outside every
 repository; can't be written → go on without it). While it exists, the plugin's hooks tell a
-compaction to keep your working-notes lines verbatim and the session afterwards to re-read this
-skill and the references whose triggers apply. Remove it (`rm -f`) with a final report that
-leaves no decision batch open, or when the owner ends the run.
+compaction to keep your working-notes lines verbatim and the session afterwards what to re-read.
+Remove it (`rm -f`) with a final report that leaves no decision batch open, or when the owner
+ends the run.
 
 ## 0. Establish state (also how you resume after compaction or in a new session)
 
 A file in `references/` is read when its trigger (named where this skill points to it) applies; in
 those files, bold section names, step numbers and `${CLAUDE_SKILL_DIR}` are this skill's. After a
 compaction, before acting, re-read the brief files' dispatch-field blocks, the review-ledger
-comments of the PR in flight, your working-notes lines (as the summary carries them) and every
-reference whose trigger still applies; never work from a summary of a file.
+comments of the PR in flight, the in-flight phase's section as on its base SHA (loop step 1's
+`awk`), your working-notes lines (as the summary carries them) and every reference whose trigger
+still applies; never work from a summary of a file.
 
 Derive state from durable sources only — never from memory of an earlier context. At the start of
-a run (a new session included), read `references/establish-state.md`: the detail of items 1, 3
-and 5.
+a run (a new session included) and again after a compaction, read
+`references/establish-state.md`: the detail of items 1, 3 and 5.
 
 1. Choose the GitHub backend; note whether the session has a designated push branch. Resolve the
    two brief files once, `${CLAUDE_SKILL_DIR}/references/implementer-brief.md` and

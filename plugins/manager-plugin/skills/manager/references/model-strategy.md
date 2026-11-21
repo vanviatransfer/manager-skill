@@ -1,8 +1,9 @@
 # Model strategy
 
-Read by the manager skill at the gate (step 0 item 6) of every run, again after a compaction that
-lost the working-notes strategy line, and when a phase needs more model than the strategy allows.
-The run, its id and that line are defined in the skill's **Model strategy**.
+Read by the manager skill at the gate (step 0 item 6) of every run, again after a compaction
+(**Applying** gives every later dispatch its `model` and `effort`), and when a phase needs more
+model than the strategy allows. The run, its id and the working-notes strategy line are defined in
+the skill's **Model strategy**.
 
 A new session is always a new run, even when it resumes interrupted work; a recorded `run`
 strategy is never applied by inference.
