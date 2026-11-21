@@ -3,6 +3,9 @@
 Read by the manager skill when no ready phase is left, before the final report (**Stop
 conditions**).
 
+Plan records still unpersisted (an owner's answer, a status correction) → first
+`references/owner-decisions.md`, **Plan records**: the end-of-run bookkeeping PR.
+
 Before the final report, read the Risks section of a phase's report file only when its short
 return's `Risks:` line is not `none` (the working-notes line step 2 keeps).
 Final report, compact: phases landed (PR, merged SHA); phases blocked and why; the model strategy

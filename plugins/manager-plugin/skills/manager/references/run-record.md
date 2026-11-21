@@ -23,7 +23,9 @@ below). Format:
 ```
 # <repo> <run-id> · plugin <version> · model strategy: <strategy>
 phase | risk | model impl/rev | rounds | impl context | review context per round | verdicts | blocker classes | skipped (when:) | fallback
+usage | agent | role | model | requests | input | cache read | cache write 5m | cache write 1h | output | context at return | warm resumes | cold resumes | seconds
 <one line per phase; contexts from the Agent tool's usage output (`subagent_tokens`), else unknown>
+<`usage` lines, as `scripts/usage.py` prints them (Usage lines, below)>
 summary: phases landed <n>, blocked <n>; context impl <n> (+<k> unknown) | unknown, review <n> (+<k> unknown) | unknown; compactions <n>; owner questions <n>
 ```
 
@@ -38,11 +40,38 @@ lines (for review, every round's value), followed by the count of unknown ones (
 1840000 (+3 unknown)`); write `unknown` only when no value is known. A later line for a phase
 already listed (blocked, then landed) records only what came since its earlier line (new agents'
 values; for an implementer resumed across both, its growth), so
-nothing is counted twice. The file holds only the header, the column line, phase lines and
-`summary:` lines: no free-text notes. Progress, open work and decisions go in the living plan and
-the review ledger, not here.
+nothing is counted twice. The file holds only the header, the two column lines, phase lines,
+`usage` lines and `summary:` lines: no free-text notes. Progress, open work and decisions go in
+the living plan and the review ledger, not here.
 
 Blocker classes are short generic tags (e.g. `locking`, `pii`, `validation-gap`, `plan-record`),
 never names of products, vendors, customers or code. Apart from the repository name and the model
 strategy in the header, record numbers and tags only: no secrets, code, file contents or the
 owner's words.
+
+## Usage lines
+
+What the run really spent is in this session's transcripts. A script reads them (it writes
+nothing) and prints one `usage` line per agent, in the `usage` columns above:
+`<python> "${CLAUDE_SKILL_DIR}/scripts/usage.py" <session id> <agent>... >> <file>`. `<python>`
+is the Python as the code-map skill's rule picks it (none → no `usage` lines; say so in the final
+report); `<session id>` is the name of the **Run marker** file; an `<agent>` is an agent id as the
+Agent tool returned it, or `orchestrator` for you.
+
+- With a phase's line, in front of the same Bash command: that phase's agents (every implementer
+  and every round's reviewer), so an interrupted run still leaves them.
+- Before each `summary:` line, in the same Bash call: `orchestrator`. Its line counts this
+  session from its start, an earlier run or other work in it included.
+- An id you no longer hold (a compaction): leave it out and, before the `summary:` line, name no
+  agent instead: the script then prints `orchestrator` and every subagent of the session.
+
+A later line for the same agent replaces its earlier one (an implementer resumed after its
+phase's line, a run that continues). In a line, `agent` is that id or `orchestrator`, `role` the
+agent's type (yours: `main`) and `model` its last request's. `requests` counts its API requests;
+`input` (uncached), `cache read`, `cache write 5m` and `cache write 1h` (by cache lifetime) and
+`output` are token sums over them, each priced differently. `context at return` is the figure
+`subagent_tokens` reports. `warm resumes` and `cold resumes` count the requests sent 60 seconds
+or more after the agent's previous one: cold when the cache had expired and the context was
+written again, warm when it was read; a compaction's first request is neither. `seconds` runs
+from the agent's first record to its last: a reviewer's is how long the review took. `unknown`
+marks what the transcripts don't show.

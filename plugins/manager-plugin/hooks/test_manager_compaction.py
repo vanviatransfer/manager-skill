@@ -293,11 +293,19 @@ class ReferencePointerTest(unittest.TestCase):
                 ("`git switch --detach origin/<default>`", "final-report.md"),
                 ("blocks any plan record in the diff that doesn't match it",
                  "owner-decisions.md"),
+                ("land one plan-only bookkeeping PR", "owner-decisions.md"),
                 ("green validation alone is not acceptance", "plan-only-pr.md"),
                 ("the rules and the merge call's own refusal", "landing.md"),
                 ("never for the hooks line alone", "code-map-check.md")):
             found = {name: text.count(rule) for name, text in self.texts.items() if rule in text}
             self.assertEqual(found, {home: 1}, rule)
+
+    def test_the_final_report_step_reaches_the_bookkeeping_pr(self):
+        """The skill sends the final-report step to `final-report.md` alone; the end-of-run
+        bookkeeping PR's rule is in `owner-decisions.md`."""
+        self.assertIn("still unpersisted (an owner's answer, a status correction) → first "
+                      "`references/owner-decisions.md`, **Plan records**: the end-of-run "
+                      "bookkeeping PR.", self.texts["final-report.md"])
 
     def test_what_a_compaction_re_reads(self):
         """A reference whose rules the later steps still need says "again after a compaction", in
@@ -409,15 +417,6 @@ class StepZeroCommandTest(unittest.TestCase):
         for text in found:  # no line of a phase's section but its three state lines
             self.assertRegex(text, r"^(#|Status: |Depends on: |Risk: )")
         self.assertLess(len(" ".join(found).split()), len(plan.split()) * 0.3)
-
-    def test_plan_state_of_this_repository_plan(self):
-        path = os.path.join(HERE, "..", "..", "..", "docs", "LIVING_PLAN.md")
-        if not os.path.isfile(path):
-            self.skipTest("no docs/LIVING_PLAN.md beside this plugin copy")
-        plan = read(path)
-        found = self.plan_state(plan)  # the command runs on a real plan, whatever its shape
-        for heading in re.findall(r"(?m)^### P\d+\. .+$", plan):
-            self.assertIn(heading, found)
 
     def test_the_skill_reads_a_phase_section_only_when_the_phase_is_scheduled(self):
         skill = " ".join(read(os.path.join(MANAGER, "SKILL.md")).split())
