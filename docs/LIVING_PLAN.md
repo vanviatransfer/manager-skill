@@ -125,7 +125,7 @@ Validation: standard.
 Notes: B1.
 
 ### P3. Real token accounting
-Status: todo
+Status: done (PR #46)
 Objective: each run records what the orchestrator and every subagent actually spent.
 Scope: a stdlib script (e.g. plugins/manager-plugin/skills/manager-retro/scripts/usage.py or under
 skills/manager/scripts/) that reads the session transcript and its `subagents/agent-*.jsonl` (+
