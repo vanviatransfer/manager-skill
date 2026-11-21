@@ -504,6 +504,35 @@ class SkilltrainTest(unittest.TestCase):
         self.edit("- `docs/vault/releases.md`\n", "- `../elsewhere.md` — read when x\n")
         self.check_fails("knowledge routing points outside the repository: ../elsewhere.md")
 
+    def test_backticked_text_that_is_no_path_is_no_routing(self):
+        self.edit("- `docs/vault/releases.md`\n", "- `docs/vault/releases.md`\n"
+                  "- `codemap.py query release` — read when finding a file\n"
+                  "- `https://example.com/guide.md` — read when x\n"
+                  "- `docs/**/*.md` — read when y\n"
+                  "- `docs/vault/release?.md` — read when y\n"
+                  "- `<vault page>` — read when z\n")
+        code, out = run("check", self.dir)
+        self.assertEqual(code, 0, out)
+        self.edit("- `docs/vault/releases.md`\n", "- `codemap.py query x` — read when x\n"
+                  "- `docs/vault/gone.md` — read when y\n")
+        self.check_fails("knowledge routing points at a missing file: docs/vault/gone.md")
+
+    def test_query_terms(self):
+        self.write(".claude/skills/release-notes/references/cmd.md", "never rm -rf here\n")
+        code, out = run("query", self.root, "--", "-rf")
+        self.assertEqual(code, 0, out)
+        self.assertIn("release-notes: references/cmd.md:1: never rm -rf here", out)
+        for term in ("", "   "):
+            code, out = run("query", self.root, term)
+            self.assertEqual(code, 2, term)
+            self.assertIn("query needs a non-empty TERM", out)
+
+    def test_skill_layout(self):
+        self.assertEqual(skilltrain.skill_layout(self.root), [(
+            ".claude/skills/release-notes", "docs/vault/skills/release-notes/records.md", False)])
+        self.write(".claude/skills/release-notes/references/a.md", "x\n")
+        self.assertTrue(skilltrain.skill_layout(self.root)[0][2])
+
     def test_missing_lesson_id(self):
         self.edit("- Lead with user-visible changes. (L1)", "- Lead with user-visible changes. (L7)")
         self.check_fails("rule cites L7, which lessons.md lacks")
@@ -619,9 +648,24 @@ class SkilltrainTest(unittest.TestCase):
                                                          "CLAUDE.md: created\n"))
         claude = os.path.join(self.root, "CLAUDE.md")
         with open(claude, encoding="utf-8") as fh:
-            self.assertEqual(fh.read(), "# Project instructions\n\n%s\n" % line)
+            self.assertEqual(fh.read(), "# Project instructions\n\n%s\n"
+                             % skilltrain.RULES_LINE_CREATED)
         self.assertEqual(run("rules-hint", self.root)[1], "AGENTS.md: unchanged\n"
                          "CLAUDE.md: unchanged\n")
+        self.assertEqual(run("rules-hint", self.root, "--remove")[1], "AGENTS.md: unchanged\n"
+                         "CLAUDE.md: removed (it created the file, and only its title was left)\n")
+        self.assertFalse(os.path.exists(claude))
+        run("rules-hint", self.root)
+        self.append("CLAUDE.md", "\n- an owner rule\n")
+        run("rules-hint", self.root, "--remove")
+        with open(claude, encoding="utf-8") as fh:
+            self.assertEqual(fh.read(), "# Project instructions\n\n\n- an owner rule\n",
+                             "more than the title: the file stays")
+        self.write("CLAUDE.md", "# Project instructions\n")
+        run("rules-hint", self.root)
+        run("rules-hint", self.root, "--remove")
+        with open(claude, encoding="utf-8") as fh:
+            self.assertEqual(fh.read(), "# Project instructions\n", "not created by it: kept")
         os.remove(claude)
         self.write("AGENTS.md", "# Agents\n\n- old wording %s\n" % skilltrain.RULES_MARK)
         self.write("CLAUDE.md", "# Rules\n\n@AGENTS.md\n")

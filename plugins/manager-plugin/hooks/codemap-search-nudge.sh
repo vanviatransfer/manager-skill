@@ -8,7 +8,7 @@
 # passes that Python and the plugin folder (CLAUDE_PLUGIN_ROOT, else this script's own when its
 # path is absolute) so the message can name the runnable `codemap.py query` command.
 # Skills branch (same hook, same fast path): a search that targets skill files (.claude/skills/,
-# SKILL.md, lessons.md, a skill's references/, the vault's skills/<name>/records.md) in a
+# SKILL.md, lessons.md, */skills/*, a skill's references/, a marked skill's records) in a
 # repository with a marked self-training skill is blocked once per session the same way (exit 2,
 # one `manager-plugin:` line naming the runnable `skilltrain.py query <repo root> <term>`), with
 # its own state: it neither uses up nor gets the code-map block. It needs no .codemap.json or

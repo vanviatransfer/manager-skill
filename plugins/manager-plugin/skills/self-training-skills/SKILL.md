@@ -56,34 +56,37 @@ through a symlink.
   with one line per problem, 2 for a bad path (or a ref that isn't a commit, or no git). Unmarked
   skills are not checked. Besides the template's shape it checks the routing: every file under
   the skill's `references/` needs its own `## Knowledge` bullet (`` `references/<file>` — read
-  when ...``), every such bullet's path must exist, and every lesson id a rule cites must be in
-  `lessons.md`. `--triggers-from <ref>`: every quoted phrase (`"..."`, `“...”`) in the skill's
+  when ...``), every such bullet's path must exist (backticked text with whitespace, `://`, `*`
+  or `?`, or starting with `<`, is a command, URL, glob or placeholder, not a routing), and every
+  lesson id a rule cites must be in `lessons.md`. `--triggers-from <ref>`: every quoted phrase (`"..."`, `“...”`) in the skill's
   description at that ref, and in the description of the retired `<name>-trainer` folder beside
   it, must still be in the current description; a dropped one is a problem naming the phrase and
   its source. A skill not there at the ref is new (a `note:` line, no problem).
-- `<cmd> query <repo root> <term>`: one line per line of a marked skill's files (`SKILL.md`,
+- `<cmd> query <repo root> [--] <term>`: one line per line of a marked skill's files (`SKILL.md`,
   `references/`, `lessons.md` with the row's lesson id, the records file) holding the term,
   case-insensitive, as `<skill>: <file>:<line>[ L<n>]: <text>`; at most 50, then a `(cut: ...)`
-  line. Exit 0 with hits, 1 with none, 2 for a bad path. It reads the files on every call and
-  writes nothing.
+  line. Exit 0 with hits, 1 with none, 2 for a bad path or an empty term (`--` before a term that
+  starts with `-`). It reads the files on every call and writes nothing.
 - `<cmd> rules-hint <repo root>` (`--remove` takes it out): puts the instruction line below into
   `CLAUDE.md` once (created with a title if missing), or updates it in place in `AGENTS.md` or
   `CLAUDE.md` where it already is (a second copy is dropped); with no marked skill it writes
-  nothing. The line ends with the marker `<!-- manager-plugin:self-training-skills -->`.
-
-The instruction line, for this skill and for every session in a project with marked skills:
-- before searching skill files use `skilltrain.py query`; after changing a skill run `skilltrain.py check`
-
-The plugin's search hook blocks a session's first search of skill files once (`.claude/skills/`,
-`SKILL.md`, `lessons.md`, a skill's `references/`, the vault's `skills/<name>/records.md`) with
-the runnable `query` command; repeated, the search is allowed. It does this only with a marked
-skill, apart from the code map's own one-time block, and `"search_nudge": false` in
-`.codemap.json` turns it off (no `.codemap.json`, or one without a `map`: it still works).
+  nothing. The line ends with the marker `<!-- manager-plugin:self-training-skills -->`; in a
+  `CLAUDE.md` it created, `--remove` deletes the file when only its title is left.
 - `<cmd> stats <skill dir>`: records, outcomes, tags and owner verdicts since the last training,
   the phases still `pending-review`, the expected effects, rows that don't parse, and `training
   due`. "Since the last training" means the rows after the `records: <n>` count of the last
   changelog entry (for an entry without one, the rows dated strictly after its date).
 - `<cmd> due <repo root>`: one line per marked skill.
+
+The instruction line, for this skill and for every session in a project with marked skills:
+- before searching skill files use `skilltrain.py query`; after changing a skill run `skilltrain.py check`
+
+The plugin's search hook blocks a session's first search of skill files once (`.claude/skills/`,
+`SKILL.md`, `lessons.md`, `*/skills/*`, `references/` when a marked skill has one, a marked
+skill's records file and its folder) with the runnable `query` command; repeated, the search is
+allowed. It does this only with a marked skill (with none, such a search goes to the code map's
+branch as before), apart from the code map's own one-time block, and `"search_nudge": false` in
+`.codemap.json` turns it off (no `.codemap.json`, or one without a `map`: it still works).
 
 ## Modes
 

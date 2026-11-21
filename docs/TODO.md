@@ -695,7 +695,9 @@ caught it; a skill's routing to its reference files was checked only by hand.
   folder; `knowledge routing points at a missing file: <path>`), and every file under the
   skill's `references/` needs a routing of its own (`references/<file> has no routing in ##
   Knowledge ...`; a folder's routing doesn't cover its files; dot files and symlinks are left
-  out). A cited lesson id missing from `lessons.md` was already a problem; it has its own test
+  out). Backticked text that holds whitespace, `://`, `*` or `?`, or starts with `<` (a command,
+  a URL, a glob, a placeholder) is no routing and is not checked as a path (review fix round 1).
+  A cited lesson id missing from `lessons.md` was already a problem; it has its own test
   now. Exit codes unchanged: 0, 1 with one line per problem, 2 for a bad path.
 - **`check --triggers-from <ref>`.** Every quoted phrase (straight `"..."` or curly `“...”`; a
   YAML double-quoted description's `\"` and a single-quoted one's `''` are unescaped first) in the
@@ -713,7 +715,9 @@ caught it; a skill's routing to its reference files was checked only by hand.
   skill's `SKILL.md`, `references/` files, `lessons.md` (with the row's lesson id) and records file
   (from its `Records:` path): `<skill>: <file>:<line>[ L<n>]: <text>`, case-insensitive, at most
   50 lines, then `(cut: <n> more hits; use a longer term)`, as code-map's `query` caps its lists.
-  Exit 0 with hits, 1 with none (also with no marked skill), 2 for a bad path. It reads the files on
+  Exit 0 with hits, 1 with none (also with no marked skill), 2 for a bad path or an empty term. A
+  term that starts with `-` goes after `--` (`query <root> -- -rf`); the hook's printed command
+  always puts `--` before the term. It reads the files on
   every call and writes nothing.
 - **No duplicate work.** Create and Adopt first look for a project tool that already maps or
   checks its skills and use it; replacing it is an owner decision. The implementer brief says
@@ -726,28 +730,46 @@ caught it; a skill's routing to its reference files was checked only by hand.
   rules-hint <repo root>` (`--remove`) puts it in the project's rules once: a line ending with
   `<!-- manager-plugin:self-training-skills -->`, updated in place where it already is
   (`AGENTS.md` or `CLAUDE.md`; a second copy is dropped), else appended to `CLAUDE.md` (created
-  with a title if missing), and only when the repository has a marked skill. Not added to
+  with a title if missing, its marker then saying so), and only when the repository has a marked
+  skill. `--remove` deletes a `CLAUDE.md` it created when only its title is left, and leaves
+  every other file. Not added to
   code-map's block: that block is versioned against a template the code-map SKILL.md prints for
   the no-Python case (at 19,999 of 20,000 characters), a conditional block would break the
   version check, and a project with marked skills may have no code map at all.
-- **The manager runs it.** `self-training-due.md` runs `check` on each marked skill (with
-  `--triggers-from <the run's first Base SHA>` when a phase of the run changed it) and lists the
-  problems before the decision batch; `final-report.md` names that line.
+- **The manager runs it.** `self-training-due.md` runs `check` on each marked skill and lists the
+  problems before the decision batch; `final-report.md` names that line. When a phase of the run
+  changed the skill it adds `--triggers-from <merged SHA>^1`, the merged SHA of the run's first
+  landed phase (the final report lists merged SHAs, and the plan's status lines and GitHub give
+  it back after a compaction or in a new session); no phase landed → no `--triggers-from`. The
+  `HEAD` equals `origin/<default>` gate covers `check` as well as the grep and `due`.
 - **Skills first, a branch of the search hook.** Same hook, same fast path. A Grep, Glob or Bash
   search whose path or file pattern (Grep's `glob`, find's `-name`/`-path`, rg's `-g`, grep's
   `--include`) targets `.claude/skills/`, `SKILL.md`, `lessons.md`, a skill's `references/` or
-  the vault's `skills/<name>/records.md`, in a repository with a marked skill, is blocked once per
+  a marked skill's records file, in a repository with a marked skill, is blocked once per
   session (exit 2, one `manager-plugin: skills first:` line naming `<python>
   "<plugin>/skills/self-training-skills/scripts/skilltrain.py" query "<repo root>" "<term>"`, the
   term taken from the search pattern, else `<term>`); repeated, it is allowed. (The brief first
   asked for a non-blocking `additionalContext` note; the owner changed it to block like the
   code-map branch.) Its state is its own marker file, so it neither uses up nor gets the code-map
   block, and a skill search gets only this branch. It needs no map: no `.codemap.json` → on; one,
-  map or not, with `"search_nudge": false` → off. No marked skill → silent.
+  map or not, with `"search_nudge": false` → off. What counts (review fix round 1): a wildcard
+  path or file pattern with a `skills` part (`find -path "*/skills/*"`); one with a `references`
+  part (Glob `**/references/*.md`) only when a marked skill has a `references/` folder; records
+  only at a marked skill's `Records:` path, its folder, or that folder's parent when it is named
+  `skills` (so `src/skills/a/records.md` no longer counts). With no marked skill the branch
+  steps aside and the search goes to the code-map branch exactly as before 0.9.5 (a broad `find
+  . -name SKILL.md` gets the map-first block, a narrow `.claude/skills` search is allowed); this
+  is tested. (Before the fix round it was silent there instead, so the code-map block was lost
+  for such a search.)
 - **Ceilings.** Manager SKILL.md 17,986 and code-map SKILL.md 19,999: unchanged (no edit). The
-  self-training-skills SKILL.md went from 10,434 to 13,331 characters (no ceiling).
+  self-training-skills SKILL.md went from 10,434 to 13,720 characters (no ceiling).
 - **Not verified.** [not measured] No live session has hit the skills-first block, so whether
   sessions run the suggested `query` and whether the derived term helps is unknown. [not
   measured] No real project's skills have been run through the new routing or trigger checks; an
   existing skill whose `## Knowledge` bullets start with a backticked command or a placeholder
-  will now fail `check`. No eval was run.
+  will now fail `check` (a command, URL, glob or placeholder no longer does). No eval was run.
+- **Known limits, not fixed.** Trigger matching is a substring test and case-sensitive: a phrase
+  kept only inside a longer word, or with other casing, counts as kept or dropped accordingly.
+  The hook's term comes from the last search pattern it sees, so `grep -e a -e b` suggests `b`.
+  A non-wildcard path named `references` outside `.claude/skills/` never counts as a skill
+  search.

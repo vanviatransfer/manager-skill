@@ -19,13 +19,17 @@ the map pages are narrow. `grep` counts only with -r / -R; `rg`, `ag` and `ack` 
 after a pipe read stdin and don't count; `find -maxdepth 0|1` is a listing.
 
 The skills branch: a search whose path or file pattern targets skill files (`.claude/skills/`,
-`SKILL.md`, `lessons.md`, a skill's `references/` under `.claude/skills/`, the vault's
-`skills/<name>/records.md`) in a repository with at least one marked self-training skill is
-blocked once per session the same way, with its own state, and its line names the runnable
-`skilltrain.py query <repo root> <term>` command (the term taken from the search pattern). Such a
+`SKILL.md`, `lessons.md`, a skill's `references/`, a marked skill's records file) in a
+repository with at least one marked self-training skill is blocked once per session the same
+way, with its own state, and its line names the runnable `skilltrain.py query <repo root> --
+<term>` command (the term taken from the search pattern). Such a
 search is handled only by this branch: it never uses up, or gets, the code map's block, and a
 code-map block doesn't use up this one. It needs no map: with no `.codemap.json` it is on; with
-one (map or not), `"search_nudge": false` turns it off. No marked skill: silent.
+one (map or not), `"search_nudge": false` turns it off. With no marked skill the branch is not
+there: such a search goes to the code-map branch, as before 0.9.5. A wildcard path or file
+pattern with a `skills` part counts (`find -path "*/skills/*"`), one with a `references` part only
+when a marked skill has a `references/` folder; records count only at a marked skill's `Records:`
+path, its folder, or that folder's parent when it is named `skills`.
 """
 import json
 import os
@@ -512,33 +516,49 @@ def skill_search(data, cwd):
     return targets, names, patterns
 
 
-def skill_parts(parts, vault):
-    """True if repository-relative path parts name skill files."""
+def skill_parts(parts, skills):
+    """True if repository-relative path parts (wildcards allowed) name skill files, given the
+    marked skills' (folder, records path, has references/) from skilltrain.skill_layout."""
+    wild = any(has_glob(p) for p in parts)
     clean = [p for p in parts if p not in ("**", "*")]
     for i in range(len(clean) - 1):
         if clean[i] == ".claude" and clean[i + 1] == "skills":
             return True
     if clean and clean[-1] in SKILL_FILES:
         return True
-    if len(clean) >= 3 and clean[-3] == "skills" and clean[-1] == "records.md":
-        return True
-    v = [p for p in vault.split("/") if p and p != "."]
-    return bool(v) and clean[:len(v) + 1] == v + ["skills"]
+    if wild and "skills" in clean:
+        return True  # e.g. find -path "*/skills/*"
+    if wild and "references" in clean and any(refs for _, _, refs in skills):
+        return True  # e.g. Glob **/references/*.md, with a marked skill that has references/
+    if wild:
+        return False
+    rel = "/".join(clean)
+    for _, records, _ in skills:
+        if not records or not rel:
+            continue
+        folder = posixpath.dirname(records)
+        parent = posixpath.dirname(folder)
+        if rel == records or (rel + "/").startswith(folder + "/") or \
+                (rel == parent and posixpath.basename(parent) == "skills"):
+            return True  # the records file, its folder, or the vault's skills/ folder
+    return False
 
 
-def targets_skills(targets, names, top, vault):
+def path_parts(targets, names, top):
+    """[parts] of the searched paths (inside the repository) and of the file-name patterns."""
+    out = []
     for path, cwd, _ in targets:
         if "$" in path or path.startswith("~"):
             continue
         parts = rel_parts(path, cwd, top)
-        if parts is not None and skill_parts(parts, vault):
-            return True
+        if parts is not None:
+            out.append(parts)
     for name in names:
-        n = name.replace("\\", "/")
-        if n.rsplit("/", 1)[-1] in SKILL_FILES or ".claude/skills" in n or \
-                re.search(r"(^|/)skills/[^/]+/records\.md$", n):
-            return True
-    return False
+        out.append([x for x in name.replace("\\", "/").split("/") if x and x != "."])
+    return out
+
+
+SKILL_WORDS = {".claude", "skills", "references", "records.md"} | set(SKILL_FILES)
 
 
 def skill_term(patterns):
@@ -554,42 +574,43 @@ def skill_term(patterns):
     return None
 
 
-def has_marked_skill(top):
+def skill_layout(top):
+    """skilltrain.skill_layout(top): (folder, records path, has references/) per marked skill."""
     here = os.path.dirname(os.path.abspath(__file__))
     scripts = os.path.normpath(os.path.join(here, "..", "..", "self-training-skills", "scripts"))
     if scripts not in sys.path:
         sys.path.insert(0, scripts)
     import skilltrain
-    return bool(skilltrain.marked_skills(top))
+    return skilltrain.skill_layout(top)
 
 
 def skills_branch(data, cwd, top, key):
-    """The skills branch's answer (exit status) for a search that targets skill files."""
+    """The skills branch's exit status for a search that targets skill files; None for any
+    other search, and when the repository has no marked skill (the code-map branch decides)."""
+    targets, names, patterns = skill_search(data, cwd.replace("\\", "/"))
+    found = path_parts(targets, names, top)
+    if not any(SKILL_WORDS & set(parts) for parts in found):
+        return None  # cheap: nothing names a skill file, the skills are never read
+    skills = skill_layout(top)
+    if not skills or not any(skill_parts(parts, skills) for parts in found):
+        return None
     path = os.path.join(top, CONFIG)
-    vault = "docs/vault"
     if os.path.isfile(path) and not os.path.islink(path) and os.path.getsize(path) <= 65536:
         with open(path, "rb") as fh:
             cfg = json.loads(fh.read().decode("utf-8"))
         if isinstance(cfg, dict) and cfg.get("search_nudge") is False:
             return 0
-        if isinstance(cfg, dict) and isinstance(cfg.get("vault"), str):
-            vault = cfg["vault"].strip("/")
-    targets, names, patterns = skill_search(data, cwd.replace("\\", "/"))
-    if not targets_skills(targets, names, top, vault):
-        return None
-    if not key or not has_marked_skill(top):
-        return 0
-    if not mark(key + "\0skills", (top, cwd, os.getcwd())):
+    if not key or not mark(key + "\0skills", (top, cwd, os.getcwd())):
         return 0
     cmd = plugin_command("self-training-skills", "skilltrain.py")
     qtop = quote_path(top, os.name == "nt")
     term = skill_term(patterns)
     qterm = quote_path(term) if term else None
-    if cmd and qtop:
-        use = "%s query %s %s" % (cmd, qtop, qterm or "<term>")
+    if cmd and qtop:  # `--`: a term may start with a dash
+        use = "%s query %s -- %s" % (cmd, qtop, qterm or "<term>")
     else:
         use = ("the `manager-plugin:self-training-skills` skill's `skilltrain.py query <repo "
-               "root> <term>`")
+               "root> -- <term>`")
     print("manager-plugin: skills first: run %s before searching skill files; if that doesn't "
           "answer it, repeat the search and it will be allowed." % use, file=sys.stderr)
     return 2

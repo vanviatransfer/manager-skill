@@ -460,7 +460,8 @@ class SkillsBranchTest(unittest.TestCase):
         self.env.pop("CLAUDE_PLUGIN_ROOT", None)
         for rel in ("src/app.py", "docs/vault/index.md", "docs/vault/skills/notes/records.md"):
             self.write(rel, "x\n")
-        self.write(".claude/skills/notes/SKILL.md", MARKED)
+        self.write(".claude/skills/notes/SKILL.md", MARKED + "\n## Record\n\n"
+                   "Records: `docs/vault/skills/notes/records.md`\n")
         os.makedirs(os.path.join(self.root, ".git"))
 
     def write(self, rel, text):
@@ -481,8 +482,8 @@ class SkillsBranchTest(unittest.TestCase):
         self.assertEqual((code, out), (2, ""), err)
         self.assertEqual(len(err.strip().splitlines()), 1)
         script = os.path.join(PLUGIN, "skills", "self-training-skills", "scripts", "skilltrain.py")
-        self.assertEqual(err.strip(), 'manager-plugin: skills first: run python3 "%s" query "%s" %s '
-                         "before searching skill files; if that doesn't answer it, repeat the "
+        self.assertEqual(err.strip(), 'manager-plugin: skills first: run python3 "%s" query "%s" -- '
+                         "%s before searching skill files; if that doesn't answer it, repeat the "
                          "search and it will be allowed." % (script, self.root, term))
 
     def test_first_skill_search_is_blocked_with_the_query_command_and_the_second_allowed(self):
@@ -512,6 +513,47 @@ class SkillsBranchTest(unittest.TestCase):
                                         ("Glob", {"pattern": "src/**/*.py"}))):
             with self.subTest(tool=tool, ti=ti):
                 self.assertEqual(self.hook(tool, session="n%d" % n, **ti), (0, "", ""))
+
+    def test_the_printed_command_runs_with_a_dash_term(self):
+        code, _, err = self.hook("Bash", command="grep -rn -e -rf .claude/skills")
+        self.assertEqual(code, 2)
+        self.assertIn(' query "%s" -- "-rf" before' % self.root, err)
+        cmd = err.split("run ", 1)[1].split(" before searching", 1)[0]
+        p = subprocess.run(cmd, shell=True, capture_output=True, env=self.env)
+        self.assertEqual(p.returncode, 1, p.stderr)  # no hits, but the term was taken
+        self.assertIn(b"no hits for -rf", p.stdout)
+
+    def test_wildcard_skills_and_references_patterns(self):
+        self.assert_skills_block(self.hook("Bash", session="a",
+                                           command="find . -path '*/skills/*' -name '*.md'"),
+                                 '"skills"')
+        self.assertEqual(self.hook("Glob", session="b", pattern="**/references/*.md"),
+                         (0, "", ""), "no marked skill has references/: not a skill search")
+        self.write(".claude/skills/notes/references/a.md", "x\n")
+        self.assert_skills_block(self.hook("Glob", session="c", pattern="**/references/*.md"),
+                                 "<term>")
+
+    def test_records_count_only_at_a_marked_skills_records_path(self):
+        self.write("src/skills/a/records.md", "x\n")
+        for n, path in enumerate(("src/skills/a/records.md", "src/skills", "docs/vault")):
+            with self.subTest(path=path):
+                self.assertEqual(self.hook("Grep", session="r%d" % n, pattern="owner", path=path),
+                                 (0, "", ""))
+        for n, path in enumerate(("docs/vault/skills/notes/records.md", "docs/vault/skills/notes",
+                                  "docs/vault/skills")):
+            with self.subTest(path=path):
+                self.assert_skills_block(self.hook("Grep", session="v%d" % n, pattern="owner",
+                                                   path=path), '"owner"')
+
+    def test_without_marked_skills_the_code_map_branch_decides(self):
+        self.write(".claude/skills/notes/SKILL.md", "---\nname: notes\ndescription: x\n---\nhi\n")
+        self.write(".codemap.json", '{"vault": "docs/vault", "map": "docs/vault/map.md"}\n')
+        self.write("docs/vault/map.md", "x\n")
+        code, _, err = self.hook("Bash", command="find . -name SKILL.md")
+        self.assertEqual(code, 2)
+        self.assertIn("manager-plugin: map first:", err)
+        self.assertEqual(self.hook("Grep", session="n", pattern="x", path=".claude/skills"),
+                         (0, "", ""), "narrow: the code-map branch allows it")
 
     def test_silent_without_marked_skills(self):
         self.write(".claude/skills/notes/SKILL.md", "---\nname: notes\ndescription: x\n---\nhi\n")
@@ -559,7 +601,7 @@ class SkillsBranchTest(unittest.TestCase):
         code, _, err = self.hook("Grep", pattern="x", path=".claude/skills")
         self.assertEqual(code, 2)
         self.assertIn("run the `manager-plugin:self-training-skills` skill's `skilltrain.py query "
-                      "<repo root> <term>` before searching skill files", err)
+                      "<repo root> -- <term>` before searching skill files", err)
 
 
 if __name__ == "__main__":

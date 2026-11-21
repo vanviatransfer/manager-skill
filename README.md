@@ -60,10 +60,11 @@ A Claude Code plugin with six skills:
     folder, never in the repository.
   - **Skills first (same hook).** In a repository with at least one marked self-training skill,
     the first search of skill files in a session (`.claude/skills/`, `SKILL.md`, `lessons.md`, a
-    skill's `references/`, the vault's `skills/<name>/records.md`) is blocked once the same way,
-    with the exact `skilltrain.py query <repo root> <term>` command; repeated, it is allowed. Its
+    skill's `references/`, a marked skill's records file) is blocked once the same way,
+    with the exact `skilltrain.py query <repo root> -- <term>` command; repeated, it is allowed. Its
     one-time state is its own, so it neither uses up nor gets the map-first block, and it needs
-    no code map (`"search_nudge": false` turns it off too).
+    no code map (`"search_nudge": false` turns it off too). With no marked skill, such a search
+    goes to the map-first branch as before.
   - **In the manager.** At the start of every run the manager checks that the default branch has
     the vault, the map and the current rules block. With no vault it asks once, in the
     model-strategy question, whether to set one up (yes / not this time / never in this repo); with

@@ -76,4 +76,6 @@ Each `## Knowledge` routing is a bullet that starts with one path in backticks, 
 when <...>`. A path that starts with `references/` is in the skill's folder; any other is from the
 repository root. `check` requires that every routed path exists (a file or a folder) and that
 every file under the skill's `references/` has a routing of its own (a folder's routing doesn't
-cover its files). A bullet that doesn't start with a backticked path is prose, not a routing.
+cover its files). A bullet that doesn't start with a backticked path is prose, not a routing; so
+is one whose backticked text holds whitespace, `://`, `*` or `?`, or starts with `<` (a command,
+a URL, a glob, a placeholder): `check` doesn't treat it as a path.

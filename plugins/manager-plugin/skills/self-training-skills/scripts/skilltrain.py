@@ -10,9 +10,10 @@ Usage:
                                                training, and whether training is due
   skilltrain.py due REPO_ROOT                  one line per marked skill under .claude/skills/:
                                                its training-due state
-  skilltrain.py query REPO_ROOT TERM           one line per line of a marked skill's files
+  skilltrain.py query REPO_ROOT [--] TERM      one line per line of a marked skill's files
                                                holding TERM (case-insensitive): exit 0 with
-                                               hits, 1 with none, 2 for a bad path
+                                               hits, 1 with none, 2 for a bad path or an empty
+                                               TERM (`--` before a TERM starting with -)
   skilltrain.py rules-hint REPO_ROOT [--remove]
                                                the one-line instruction in CLAUDE.md (or where
                                                it already is): exit 0, 2 when refused
@@ -30,7 +31,8 @@ or --root gives it. Paths in the files are relative to the repository root.
 check also holds the skill's knowledge routing to its files: every file under the skill's
 references/ needs a "## Knowledge" bullet that starts with its path in backticks
 (`references/<file>` — read when ...), and every such bullet's path must exist (a path that
-starts with references/ is in the skill's folder, any other is from the repository root). Every
+starts with references/ is in the skill's folder, any other is from the repository root;
+backticked text with whitespace, ://, * or ?, or starting with <, is no path and not checked). Every
 lesson id a rule cites must be in lessons.md. With --triggers-from REF, every quoted phrase
 ("..." or “...”) of the skill's description at REF, and of the description of the folder
 <name>-trainer beside it at REF (the retired trainer), must still be in the current
@@ -88,9 +90,15 @@ ROUTE = re.compile(r"^`([^`]+)`")
 QUOTED = re.compile(r'"([^"\n]+)"|\u201c([^\u201d\n]+)\u201d')
 MAX_HITS = 50
 MAX_SNIPPET = 100
-RULES_MARK = "<!-- manager-plugin:self-training-skills -->"
-RULES_LINE = ("- before searching skill files use `skilltrain.py query`; after changing a skill "
-              "run `skilltrain.py check` " + RULES_MARK)
+RULES_PREFIX = "<!-- manager-plugin:self-training-skills"
+RULES_MARK = RULES_PREFIX + " -->"
+# The marker of a CLAUDE.md rules-hint created: --remove deletes only such a file, and only when
+# nothing but its title is left.
+RULES_MARK_CREATED = RULES_PREFIX + "; it created this file -->"
+RULES_TEXT = ("- before searching skill files use `skilltrain.py query`; after changing a skill "
+              "run `skilltrain.py check`")
+RULES_LINE = RULES_TEXT + " " + RULES_MARK
+RULES_LINE_CREATED = RULES_TEXT + " " + RULES_MARK_CREATED
 RULES_TITLE = "# Project instructions"
 
 
@@ -485,6 +493,13 @@ def reference_files(sk):
     return out
 
 
+def is_route(written):
+    """False for backticked text that is no path: a URL, a command or anything with
+    whitespace, a glob (* or ?), a <placeholder>."""
+    return not ("://" in written or re.search(r"\s", written) or "*" in written or
+                "?" in written or written.startswith("<"))
+
+
 def routings(sk):
     """[(path as written, repository-relative path or None)] of the ## Knowledge bullets that
     start with a path in backticks. A path starting with references/ is in the skill's folder;
@@ -496,6 +511,8 @@ def routings(sk):
         if not m:
             continue
         written = m.group(1).strip()
+        if not is_route(written):
+            continue
         path = written.split("#", 1)[0].strip()
         if path.startswith("./"):
             path = path[2:]
@@ -812,6 +829,22 @@ def marked_skills(root):
     return out
 
 
+def skill_layout(root):
+    """[(folder, records path or None, has a references/ folder)] of the marked skills."""
+    out = []
+    for _, rel in marked_skills(root):
+        try:
+            sk = Skill(root, rel)
+        except ValueError:
+            continue
+        path = section_paths(section(sk.secs, "Record") or []).get("Records")
+        refs = rel + "/references"
+        has_refs = not link_in_path(root, refs) and \
+            os.path.isdir(os.path.join(root, *refs.split("/")))
+        out.append((rel, safe_rel(path) if path else None, has_refs))
+    return out
+
+
 def snippet(line, needle):
     """The line, stripped, control characters replaced, cut around the first match."""
     text = re.sub(r"[\x00-\x1f\x7f]", "?", line.strip())
@@ -880,30 +913,36 @@ def run_query(root, term):
 
 
 def rules_update(text, line, remove):
-    """New text with every rules-mark line dropped, then (unless remove) RULES_LINE at the
-    first one's place, or appended (a blank line before it) when there was none and line is
-    True. Line endings are kept."""
+    """New text with every marked line dropped, then (unless remove) the line at the first
+    one's place, or appended (a blank line before it) when there was none and line is True.
+    None: delete the file (remove, in a file this created, with only its title left). Line
+    endings are kept."""
     eol = "\r\n" if "\r\n" in (text or "") else "\n"
     lines = (text or "").splitlines(True)
-    marks = [i for i, ln in enumerate(lines) if RULES_MARK in ln]
+    marks = [i for i, ln in enumerate(lines) if RULES_PREFIX in ln]
     if marks:
         first = marks[0]
+        created = RULES_MARK_CREATED in lines[first]
         out = []
         for i, ln in enumerate(lines):
             if i in marks:
                 if i == first and not remove:
-                    out.append(RULES_LINE + (eol if ln.endswith("\n") else ""))
+                    out.append((RULES_LINE_CREATED if created else RULES_LINE) +
+                               (eol if ln.endswith("\n") else ""))
                 continue
             out.append(ln)
         if remove and out and not out[-1].strip() and first >= len(lines) - 1:
             out.pop()  # the blank line added before an appended line
             if out:
                 out[-1] = out[-1] if out[-1].endswith("\n") else out[-1] + eol
-        return "".join(out)
+        result = "".join(out)
+        if remove and created and result.strip() == RULES_TITLE:
+            return None
+        return result
     if remove or not line:
         return text
     if text is None:
-        return RULES_TITLE + eol + eol + RULES_LINE + eol
+        return RULES_TITLE + eol + eol + RULES_LINE_CREATED + eol
     if text and not text.endswith("\n"):
         text += eol
     return text + (eol if text else "") + RULES_LINE + eol
@@ -928,7 +967,7 @@ def run_rules_hint(root, remove=False):
             except UnicodeDecodeError:
                 print("error: %s is not UTF-8; add the line by hand" % name, file=sys.stderr)
                 return 2
-    holders = [n for n in texts if texts[n] and RULES_MARK in texts[n]]
+    holders = [n for n in texts if texts[n] and RULES_PREFIX in texts[n]]
     if not holders and not remove and not marked_skills(root):
         print("no self-training skills: nothing written")
         return 0
@@ -946,10 +985,14 @@ def run_rules_hint(root, remove=False):
         if new[name] == old:
             print("%s: unchanged" % name)
             continue
+        if new[name] is None:
+            os.remove(os.path.join(root, name))
+            print("%s: removed (it created the file, and only its title was left)" % name)
+            continue
         with open(os.path.join(root, name), "wb") as fh:
             fh.write(new[name].encode("utf-8"))
         print("%s: %s" % (name, "created" if old is None else
-                          "line removed" if RULES_MARK not in new[name] else "line written"))
+                          "line removed" if RULES_PREFIX not in new[name] else "line written"))
     return 0
 
 
@@ -982,6 +1025,9 @@ def main(argv=None):
             if not os.path.isdir(root):
                 raise PathError("no such directory: %s" % args.path)
             if args.action == "query":
+                if not args.term.strip():
+                    print("error: query needs a non-empty TERM", file=sys.stderr)
+                    return 2
                 return run_query(root, args.term)
             if args.action == "rules-hint":
                 return run_rules_hint(root, args.remove)
