@@ -63,7 +63,7 @@ Status values: `todo` · `in progress (PR #n)` · `done (PR #n)` · `blocked (Dn
 Fix-round limit per phase: 5
 
 ### P1. 0.8.3 follow-ups
-Status: todo
+Status: done (PR #44)
 Objective: close the review notes and audit findings on 0.8.3's own changes.
 Scope: plugins/manager-plugin/skills/manager (SKILL.md, references), skills/code-map
 (codemap.py session-hook text and rules-hint versioning, SKILL.md, scripts/test_codemap.py),
