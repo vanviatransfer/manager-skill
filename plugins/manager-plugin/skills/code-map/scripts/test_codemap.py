@@ -1246,7 +1246,7 @@ M app/main.py
   tests: tests/test_main.py
 M app/secrets.py
 M app/util.py
-  definitions: _private, new_api (new), old_api (removed)
+  definitions: (module level), _private, new_api (new), old_api (removed)
   imported by: app/main.py
   tests: tests/test_util.py
   vault: docs/vault/util.md:3
@@ -1368,6 +1368,115 @@ class ChangedTest(unittest.TestCase):
                                      + " (+64 more)"])
         self.assertEqual(lines[-2:], ["A bulk/f27.py", "(cut: 85 more lines, with 42 more files)"])
 
+    def test_the_definitions_of_a_file_have_a_cap_of_their_own(self):
+        self.assertEqual((codemap.MAX_CHANGED_NAMES, codemap.MAX_SYMBOLS), (20, 6))
+        many = "".join("def f%02d():\n    return %%d\n\n\n" % n for n in range(21))
+        self.write("bulk/many.py", many % ((1,) * 21))
+        one = self.commit("many")
+        self.write("bulk/many.py", many % ((2,) * 21))
+        two = self.commit("all of them changed")
+        names = ["f%02d" % n for n in range(21)]
+        self.assertEqual(self.changed(one, two), "changed: 1 file\nM bulk/many.py\n"
+                         "  definitions: %s (+1 more)\n" % ", ".join(names[:20]))
+        self.write("bulk/many.py", many % ((2,) + (3,) * 20))
+        three = self.commit("all but the first changed")
+        self.assertEqual(self.changed(two, three), "changed: 1 file\nM bulk/many.py\n"
+                         "  definitions: %s\n" % ", ".join(names[1:]))
+
+    def test_a_definition_ends_where_text_outside_it_starts(self):
+        """`definitions`: one runs from the comment and decorator lines above it to the first
+        line below that is not indented, empty, a closing bracket, `end` or (Python) inside a
+        string; the rest of the file, without its empty lines, is the module-level text."""
+        python = (b'import os\n\nLIMIT = 3\n\n\ndef first(\n    a,\n):\n    return """\n'
+                  b'at column 0\n"""\n\n\nSETTING = first(1)\n\n# about second\n@decorated\n'
+                  b'def second():\n    pass\n')
+        self.assertEqual(codemap.definitions("a.py", python), {
+            "first": 'def first(\n    a,\n):\n    return """\nat column 0\n"""\n',
+            "second": "# about second\n@decorated\ndef second():\n    pass\n",
+            codemap.MODULE_LEVEL: "import os\nLIMIT = 3\nSETTING = first(1)"})
+        script = (b"import { a } from './a';\n\nexport function first() {\n  return 1;\n}\n\n"
+                  b"const between = 2;\n\nexport const second = [\n  1,\n];\n")
+        self.assertEqual(codemap.definitions("a.ts", script), {
+            "first": "export function first() {\n  return 1;\n}\n",
+            "second": "export const second = [\n  1,\n];\n",
+            codemap.MODULE_LEVEL: "import { a } from './a';\nconst between = 2;"})
+        self.assertEqual(codemap.definitions("a.rb", b"def first\n  1\nend\n\nX = 1\n"),
+                         {"first": "def first\n  1\nend\n", codemap.MODULE_LEVEL: "X = 1"})
+        self.assertEqual(codemap.definitions("a.py", b"print(1)\n"),
+                         {codemap.MODULE_LEVEL: "print(1)"})
+        self.assertEqual(codemap.definitions("a.py", None), {})
+
+    def test_a_change_outside_every_definition_is_module_level(self):
+        """Above the first definition or between two, it is named `(module level)` and not
+        credited to the definition above; empty lines alone are no change; a file that is new
+        or gone has its definitions only."""
+        two = "import os\n\nLIMIT = %d\n\n\ndef f():\n    return %d\n%s\n\nSETTING = %d\n\n\n" \
+              "def g():\n    return 2\n"
+        script = "export function f() {\n  return %d;\n}\nconst s = %d;\n"
+        for name, values in (("above", (1, 1, "", 1)), ("between", (1, 1, "", 1)),
+                             ("inside", (1, 1, "", 1)), ("blank", (1, 1, "", 1))):
+            self.write("lvl/%s.py" % name, two % values)
+        self.write("lvl/script.py", "print(1)\n")
+        self.write("lvl/both.ts", script % (1, 1))
+        self.write("lvl/old.py", "import os\n\n\ndef legacy():\n    pass\n")
+        one = self.commit("module level, before")
+        for name, values in (("above", (2, 1, "", 1)), ("between", (1, 1, "", 2)),
+                             ("inside", (1, 2, "", 1)), ("blank", (1, 1, "\n\n", 1))):
+            self.write("lvl/%s.py" % name, two % values)
+        self.write("lvl/script.py", "print(2)\n")
+        self.write("lvl/both.ts", script % (2, 2))
+        self.write("lvl/new.py", "import os\n\n\ndef made():\n    pass\n")
+        os.remove(os.path.join(self.root, "lvl", "old.py"))
+        self.assertEqual(self.changed(one, self.commit("module level, after")), """changed: 8 files
+M lvl/above.py
+  definitions: (module level)
+M lvl/between.py
+  definitions: (module level)
+M lvl/blank.py
+M lvl/both.ts
+  definitions: (module level), f
+M lvl/inside.py
+  definitions: f
+A lvl/new.py
+  definitions: made
+D lvl/old.py
+  definitions: legacy
+M lvl/script.py
+  definitions: (module level)
+""")
+
+    def test_a_deleted_file_names_the_files_that_still_import_it(self):
+        """An import that resolves to no file any more counts for the deleted path it would
+        resolve to; one that a new file answers counts for that file."""
+        self.write("app/old.py", "def legacy():\n    pass\n")
+        self.write("app/moved.py", "def kept():\n    pass\n")
+        self.write("app/user.py", "from app import old, moved\n\n\ndef use():\n    return old\n")
+        self.write("tests/test_old.py", "from app.old import legacy\n")
+        one = self.commit("with the modules")
+        os.remove(os.path.join(self.root, "app", "old.py"))
+        os.remove(os.path.join(self.root, "app", "moved.py"))
+        os.remove(os.path.join(self.root, "web", "lib.ts"))
+        self.write("app/moved/__init__.py", "def kept():\n    pass\n")
+        two = self.commit("without them")
+        self.assertEqual(self.changed(one, two), """changed: 4 files
+D app/moved.py
+  definitions: kept
+A app/moved/__init__.py
+  definitions: kept
+  imported by: app/user.py
+D app/old.py
+  definitions: legacy
+  imported by: app/user.py
+  tests: tests/test_old.py
+D web/lib.ts
+  definitions: x, keep
+  imported by: web/index.ts
+  tests: web/lib.test.ts
+  vault: docs/vault/util.md:3
+""")
+        self.assertEqual(run("check", "--root", self.root)[0], 0)  # no map page names them
+        self.assertNotIn("app/old.py", self.git("show", "HEAD:docs/vault/map.md"))
+
     def test_from_a_subfolder_with_root(self):
         """Run from a subfolder, `--root` names the repository: the same answer."""
         script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "codemap.py")
@@ -1383,8 +1492,8 @@ class ChangedTest(unittest.TestCase):
         out = self.changed(root=os.path.join(self.root, "app"))
         self.assertEqual(out, "changed: 5 files\nA fresh.py\n  definitions: made\nD gone.py\n"
                               "  definitions: legacy\nM main.py\n  definitions: run\n"
-                              "M secrets.py\nM util.py\n"
-                              "  definitions: _private, new_api (new), old_api (removed)\n")
+                              "M secrets.py\nM util.py\n  definitions: (module level), "
+                              "_private, new_api (new), old_api (removed)\n")
         self.assertEqual(self.git("status", "--porcelain"), "")
 
     def test_another_checkout_is_named(self):

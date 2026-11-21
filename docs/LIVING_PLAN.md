@@ -36,6 +36,7 @@ Out (deliberately not doing now):
   `python3 -m unittest discover -s plugins/manager-plugin/skills/self-training-skills/scripts`,
   `python3 -m unittest discover -s plugins/manager-plugin/skills/manager/scripts`,
   `python3 -m unittest discover -s plugins/manager-plugin/skills/living-plan/scripts`,
+  `python3 -m unittest discover -s plugins/manager-plugin/evals`,
   `claude plugin validate plugins/manager-plugin` (run Python with `PYTHONDONTWRITEBYTECODE=1`); a
   phase that adds a script folder with tests appends its `unittest discover` command to this
   Validation line in the same PR, so later phases run it too.
@@ -262,6 +263,20 @@ Validation: standard.
   mention it (those three from the working tree, so it is run at the head); at most 60 lines, the
   last one counting what was cut; the reviewer brief's ceiling rises by the 13 words its `changed`
   rule adds (1347), and code-map SKILL.md stays under its own
+- 2026-11-21: P7 also carries three P6 review notes on `codemap.py changed` (a deleted file names
+  the files that still import it; a file's changed definitions are listed up to 20, its other
+  lists up to 6 as before; `(module level)` is printed when the text outside every definition
+  differs, a definition ending at the first line below it that is not part of it), by the
+  orchestrator's scope ruling: "P7's scope also covers
+  plugins/manager-plugin/skills/code-map/scripts/codemap.py, test_codemap.py and code-map SKILL.md
+  for those three notes"
+- 2026-11-21: P7's cases are in plugins/manager-plugin/evals/, the CLI's default eval folder, so
+  plugin.json needs no key: `plugin-agent-spawn`, `review-before-pinned-merge` and
+  `fix-round-brake`, the two manager cases on a scaffolded repository with a recorded GitHub
+  stand-in; the CLI (2.1.329) has no offline check for cases, so test_evals.py in that folder
+  parses them against its case format and its `unittest discover` joins the Validation line; the
+  cases have not been run (README.md's Development section gives the command and the limits), so
+  a first run may need to adjust them
 
 ## How to keep this plan alive
 - A phase PR updates its own status line and links itself; other status lines only to correct facts.
