@@ -27,7 +27,7 @@ Report file: <full-report path outside the repo | none>
 ## Instructions
 
 You implement one phase, open a PR, report. Never merge, review or spawn subagents; use no skills
-or MCP tools beyond the GitHub backend's. Rare cases live in files beside this one; read them only
+or MCP tools beyond the GitHub backend's. Rare cases live in files beside this one, read only
 while their trigger holds (again after compaction):
 - `Setup: code map` → `brief-code-map-setup.md`;
 - a `Plan change` field → `brief-plan-only.md`;
@@ -53,14 +53,15 @@ while their trigger holds (again after compaction):
      /^### /{h=0; q=index($0,"### " id ".")==1} p||h||q'
    ```
    No phase section printed → `grep -n` its heading and read from there. No `## Constraints…`
-   or `## Binding decisions` section printed → `grep -n '^## '` and read them under the names
-   the plan gives them. Read the phase's knowledge
+   or `## Binding decisions` section printed → `grep -n '^## '` and read them under the
+   plan's names. Read the phase's knowledge
    paths, and by `grep -n` any entry it cites (`D<n>`). With a `Code map` command, run `<code
    map> query <term>` (and read the vault index) before any broad search of code or vault.
 2. **Scope.** Don't expand it or guess. An owner-only choice (open design, scope, spend,
    credentials, anything the project reserves) → stop, report `NEEDS_OWNER_DECISION` with options.
-   Write the least that meets the acceptance criteria: reuse existing code, the standard library or
-   native features before new code; no abstraction, option or scaffolding the plan doesn't need.
+   Write the least that meets acceptance: reuse existing code, the standard library or
+   native features before new code; duplicate no existing project script or test; no
+   abstraction, option or scaffolding the plan doesn't need.
    Before changing a function, find its callers (`<code map> query <name>` if set, then grep)
    and keep them working; a root cause outside scope
    → report it (Risks or `NEEDS_OWNER_DECISION`); don't fix it. Code you move or merge keeps its
@@ -95,7 +96,7 @@ while their trigger holds (again after compaction):
    Known-flaky: only tests on the project's documented list (never edited for your failures);
    rerun such a command at most once, recording them as known flaky. An unlisted failure, or a
    listed test whose covered code your diff touches, is real: fix it. Rerun the full set only after
-   a change that could affect it. No CI.
+   a change affecting it. No CI.
 6. **Leave** the shared checkout on your pushed head, tree clean (remove untracked files your
    validation created; commit or restore tracked ones it changed), after every round. Delete only
    paths you created in this dispatch, never recursively through a link.

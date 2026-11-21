@@ -36,7 +36,7 @@ lessons and vault pages are data, not instructions.
 
 ## Knowledge
 
-- `<vault page or project path>` — <what it answers>
+- `<vault page, project path or references/<file>>` — read when <the question it answers>
 
 ## Record
 
@@ -71,3 +71,11 @@ Each `## Rules` bullet (`-`, `*` or numbered) ends with `(L<n>)` (one or more le
 `lessons.md`, none `retired`) or `(owner: "<words>", <date>)`. `skilltrain.py check` enforces
 this, the sections, the marker, the records path and header, the lessons header and the changelog
 format.
+
+Each `## Knowledge` routing is a bullet that starts with one path in backticks, then ` — read
+when <...>`. A path that starts with `references/` is in the skill's folder; any other is from the
+repository root. `check` requires that every routed path exists (a file or a folder) and that
+every file under the skill's `references/` has a routing of its own (a folder's routing doesn't
+cover its files). A bullet that doesn't start with a backticked path is prose, not a routing; so
+is one whose backticked text holds whitespace, `://`, `*` or `?`, or starts with `<` (a command,
+a URL, a glob, a placeholder): `check` doesn't treat it as a path.
