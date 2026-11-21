@@ -201,7 +201,7 @@ class MalformedPlanTest(unittest.TestCase):
 
     def test_a_heading_under_phases_that_is_no_phase(self):
         for heading in ("### Group two", "### P3 has no dot", "### Phase 3. An id with a space",
-                        "### . No id"):
+                        "### P1.1. An id with a dot", "### P3.No space", "### . No id"):
             text = a_plan(phase("P1"), heading + "\n\n", phase("P2", "P1"))
             number = text.split("\n").index(heading) + 1
             self.assertEqual(run("check", text=text),

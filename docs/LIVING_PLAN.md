@@ -164,7 +164,7 @@ Notes: P4's hook reads only the transcript's tail (a last-request helper beside 
 since `read` parses the whole transcript (~48–77 ms on 10–15 MB files).
 
 ### P5. Plan validation and phase extraction
-Status: todo
+Status: done (PR #48)
 Objective: a script checks a living plan and prints one phase's brief section.
 Scope: plugins/manager-plugin/skills/living-plan/scripts/plan.py (+ tests): `check` (unique phase
 ids, every `Depends on` resolves, no cycle, each phase has Status/Objective/Scope/Depends

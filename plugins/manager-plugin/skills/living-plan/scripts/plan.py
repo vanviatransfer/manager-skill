@@ -49,7 +49,7 @@ import sys
 PRINTED = ("## Constraints", "## Model strategy", "## Binding decisions",
            "## Open owner decisions")
 REQUIRED = ("Status", "Objective", "Scope", "Depends on", "Risk", "Acceptance", "Validation")
-HEADING = re.compile(r"### ([^\s.]+)\.")
+HEADING = re.compile(r"### ([^\s.]+)\.(?:\s|$)")
 LABEL = re.compile(r"([A-Z][A-Za-z]*(?: [a-z]+)*):(?:\s|$)")
 WORD = re.compile(r"[\w.~*/-]+")
 EXTENSION = re.compile(r"\.[A-Za-z]\w+$")
