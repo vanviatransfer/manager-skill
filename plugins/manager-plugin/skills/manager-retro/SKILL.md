@@ -61,6 +61,15 @@ propose a `Tried approaches` dispatch field for replacement implementers. For ev
 retro log, compare its expected effect with the records since: a change that didn't help is a
 candidate to revert.
 
+From the `usage` lines (plugin 0.9.0 on; the record's `usage` column line names the fields, the
+manager's `references/run-record.md` defines them; an agent's last line counts): what the
+orchestrator and each role really spent, per run and per landed phase, with `input`, cache
+reads, cache writes and `output` kept apart (their prices differ). For the manager's rotation
+thresholds: implementers' `warm resumes` and `cold resumes` against their `context at return`,
+and reviewers' `seconds`, since a review longer than the subagent cache's 5 minutes makes the
+next fix round's resume cold. Re-tune those thresholds from these figures, not from context
+sizes alone.
+
 ## 3. Propose (at most three)
 
 For each: the evidence (numbers and how many runs and phases), the smallest change (file and

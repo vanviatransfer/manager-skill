@@ -34,6 +34,7 @@ Out (deliberately not doing now):
 - Validation: `python3 -m unittest discover -s plugins/manager-plugin/hooks`,
   `python3 -m unittest discover -s plugins/manager-plugin/skills/code-map/scripts`,
   `python3 -m unittest discover -s plugins/manager-plugin/skills/self-training-skills/scripts`,
+  `python3 -m unittest discover -s plugins/manager-plugin/skills/manager/scripts`,
   `claude plugin validate plugins/manager-plugin` (run Python with `PYTHONDONTWRITEBYTECODE=1`); a
   phase that adds a script folder with tests appends its `unittest discover` command to this
   Validation line in the same PR, so later phases run it too.
@@ -124,7 +125,7 @@ Validation: standard.
 Notes: B1.
 
 ### P3. Real token accounting
-Status: todo
+Status: done (PR #46)
 Objective: each run records what the orchestrator and every subagent actually spent.
 Scope: a stdlib script (e.g. plugins/manager-plugin/skills/manager-retro/scripts/usage.py or under
 skills/manager/scripts/) that reads the session transcript and its `subagents/agent-*.jsonl` (+
@@ -133,7 +134,9 @@ requests by message id, and prints per agent and for the orchestrator: requests,
 writes by TTL, output, context at return, and cold resumes (a request whose cache read is 0 after a
 gap); unknown when files are missing. references/run-record.md and the manager-retro skill use it
 (one Bash call at run end and per phase if cheap); record warm/cold resumes and review duration so
-rotation can be re-tuned.
+rotation can be re-tuned. Also: references/final-report.md points at owner-decisions.md's Plan
+records for the end-of-run bookkeeping PR; hooks/test_manager_compaction.py drops
+`test_plan_state_of_this_repository_plan`.
 Depends on: none
 Risk: standard — read-only script; the transcript format is undocumented, so fail soft.
 Acceptance: the script runs on a synthetic transcript fixture in tests and on this repository's
@@ -154,6 +157,8 @@ Risk: standard — advisory hook.
 Acceptance: tested below/above budget, outside a run, missing transcript; under 50 ms on the common
 path.
 Validation: standard; plus P3's script folder `unittest discover`.
+Notes: P4's hook reads only the transcript's tail (a last-request helper beside usage.py's `read`),
+since `read` parses the whole transcript (~48–77 ms on 10–15 MB files).
 
 ### P5. Plan validation and phase extraction
 Status: todo
@@ -217,6 +222,14 @@ Validation: standard.
   the plan from stdin at base).
 - 2026-11-21: plan review notes folded in (P5/P6 depend on P2; ceiling rule in Constraints; P1 and
   P7 scopes; script test folders join standard validation)
+- 2026-11-21: P3 also carries two P2 review notes (final-report bookkeeping pointer; a redundant
+  plan-shape test removed)
+- 2026-11-21: P3's script is plugins/manager-plugin/skills/manager/scripts/usage.py (`read(paths)`
+  is the reader P4 reuses) and its folder's `unittest discover` joins the Validation line; it
+  counts a resume as cold when under half of the previous prompt was read from the cache, since an
+  expired cache still reads a shared prefix
+- 2026-11-21: P4 reads only the transcript's tail, with a last-request helper beside P3's `read`,
+  which parses the whole transcript (~48–77 ms on 10–15 MB files)
 
 ## How to keep this plan alive
 - A phase PR updates its own status line and links itself; other status lines only to correct facts.
