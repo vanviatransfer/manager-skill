@@ -1,9 +1,14 @@
 # Landing branches
 
-Read by the manager skill at loop step 4a when the landing keeps the branch's commits (rebase
-merge, fast-forward push), when no integration method is permitted, when the project lands by
-fast-forward only, or when the landed tree differs from the reviewed one.
+Read by the manager skill at loop step 4a: for step 2's landing-method check, when the landing
+keeps the branch's commits (rebase merge, fast-forward push), when no integration method is
+permitted, when the project lands by fast-forward only, or when the landed tree differs from the
+reviewed one.
 
+- **Landing method** (step 2): what decides whether it is allowed and usable here: the project
+  rules, and on `gh` `gh repo view --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed`
+  (on MCP, the rules and the merge call's own refusal). Not usable: e.g. a fast-forward-only
+  default this session can't push.
 - **Linear history** (step 3, before Yes/No). When the landing keeps the branch's commits (rebase
   merge, fast-forward push) and the project requires linear history or merges by rebase, the
   commits above the default head must also be linear (`git rev-list --merges

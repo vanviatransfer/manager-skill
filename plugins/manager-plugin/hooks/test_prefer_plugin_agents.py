@@ -1,6 +1,6 @@
 """Tests for the plugin hooks (prefer-plugin-agents.sh, codemap-commit-check.sh,
-codemap-rules-version.sh) and for the shell commands the manager skill and its briefs give
-(the plan-section read, the ignored-data guard):
+codemap-rules-version.sh) and for the shell commands the manager skill's references give
+(the briefs' plan-section read, the ignored-data guard in dispatch.md):
 python3 -m unittest discover -s <this folder>"""
 import json
 import os
@@ -344,7 +344,8 @@ class RulesVersionHookTest(unittest.TestCase):
 
     def test_hook_entry(self):
         with open(os.path.join(HERE, "hooks.json")) as fh:
-            entries = json.load(fh)["hooks"]["SessionStart"]
+            entries = [e for e in json.load(fh)["hooks"]["SessionStart"]
+                       if e.get("matcher") != "compact"]  # that one: test_manager_compaction.py
         self.assertEqual(len(entries), 1)
         self.assertEqual(set(entries[0]["matcher"].split("|")), {"startup", "resume", "clear"})
         entry = entries[0]["hooks"][0]
@@ -499,7 +500,8 @@ class PlanSectionCommandTest(unittest.TestCase):
 @unittest.skipUnless(shutil.which("awk") and shutil.which("git") and shutil.which("du"),
                      "needs awk, git and du")
 class IgnoredDataGuardTest(unittest.TestCase):
-    """The manager skill's ignored-data guard command: `<entries> <KiB>` for the shared checkout."""
+    """The manager skill's ignored-data guard command (`references/dispatch.md`): `<entries>
+    <KiB>` for the shared checkout."""
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
@@ -507,7 +509,8 @@ class IgnoredDataGuardTest(unittest.TestCase):
         self.root = os.path.join(self.tmp, "check out")
         os.makedirs(self.root)
         self.env = dict(ENV, HOME=self.tmp)
-        self.command = command_in(os.path.join(MANAGER, "SKILL.md"), "--ignored")
+        self.command = command_in(os.path.join(MANAGER, "references", "dispatch.md"),
+                                  "--ignored")
         self.assertNotIn("sed -z", self.command)  # GNU-only
         self.assertNotIn("xargs", self.command)
 
