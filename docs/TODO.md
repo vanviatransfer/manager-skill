@@ -405,6 +405,15 @@ machine for the hooks, and the three eval cases run once each (`--model sonnet`)
   or new page, a removed page the index still has; a page git ignores is left out) and names
   the `git add`. It still writes nothing. Known: `git commit -a`, and a `git add` chained in
   front of the commit, are blocked once in that state, as the line says.
+  Two cases where that `git add` could not end the block are covered. A page under a clean
+  filter that changes content (git-crypt, LFS, a filter of the repository's own), `ident` or
+  `working-tree-encoding` never has the blob's bytes, so it counts as staged when `git add`
+  would store the blob the index has (`git hash-object` with the filters: git runs the page's
+  clean filter and writes no object; a filter that fails lets the commit pass). A page whose
+  index entry is marked assume-unchanged or skip-worktree is passed by `git add`, so the line
+  names `git update-index --no-assume-unchanged` / `--no-skip-worktree` first. Known (seen
+  with git 2.43): in a sparse checkout whose rules leave the page out, `git add` still
+  refuses after that, and its own message names `--sparse`.
 - **The note on a leftover run marker.** The compaction line and the context line ended "(That
   run has ended: ignore this line and remove ...)". In a live session with a marker written by
   hand, the compaction's summary took that for a fact and wrote that no manager run was in
@@ -477,8 +486,9 @@ machine for the hooks, and the three eval cases run once each (`--model sonnet`)
   environment, where the file doesn't persist). The manager runs the script once at step 0 (so after
   a compaction too): anything but `on` → no run record and no `usage.py`. The run marker is written
   as before, since the compaction hooks need it. Typed while off, `manager-retro` says so and how to
-  turn it on. No record is ever deleted. After the update a machine that recorded runs stops
-  recording until its owner types `on` once.
+  turn it on, then goes on with the dated records already there (none: it stops), so turning
+  recording off does not lock the records out of a retro. No record is ever deleted. After the
+  update a machine that recorded runs stops recording until its owner types `on` once.
   [docs, source] `disable-model-invocation: true`, which the skill already had, holds for a plugin
   skill in 2.1.330: the skills page's table says "Description not in context, full skill loads when
   invoked", the plugin loader reads the key, the listing sent to the model leaves such skills out,

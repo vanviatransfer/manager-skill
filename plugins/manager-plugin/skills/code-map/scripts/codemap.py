@@ -886,6 +886,23 @@ def blob_bytes(root, ids):
     return found
 
 
+def file_hashes(root, paths, filters=False):
+    """The blob id of each file's working-tree bytes, in the order asked: of the raw bytes, or
+    with `filters` of what `git add` would store (its clean filter, `ident`, line-ending and
+    `working-tree-encoding` conversions). git writes no object for either."""
+    kind = [] if filters else ["--no-filters"]
+    found = []
+    for batch in arg_batches(paths):
+        out = subprocess.run(["git", "-C", root, "hash-object"] + kind + ["--"] + batch,
+                             capture_output=True, check=True)
+        got = out.stdout.decode().split()
+        if len(got) != len(batch):
+            raise GitError("git hash-object returned %d hashes for %d files"
+                           % (len(got), len(batch)))
+        found += got
+    return found
+
+
 def worktree_differs(root, paths, blobs):
     """The paths whose working-tree bytes, as the scan would read them, aren't the indexed blob.
 
@@ -895,16 +912,7 @@ def worktree_differs(root, paths, blobs):
     own CRLF-to-LF step, so a core.autocrlf checkout isn't a change. Missing paths and those
     that aren't readable regular files are left to the caller (see readable_file)."""
     present = [p for p in paths if p in blobs and readable_file(root, p)]
-    raw = []
-    for batch in arg_batches(present):
-        out = subprocess.run(["git", "-C", root, "hash-object", "--no-filters", "--"] + batch,
-                             capture_output=True, check=True)
-        got = out.stdout.decode().split()
-        if len(got) != len(batch):
-            raise GitError("git hash-object returned %d hashes for %d files"
-                           % (len(got), len(batch)))
-        raw += got
-    differs = [p for p, b in zip(present, raw) if b != blobs[p]]
+    differs = [p for p, b in zip(present, file_hashes(root, present)) if b != blobs[p]]
     if not differs:
         return []
     changed = []
@@ -1349,7 +1357,10 @@ def in_quotes(prefix):
 def unstaged_map_pages(root, out_rel):
     """The map pages the index does not hold as the working tree has them: a page that changed
     or was never added (one git ignores is left out), and a removed page the index still has.
-    Reads the index and the files; writes nothing."""
+    A page whose raw bytes aren't its blob is held as built when `git add` would store that
+    blob for it: under a clean filter that changes content (git-crypt, LFS, a filter of the
+    repository's own), `ident` or `working-tree-encoding` the two never match, staged or not.
+    Reads the index and the files, and git runs the page's clean filter; writes nothing."""
     blobs = {path: blob for mode, blob, stage, path in git_index(root) or []
              if stage == "0" and not mode.startswith(("120000", "160000"))}
     here = [p for p in [out_rel] + generated_pages(root, out_rel) if readable_file(root, p)]
@@ -1358,13 +1369,31 @@ def unstaged_map_pages(root, out_rel):
                                   posixpath.splitext(out_rel)[0] + "/"]))
     new = [p for p in here if p not in blobs and p in others]
     gone = [p for p in blobs if is_map_page(p, out_rel) and p not in here]
-    return sorted(set(new + worktree_differs(root, here, blobs) + gone))
+    differs = worktree_differs(root, here, blobs)
+    changed = [p for p, blob in zip(differs, file_hashes(root, differs, filters=True))
+               if blob != blobs[p]]
+    return sorted(set(new + changed + gone))
 
 
-def git_add_command(paths):
-    """`git add` for these paths, as a model can run it: quoted only where sh needs it."""
-    return "git add -- " + " ".join(p if re.match(r"[\w./@+-]+$", p) else sh_quote(p)
-                                    for p in paths)
+def marked_pages(root, pages):
+    """(assume-unchanged, skip-worktree): of these paths, those whose index entry carries the
+    bit. `git add` passes such an entry by, so the bit has to go before the page is staged."""
+    assume, skip = [], []
+    for batch in arg_batches(pages):
+        for entry in git_lines(root, ["--literal-pathspecs", "ls-files", "-v", "-z", "--"]
+                               + batch):
+            tag, _, path = entry.partition(" ")  # H, S (skip-worktree); lowercase: assume-unchanged
+            if tag.islower() and path not in assume:
+                assume.append(path)
+            if tag.upper() == "S" and path not in skip:
+                skip.append(path)
+    return assume, skip
+
+
+def git_command(words, paths):
+    """`git <words>` for these paths, as a model can run it: quoted only where sh needs it."""
+    return "git %s -- %s" % (words, " ".join(p if re.match(r"[\w./@+-]+$", p) else sh_quote(p)
+                                             for p in paths))
 
 
 def claude_hook(stdin_text, python):
@@ -1398,7 +1427,7 @@ def claude_hook(stdin_text, python):
             script = os.path.abspath(__file__).replace("\\", "/")
             print("codemap: the code map is stale; in %s run `%s \"%s\" build`, then `%s`, each "
                   "as a command %s, then commit again"
-                  % (where, python, script, git_add_command(paths), own), file=sys.stderr)
+                  % (where, python, script, git_command("add", paths), own), file=sys.stderr)
             return 2
         pages = unstaged_map_pages(top, out_rel)
         if not pages:
@@ -1406,10 +1435,18 @@ def claude_hook(stdin_text, python):
         paths = [p for p in (out_rel,) if p in pages]
         if any(p != out_rel for p in pages):
             paths.append(sub + "/")
+        # `git add` passes by an entry marked assume-unchanged or skip-worktree and says nothing,
+        # so the line names the command that takes the mark off first.
+        steps = ["`%s`" % git_command("update-index --no-%s" % mark, marked)
+                 for mark, marked in zip(("assume-unchanged", "skip-worktree"),
+                                         marked_pages(top, pages)) if marked]
+        todo = "`%s` as a command" % git_command("add", paths)
+        if steps:
+            todo = ("%s (`git add` passes by an index entry with such a mark), then `%s`, each "
+                    "as a command" % (", then ".join(steps), git_command("add", paths)))
         print("codemap: the code map is rebuilt but not staged (%d page%s the index does not "
-              "hold as built), so the commit would keep the stale map; in %s run `%s` as a "
-              "command %s, then commit again"
-              % (len(pages), "" if len(pages) == 1 else "s", where, git_add_command(paths), own),
+              "hold as built), so the commit would keep the stale map; in %s run %s %s, then "
+              "commit again" % (len(pages), "" if len(pages) == 1 else "s", where, todo, own),
               file=sys.stderr)
         return 2
     except Exception:  # fail open: never block a commit on a hook error

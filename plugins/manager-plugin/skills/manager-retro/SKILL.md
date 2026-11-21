@@ -28,9 +28,11 @@ turns it on. `sh "${CLAUDE_SKILL_DIR}/../manager/scripts/retro.sh" <status|on|of
   (a cloud environment's variables, a shell profile, the `env` block of a settings file), which
   the owner does, never you. In a cloud session the flag file doesn't persist: there the owner
   sets `MANAGER_RETRO=on` among the environment's variables.
-- Anything else, or no arguments: run it with `status`. `off` → say that the retro is off, so
-  manager runs record nothing, and that `/manager-plugin:manager-retro on` turns it on (in a cloud
-  environment: `MANAGER_RETRO=on` among its variables); then stop. `on` → continue below.
+- Anything else, or no arguments: run it with `status`. `on` → continue below. `off` → say that
+  recording is off, so manager runs record nothing, and that `/manager-plugin:manager-retro on`
+  turns it on (in a cloud environment: `MANAGER_RETRO=on` among its variables). Then look for
+  dated run records, written while it was on (`ls ~/.claude/manager-runs/[0-9]*.md` through
+  Bash): none → stop; one or more → say how many there are and continue below with those records.
 - The switch never deletes a run record, and you never delete a run record either: whatever is in
   `~/.claude/manager-runs/` stays, on or off.
 

@@ -201,6 +201,39 @@ class RetroTextTest(unittest.TestCase):
                       "never delete a run record"):
             self.assertIn(words, body, words)
 
+    def test_the_retro_goes_on_with_records_written_before_the_switch_went_off(self):
+        """Off stops new records, not the retro: it says so, then measures what was recorded
+        while the switch was on, and stops only when there is no dated record."""
+        body = " ".join(read(RETRO_SKILL).split())
+        rule = body[body.index("- Anything else, or no arguments"):
+                    body.index("- The switch never deletes a run record")]
+        self.assertIn("run it with `status`. `on` → continue below. `off` → say that recording "
+                      "is off, so manager runs record nothing", rule)
+        self.assertIn("none → stop; one or more → say how many there are and continue below "
+                      "with those records.", rule)
+        self.assertNotIn("then stop", rule)
+        listing = re.search(r"\(`(ls ~/\.claude/manager-runs/\S+)` through Bash\)", rule).group(1)
+        self.assertIn("`cat %s`" % listing[len("ls "):], body)  # the files step 1 reads
+        home = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, home)
+        runs = os.path.join(home, ".claude", "manager-runs")
+        os.makedirs(os.path.join(runs, "active"))
+
+        def dated():
+            p = subprocess.run(["sh", "-c", listing], capture_output=True, cwd=home,
+                               env={"PATH": os.environ.get("PATH", ""), "HOME": home})
+            return p.returncode == 0, [os.path.basename(line)
+                                       for line in p.stdout.decode("utf-8").splitlines()]
+        for name in ("retro-log.md", os.path.join("active", "0f3c9a1e")):
+            with open(os.path.join(runs, name), "w", encoding="utf-8"):
+                pass
+        self.assertEqual(dated(), (False, []))  # the retro log and a run marker are no record
+        names = ["2026-01-01-repo-R2026-01-01-0900.md", "2026-01-03-repo-R2026-01-03-1000.md"]
+        for name in names:
+            with open(os.path.join(runs, name), "w", encoding="utf-8"):
+                pass
+        self.assertEqual(dated(), (True, names))
+
 
 if __name__ == "__main__":
     unittest.main()

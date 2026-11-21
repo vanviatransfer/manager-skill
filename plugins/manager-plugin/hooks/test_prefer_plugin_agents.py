@@ -189,6 +189,56 @@ class CodemapCommitCheckTest(unittest.TestCase):
         self.git("commit", "-qm", "new")
         self.assertEqual(self.hook("git commit --amend --no-edit"), (0, ""))
 
+    def test_a_clean_filter_on_the_map_page_does_not_block_a_staged_map(self):
+        """Under a clean filter that changes content the index never holds the page's raw
+        bytes: the page is staged when git would store its bytes as the blob the index has."""
+        self.write(".codemap.json", '{"vault": null, "map": "docs/code-map.md", '
+                   '"commit_check": true}\n')
+        self.assertEqual(self.codemap("build"), 0)
+        self.git("add", "-A")
+        self.git("commit", "-qm", "opt in")
+        self.git("config", "filter.upper.clean", "tr a-z A-Z")
+        self.git("config", "filter.upper.smudge", "cat")
+        self.write(".gitattributes", "*.md filter=upper\n")
+        self.write("src/d.py", "def d():\n    pass\n")
+        self.git("add", "--", ".gitattributes", "src/d.py")
+        self.assertEqual(self.codemap("build"), 0)
+        code, err = self.hook("git commit -m x")
+        self.assertEqual(code, 2)
+        self.assertIn("run `git add -- docs/code-map.md` as a command of its own", err)
+        self.git("add", "--", "docs/code-map.md")
+        before = snapshot(self.root)
+        self.assertEqual(self.hook("git commit -m x"), (0, ""))
+        self.assertEqual(snapshot(self.root), before)  # the filter ran: still nothing written
+        self.write("src/e.py", "def e():\n    pass\n")
+        self.git("add", "--", "src/e.py")
+        self.assertEqual(self.codemap("build"), 0)
+        self.assertEqual(self.hook("git commit -m x")[0], 2)  # a real change is still seen
+
+    def test_a_marked_index_entry_gets_the_command_that_clears_it(self):
+        """`git add` passes by a page whose index entry is marked assume-unchanged or
+        skip-worktree, so the line names `git update-index` first; its commands end the block."""
+        self.opt_in()
+        self.git("add", "-A")
+        self.git("commit", "-qm", "opt in")
+        for mark in ("assume-unchanged", "skip-worktree"):
+            self.git("update-index", "--" + mark, "--", "vault/map.md")
+            self.write("src/%s.py" % mark.replace("-", "_"), "def fresh():\n    pass\n")
+            self.git("add", "-A")
+            self.assertEqual(self.codemap("build"), 0)
+            subprocess.run(["git", "-C", self.root, "add", "--", "vault/map.md"],
+                           capture_output=True, env=self.env)  # stages nothing
+            code, err = self.hook("git commit -m x")
+            self.assertEqual(code, 2, mark)
+            self.assertEqual(len(err.strip().splitlines()), 1)
+            self.assertIn("run `git update-index --no-%s -- vault/map.md` (`git add` passes by "
+                          "an index entry with such a mark), then `git add -- vault/map.md`, "
+                          "each as a command of its own" % mark, err)
+            self.git("update-index", "--no-" + mark, "--", "vault/map.md")
+            self.git("add", "--", "vault/map.md")
+            self.assertEqual(self.hook("git commit -m x"), (0, ""), mark)
+            self.git("commit", "-qm", mark)
+
     def test_opted_in_current_map_passes(self):
         self.opt_in()
         self.assertEqual(self.hook("git commit -m x")[0], 0)

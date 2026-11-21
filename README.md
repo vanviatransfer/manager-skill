@@ -120,8 +120,9 @@ Two things learn from the record:
   decision in the plan that later phases and runs follow.
 - **Across projects:** run `manager-retro` in a session on this repository (on the same machine):
   type `/manager-plugin:manager-retro` (it starts only that way, never from a phrase, so it isn't
-  listed to the model in other sessions; while the record is off it only says so and how to turn
-  it on). It measures the records, proposes changes, and
+  listed to the model in other sessions; while the record is off it says so and how to turn it
+  on, then goes on with the records already written, or stops when there are none). It measures
+  the records, proposes changes, and
   opens a reviewed PR only for the ones you pick. It never weakens the review, owner-authority or
   Git-safety rules, and never puts project details into this public repository.
 
