@@ -197,7 +197,7 @@ Acceptance: tests on a temp repo; output cap respected; works from a subfolder w
 Validation: standard.
 
 ### P7. Eval cases for the invariants
-Status: todo
+Status: done (PR #50)
 Objective: regressions in the plugin's invariants are caught by eval cases.
 Scope: plugin eval cases (verify the installed CLI's `claude plugin eval` format and the plugin
 manifest key first) for: no general-purpose spawn when a plugin agent fits; a reviewer after every
