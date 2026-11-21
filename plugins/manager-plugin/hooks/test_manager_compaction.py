@@ -21,6 +21,7 @@ HOOK = os.path.join(HERE, "manager-run-compact.sh")
 REFS = os.path.join(MANAGER, "references")
 SESSION = "0f3c9a1e-5b7d-4c2a-9e1f-0123456789ab"
 MARKER = "~/.claude/manager-runs/active/${CLAUDE_SESSION_ID}"
+NOTES = "~/.claude/manager-runs/notes/${CLAUDE_SESSION_ID}.md"
 
 
 def read(path):
@@ -55,6 +56,15 @@ class ManagerRunCompactHookTest(unittest.TestCase):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as fh:
             fh.write("R2026-01-01-0000\n")
+        return path
+
+    def notes(self, text, session=SESSION):
+        """Write the run's notes file where the manager skill says, for this session id."""
+        self.assertIn("`%s`" % NOTES, read(os.path.join(MANAGER, "SKILL.md")))
+        path = NOTES.replace("~", self.home).replace("${CLAUDE_SESSION_ID}", session)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(text)
         return path
 
     def hook(self, event, raw=None, args=None, env=None, **fields):
@@ -111,7 +121,8 @@ class ManagerRunCompactHookTest(unittest.TestCase):
         # A condition, never a statement: read as one, it ended a live run's notes.
         self.assertTrue(out.endswith(
             "(If no manager run is in progress any more, ignore this line and remove "
-            "~/.claude/manager-runs/active/%s.)\n" % SESSION), out)
+            "~/.claude/manager-runs/active/%s and ~/.claude/manager-runs/notes/%s.md.)\n"
+            % (SESSION, SESSION)), out)
         self.assertNotIn("has ended", out)
         pretty = json.dumps({"session_id": SESSION, "cwd": self.repo, "source": "compact"},
                             indent=2)
@@ -168,6 +179,10 @@ class ManagerRunCompactHookTest(unittest.TestCase):
         self.env["PATH"] = tools
         self.assertEqual(self.hook("SessionStart")[1].count("\n"), 1)
         self.assertNotEqual(self.hook("PreCompact")[1], "")
+        path = self.notes("Run R1: model strategy fixed\n" * 400)
+        self.assertIn("cut here", self.hook("SessionStart")[1])
+        self.assertIn("/notes/%s.md" % SESSION, self.hook("PreCompact")[1])
+        os.remove(path)
         for name in ("grep", "sed"):
             os.rename(os.path.join(tools, name), os.path.join(tools, name + ".off"))
             for event in ("PreCompact", "SessionStart"):
@@ -176,6 +191,7 @@ class ManagerRunCompactHookTest(unittest.TestCase):
 
     def test_nothing_is_written(self):
         self.mark()
+        self.notes("Run R1: model strategy fixed\n")
         before = snapshot(self.tmp), sorted(os.listdir(HERE))
         for event in ("PreCompact", "SessionStart"):
             self.assertNotEqual(self.hook(event)[1], "")
@@ -206,9 +222,100 @@ class ManagerRunCompactHookTest(unittest.TestCase):
         self.assertIn("write the run id to this session's marker file, `%s`" % MARKER, skill)
         self.assertIn("outside every repository", skill)
         self.assertIn("can't be written → go on without it", skill)
-        self.assertIn("Remove it (`rm -f`) with a final report that leaves no decision batch "
+        self.assertIn("Remove both (`rm -f`) with a final report that leaves no decision batch "
                       "open, or when the owner ends the run", skill)
         self.assertIn('"$HOME/.claude/manager-runs/active/$id"', read(HOOK))
+
+    def test_the_skill_keeps_the_notes_in_the_file_the_hook_reads(self):
+        skill = " ".join(read(os.path.join(MANAGER, "SKILL.md")).split())
+        self.assertIn("Keep your working-notes lines in `%s`, written then (`mkdir -p`; a new run "
+                      "starts it fresh, a compaction keeps it); edit only the line that changed, never print the block. Can't be "
+                      "written → state each line once, when set or changed." % NOTES, skill)
+        self.assertIn('notes="$HOME/.claude/manager-runs/notes/$id.md"\n', read(HOOK))
+        # Its own folder, beside the markers': a notes file is never a run marker.
+        self.assertNotEqual(os.path.dirname(NOTES), os.path.dirname(MARKER))
+        self.assertIn("your working-notes lines (the notes file, as the hook prints it)", skill)
+
+    def test_session_start_prints_the_notes_verbatim(self):
+        self.mark()
+        alone = self.hook("SessionStart")[1]
+        text = ("Run R2026-01-01-0000: model strategy fixed (owner: \"aynı modelle devam\")\n"
+                "Project rules: CLAUDE.md, AGENTS.md\n\n"
+                "  P3: PR #12, base 0123abc, a \\n and a %s stay as they are\n"
+                "D2 → A: \"şöyle olsun\"")  # the last line without its newline
+        self.notes(text)
+        code, out, err = self.hook("SessionStart")
+        self.assertEqual((code, err), (0, ""))
+        first, header, rest = out.split("\n", 2)
+        self.assertEqual(first + "\n", alone)
+        self.assertEqual(header, "manager-plugin: the run's working notes, verbatim from "
+                                 "~/.claude/manager-runs/notes/%s.md (keep that file current; "
+                                 "never print it):" % SESSION)
+        self.assertEqual(rest, text + "\n")
+        self.assertNotIn("cut here", out)
+        self.notes("")
+        self.assertEqual(self.hook("SessionStart")[1], alone + header + "\n")
+
+    def test_session_start_caps_the_notes(self):
+        self.mark()
+        for row in ("x" * 99, "ş" * 99, "→" * 60):
+            lines = ["%03d %s" % (n, row) for n in range(300)]
+            self.notes("\n".join(lines) + "\n")
+            code, out, err = self.hook("SessionStart")
+            self.assertEqual((code, err), (0, ""))
+            self.assertLess(len(out), 10000,
+                            "Claude Code cuts a hook's output at 10,000 characters")
+            kept = out.split("\n")[2:-2]
+            self.assertGreater(len(kept), 10)
+            self.assertEqual(kept, lines[:len(kept)], "whole lines, from the first")
+            self.assertEqual(out.split("\n")[-2], "manager-plugin: the notes were cut here (8,000 "
+                                                  "characters): read the rest from that file.")
+        self.notes("y" * 9000 + "\n")  # a line longer than the cap: none of it, and the cut said
+        out = self.hook("SessionStart")[1]
+        self.assertEqual(out.count("\n"), 3)
+        self.assertNotIn("yyy", out)
+        self.assertIn("cut here", out)
+        fits = "z" * 7999 + "\n"  # exactly the cap: not cut
+        self.notes(fits)
+        self.assertTrue(self.hook("SessionStart")[1].endswith("):\n" + fits))
+
+    def test_pre_compact_with_a_notes_file_points_to_it(self):
+        self.mark()
+        fallback = self.hook("PreCompact")[1]
+        self.notes("Run R1: model strategy fixed\n", "another-session")  # not this session's
+        self.assertEqual(self.hook("PreCompact")[1], fallback)
+        self.notes("Run R1: model strategy fixed\n")
+        code, out, err = self.hook("PreCompact")
+        self.assertEqual((code, err), (0, ""))
+        self.assertEqual(out.count("\n"), 1)
+        self.assertLess(len(out), 700, "short: the notes come back from the file")
+        self.assertTrue(out.startswith("manager-plugin: a manager run is in progress"))
+        self.assertIn("Its working-notes lines are in ~/.claude/manager-runs/notes/%s.md and "
+                      "come back verbatim after the compaction: don't copy them into the summary"
+                      % SESSION, out)
+        self.assertNotIn("keep every working-notes line", out)
+        self.assertNotIn("Run R1", out)
+        self.assertTrue(out.endswith('"Before the next action, re-read the manager skill and every '
+                                     'file in its references/ whose trigger applies; never work '
+                                     'from a summary of a file."\n'), out)
+        self.assertIn("keep every working-notes line of the run verbatim",
+                      " ".join(fallback.split()))
+
+    def test_a_notes_file_without_a_marker_is_silent(self):
+        self.notes("Run R1: model strategy fixed\n")
+        for event in ("PreCompact", "SessionStart"):
+            self.assert_silent(event)
+        os.makedirs(os.path.join(self.home, ".claude", "manager-runs", "active"))
+        for event in ("PreCompact", "SessionStart"):
+            self.assert_silent(event)
+            self.assert_silent(event, agent_id="a1")
+        self.mark()
+        for event in ("PreCompact", "SessionStart"):
+            self.assert_silent(event, agent_id="a1", agent_type="manager-plugin:implementer")
+        path = self.notes("x\n")
+        os.remove(path)
+        os.makedirs(path)  # a folder is no notes file: as without one
+        self.assertEqual(self.hook("SessionStart")[1].count("\n"), 1)
 
     def test_the_marker_is_written_only_once(self):
         """Step 0 runs again after a compaction; a second write would move the marker's time,

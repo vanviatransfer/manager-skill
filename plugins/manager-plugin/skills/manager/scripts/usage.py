@@ -65,7 +65,7 @@ FIELDS = ("model", "requests", "input", "read", "write_5m", "write_1h", "output"
           "warm", "cold", "seconds")
 GAP = 60  # seconds after the previous request's end from which the next one counts as a resume
 PROMPT = ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
-TAIL = 1 << 20  # the bytes of a transcript's end that `last` reads
+TAIL = 1 << 20  # the bytes of a transcript's end that `back` and `last` read
 NAME = re.compile(r"[A-Za-z0-9_-]+")  # a session id, an agent id: never a path or a pattern
 
 
@@ -180,28 +180,41 @@ def read(paths, since=None, waits=True):
     return total
 
 
-def last(path, tail=TAIL):
-    """The context size at the last request in a transcript's last `tail` bytes (the figure
-    `context at return` gives), or None: no request there, or no file that can be read. Only
-    that end of the file is read, and parsed from its last line back, so a long transcript
-    costs no more than a short one."""
+def back(path, tail=TAIL, compaction=False):
+    """The request records in a transcript's last `tail` bytes, from the last back: (record,
+    context size) for each, the size counted as `context at return` counts it. With
+    `compaction`, none from before the last `compact_boundary` record. Only that end of the file
+    is read, so a long transcript costs no more than a short one; no file that can be read →
+    nothing."""
     try:
         with open(path, "rb") as fh:
             cut = max(0, fh.seek(0, os.SEEK_END) - tail - 1)  # with the byte before them
             fh.seek(cut)
             lines = fh.read().split(b"\n")
     except (OSError, ValueError):
-        return None
+        return
     for line in reversed(lines[1:] if cut else lines):  # after a cut, the first is a part
-        if b'"usage"' not in line:
+        bound = compaction and b"compact_boundary" in line
+        if b'"usage"' not in line and not bound:
             continue
         try:
             record = json.loads(line.decode("utf-8", "replace"))
         except (ValueError, RecursionError):
             continue
+        if bound and isinstance(record, dict) and record.get("type") == "system" \
+                and record.get("subtype") == "compact_boundary":
+            return
         found = request(record) if isinstance(record, dict) else None
         if found:
-            return sum(count(found[1], key) for key in PROMPT + ("output_tokens",))
+            yield record, sum(count(found[1], key) for key in PROMPT + ("output_tokens",))
+
+
+def last(path, tail=TAIL):
+    """The context size at the last request in a transcript's last `tail` bytes (the figure
+    `context at return` gives), or None: no request there, or no file that can be read (`back`
+    reads the records)."""
+    for _, size in back(path, tail):
+        return size
     return None
 
 
