@@ -4,12 +4,25 @@ Read by the manager skill at step 0, at the start of every run (a new session in
 after a compaction: the detail of its items 1, 3 and 5. Item 3's rules-files list is read again
 when loop step 1 or step 2 lists the rules files again.
 
-## Item 1: the plugin copy
+## Item 1: the plugin copy and the retro switch
 
-Note the plugin version (`version` in `${CLAUDE_SKILL_DIR}/../../.claude-plugin/plugin.json`, if
-it resolves) for the final report. Check that both brief files, the six `brief-*.md` files and
-`github-backends.md` beside them exist: a missing one means an incomplete plugin copy (environment
-failure: report it).
+One Bash call with these three lines (they only read), at every run start and again after a
+compaction; the skill's item 1 names the first, the retro switch:
+
+```
+sh "${CLAUDE_SKILL_DIR}/scripts/retro.sh"
+grep '"version"' "${CLAUDE_SKILL_DIR}/../../.claude-plugin/plugin.json"
+ls "${CLAUDE_SKILL_DIR}/references"
+```
+
+- The first output line is the retro switch: `on` or `off`, then in brackets what decided it.
+  Note that line for the final report. `on` → this run keeps a run record (**Run record**);
+  anything else, an error or no output included → no run record and no `usage.py`.
+- Note the plugin version (the `version` line, if the file resolves) for the final report.
+- The listing must hold both brief files, the six `brief-*.md` files and `github-backends.md`: a
+  missing one means an incomplete plugin copy (environment failure: report it). A listing that
+  fails as a whole (a sandboxed shell that can't read the plugin's folder) settles nothing: look
+  for those files with Glob instead.
 
 ## Item 3: the project rules and the plan
 

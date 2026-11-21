@@ -403,8 +403,9 @@ class ReferencePointerTest(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("git") and shutil.which("grep"), "needs git and grep")
 class StepZeroCommandTest(unittest.TestCase):
-    """The step-0 commands of `references/establish-state.md`: the plan's headings and state lines
-    without any phase's section, and the rules files a commit has."""
+    """The step-0 commands of `references/establish-state.md`: the retro switch read with the
+    plugin copy, the plan's headings and state lines without any phase's section, and the rules
+    files a commit has."""
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
@@ -438,6 +439,43 @@ class StepZeroCommandTest(unittest.TestCase):
         p = subprocess.run(["sh", "-c", command], capture_output=True, env=self.env, cwd=self.tmp)
         self.assertEqual((p.returncode, p.stderr.decode()), (0, ""), command)
         return p.stdout.decode("utf-8")
+
+    def test_item_1_reads_the_retro_switch_the_version_and_the_plugin_copy(self):
+        """One Bash call, as the orchestrator runs it with the skill's folder filled in: the
+        switch's line first, then the plugin's version line and the reference files; it writes
+        nothing, in the home folder or in the repository."""
+        command = command_in(os.path.join(REFS, "establish-state.md"), "retro.sh")
+        self.assertEqual(command.split("\n"), [
+            'sh "${CLAUDE_SKILL_DIR}/scripts/retro.sh"',
+            'grep \'"version"\' "${CLAUDE_SKILL_DIR}/../../.claude-plugin/plugin.json"',
+            'ls "${CLAUDE_SKILL_DIR}/references"'])
+        command = command.replace("${CLAUDE_SKILL_DIR}", os.path.abspath(MANAGER))
+        with open(os.path.join(MANAGER, "..", "..", ".claude-plugin", "plugin.json"),
+                  encoding="utf-8") as fh:
+            version = json.load(fh)["version"]
+        flag = os.path.join(self.tmp, ".claude", "manager-plugin", "retro")
+        os.makedirs(os.path.dirname(flag))
+        for name in ("MANAGER_RETRO", "CLAUDE_CONFIG_DIR"):
+            self.env.pop(name, None)
+        for switch, setting in (("off (no flag file)", None), ("on (flag file)", flag),
+                                ("off (MANAGER_RETRO)", "off"), ("on (MANAGER_RETRO)", "on")):
+            if setting == flag:
+                with open(flag, "w", encoding="utf-8"):
+                    pass
+            elif setting:
+                self.env["MANAGER_RETRO"] = setting
+            before = snapshot(self.tmp)
+            lines = self.sh(command).splitlines()
+            with self.subTest(switch=switch):
+                self.assertEqual(lines[0], switch)
+                self.assertEqual(json.loads("{%s}" % lines[1].strip().rstrip(",")),
+                                 {"version": version})
+                self.assertEqual(sorted(lines[2:]), sorted(os.listdir(REFS)))
+                self.assertLessEqual({"implementer-brief.md", "reviewer-brief.md",
+                                      "github-backends.md", "establish-state.md"}, set(lines[2:]))
+                self.assertEqual(len([name for name in lines[2:]
+                                      if name.startswith("brief-")]), 6)
+                self.assertEqual(snapshot(self.tmp), before)
 
     def plan_state(self, plan):
         sha = self.commit({"docs/LIVING PLAN.md": plan})

@@ -160,13 +160,37 @@ class RetroTextTest(unittest.TestCase):
     manager-retro skill turns it on and off and costs other sessions nothing."""
 
     def test_the_manager_skill_checks_the_switch_before_any_run_record(self):
+        """The command stands in step 0's own list, its first action: a pointer to it from the
+        **Run record** section alone, or from a reference, was not acted on in live runs."""
         skill = " ".join(read(os.path.join(MANAGER, "SKILL.md")).split())
+        command = '`sh "${CLAUDE_SKILL_DIR}/scripts/retro.sh"`'
+        step = skill[skill.index("## 0. Establish state"):skill.index("## Phases and scheduling")]
+        self.assertIn(" 1. Run the retro switch: %s. Choose the GitHub backend;" % command, step)
+        self.assertEqual(skill.count(command), 1)
+        self.assertIn("again after a compaction, read `references/establish-state.md`: the "
+                      "detail of items 1, 3 and 5", step)
         section = skill[skill.index("## Run record"):skill.index("## Stop conditions")]
-        self.assertIn('`sh "${CLAUDE_SKILL_DIR}/scripts/retro.sh"`', section)
-        self.assertIn("step 0", section)
-        self.assertRegex(section, r"prints `on …` → [^.]*read `references/run-record\.md` "
-                                  r"before its first write")
+        self.assertRegex(section, r"Step 0's retro switch prints `on …` → [^.]*read "
+                                  r"`references/run-record\.md` before its first write")
         self.assertIn("no record and no `usage.py`", section)
+
+    def test_step_0_s_reference_holds_the_call_for_every_run_and_every_compaction(self):
+        """Item 1 of `establish-state.md`, which a run reads at its start and again after a
+        compaction (unlike `run-record.md`, read only while the switch is on): the same command
+        first in its one Bash call, and what its line means."""
+        state = read(os.path.join(MANAGER, "references", "establish-state.md"))
+        self.assertIn("and again after a compaction", " ".join(state.split("\n## ")[0].split()))
+        item = state[state.index("\n## Item 1: "):state.index("\n## Item 3: ")]
+        self.assertIn('\n```\nsh "${CLAUDE_SKILL_DIR}/scripts/retro.sh"\n', item)
+        item = " ".join(item.split())
+        for words in ("One Bash call with these three lines (they only read), at every run start "
+                      "and again after a compaction",
+                      "The first output line is the retro switch: `on` or `off`",
+                      "Note that line for the final report",
+                      "`on` → this run keeps a run record (**Run record**)",
+                      "anything else, an error or no output included → no run record and no "
+                      "`usage.py`"):
+            self.assertIn(words, item, words)
 
     def test_the_run_record_reference_states_the_rule(self):
         text = " ".join(read(os.path.join(MANAGER, "references", "run-record.md")).split())
@@ -181,9 +205,11 @@ class RetroTextTest(unittest.TestCase):
             self.assertIn(words, head, words)
 
     def test_the_final_report_is_silent_about_a_record_while_off(self):
+        """Off: nothing about a record. On with no record, and a switch never read, are said."""
         text = " ".join(read(os.path.join(MANAGER, "references", "final-report.md")).split())
-        self.assertIn("the run record path, or why it was skipped (retro switch off: neither)",
-                      text)
+        self.assertIn("by the retro switch's line (step 0 item 1): `on` → the run record path, "
+                      "or that no record was written and why; `off` → nothing about a record; "
+                      "a switch never read in this run → say so;", text)
 
     def test_the_retro_skill_is_typed_only_and_names_the_script(self):
         text = read(RETRO_SKILL)

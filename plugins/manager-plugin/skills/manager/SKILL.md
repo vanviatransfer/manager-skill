@@ -98,9 +98,10 @@ Derive state from durable sources only — never from memory of an earlier conte
 a run (a new session included) and again after a compaction, read
 `references/establish-state.md`: the detail of items 1, 3 and 5.
 
-1. Choose the GitHub backend; note whether the session has a designated push branch. Resolve the
-   two brief files once, `${CLAUDE_SKILL_DIR}/references/implementer-brief.md` and
-   `reviewer-brief.md`. Use these absolute paths in every dispatch.
+1. Run the retro switch: `sh "${CLAUDE_SKILL_DIR}/scripts/retro.sh"`. Choose the GitHub backend;
+   note whether the session has a designated push branch. Resolve both brief files once,
+   `${CLAUDE_SKILL_DIR}/references/implementer-brief.md` and `reviewer-brief.md`. Use these
+   absolute paths in every dispatch.
 2. `git fetch origin`; record the default branch head.
 3. Read the project rules and the living plan **as on the default branch** (`git show
    origin/<default>:<path>`, not the working tree); of the plan, no phase's section before that
@@ -262,9 +263,8 @@ it needs the owner now. Never withhold what an owner decision or safe execution 
 
 ## Run record
 
-Retro switch (step 0): `sh "${CLAUDE_SKILL_DIR}/scripts/retro.sh"` prints `on …` → the run keeps a
-run record: read `references/run-record.md` before its first write (the first phase outcome) and
-follow it. Otherwise (the default) no record and no `usage.py`.
+Step 0's retro switch prints `on …` → keep a run record: read `references/run-record.md` before
+its first write (the first phase outcome) and follow it. Otherwise no record and no `usage.py`.
 
 ## Stop conditions
 

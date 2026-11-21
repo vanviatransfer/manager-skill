@@ -1360,7 +1360,8 @@ def unstaged_map_pages(root, out_rel):
     A page whose raw bytes aren't its blob is held as built when `git add` would store that
     blob for it: under a clean filter that changes content (git-crypt, LFS, a filter of the
     repository's own), `ident` or `working-tree-encoding` the two never match, staged or not.
-    Reads the index and the files, and git runs the page's clean filter; writes nothing."""
+    Reads the index and the files, and git runs the page's clean filter; writes nothing itself
+    (a filter that stores what it cleans, git-lfs, may add its object under `.git/lfs/objects`)."""
     blobs = {path: blob for mode, blob, stage, path in git_index(root) or []
              if stage == "0" and not mode.startswith(("120000", "160000"))}
     here = [p for p in [out_rel] + generated_pages(root, out_rel) if readable_file(root, p)]

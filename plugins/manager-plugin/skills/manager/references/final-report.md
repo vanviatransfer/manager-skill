@@ -9,8 +9,9 @@ Plan records still unpersisted (an owner's answer, a status correction) → firs
 Before the final report, read the Risks section of a phase's report file only when its short
 return's `Risks:` line is not `none` (the working-notes line step 2 keeps).
 Final report, compact: phases landed (PR, merged SHA); phases blocked and why; the model strategy
-used and any model concerns; the plugin version; the run record path,
-or why it was skipped (retro switch off: neither);
+used and any model concerns; the plugin version; by the retro switch's line (step 0 item 1):
+`on` → the run record path, or that no record was written and why; `off` → nothing about a
+record; a switch never read in this run → say so;
 the vault and code map (set up, set up now, or not and why); session-check
 recommendations not already given at the gate; one line on repo-enabled plugins, MCP servers or
 skills found in step 0 (names, "disable for this repo if unneeded") and any fallback dispatch
