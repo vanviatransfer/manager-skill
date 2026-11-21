@@ -1395,8 +1395,7 @@ class ChangedTest(unittest.TestCase):
         self.assertEqual(lines[0], "changed: 9 files")
         self.assertEqual(lines[1], "note: HEAD is not %s; importers, tests and vault pages are "
                                    "the working tree's" % self.head)
-        self.assertIn("  definitions: _private, new_api (new), old_api (removed)", lines)
-        self.assertEqual(lines[2:], CHANGED.splitlines()[1:])
+        self.assertEqual(lines[2:], CHANGED.splitlines()[1:])  # app/fresh.py is not checked out
         self.assertNotIn("note:", self.changed(self.base, self.base))
 
     def test_the_diff_is_the_head_side_of_the_fork(self):

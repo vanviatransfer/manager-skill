@@ -184,7 +184,7 @@ Validation: standard; plus
 `python3 -m unittest discover -s plugins/manager-plugin/skills/living-plan/scripts`.
 
 ### P6. Code-map "changed" command for reviewers
-Status: todo
+Status: done (PR #49)
 Objective: reviewers get a capped pointer list of what a diff touches.
 Scope: codemap.py `changed --base <sha> --head <sha>` (changed files, top-level definitions touched,
 files importing them, matching tests, vault pages mentioning them; output capped, e.g. 60 lines,
