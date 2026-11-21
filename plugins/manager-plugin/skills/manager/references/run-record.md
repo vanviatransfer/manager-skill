@@ -60,8 +60,10 @@ Agent tool returned it, or `orchestrator` for you.
 
 - With a phase's line, in front of the same Bash command: that phase's agents (every implementer
   and every round's reviewer), so an interrupted run still leaves them.
-- Before each `summary:` line, in the same Bash call: `orchestrator`. Its line counts this
-  session from its start, an earlier run or other work in it included.
+- Before each `summary:` line, in the same Bash call and before the marker is removed:
+  `orchestrator --since <the **Run marker** file>`. Its line then counts the run, from the
+  moment that file was written (never write it a second time), not what the session did before
+  it. No marker file → no `orchestrator` line; say so in the final report.
 - An id you no longer hold (a compaction): leave it out. Always name the agents: with none, the
   script prints every subagent of the session, another run's and other work's included.
 
@@ -72,6 +74,9 @@ agent's type (yours: `main`) and `model` its last request's. `requests` counts i
 `output` are token sums over them, each priced differently. `context at return` is the figure
 `subagent_tokens` reports. `warm resumes` and `cold resumes` count the requests sent 60 seconds
 or more after the agent's previous one: cold when the cache had expired and the context was
-written again, warm when it was read; a compaction's first request is neither. `seconds` runs
-from the agent's first record to its last: a reviewer's is how long the review took. `unknown`
-marks what the transcripts don't show.
+written again, warm when it was read; a compaction's first request is neither. A subagent's
+are only those a message to it started (a resume): a request that follows a tool call is none,
+however long the call took. Yours count those too (a wait for a subagent, a long command),
+beside the owner's prompts. `seconds` runs from the agent's first record to its last (yours:
+from the marker's time): a reviewer's is how long the review took. `unknown` marks what the
+transcripts don't show.

@@ -70,6 +70,19 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/manager-context-watch.sh\"",
+            "timeout": 10,
+            "onFailure": "continue"
+          }
+        ]
+      }
     ]
   }
 }
