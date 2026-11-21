@@ -96,7 +96,7 @@ Validation: standard.
 Notes: B1, B2, B3.
 
 ### P2. Manager skill survives compaction
-Status: todo
+Status: done (PR #45)
 Objective: the manager skill fits the compaction re-attach budget and the loop's state survives a
 compaction.
 Scope: plugins/manager-plugin/skills/manager/SKILL.md and references/, hooks (hooks.json or the

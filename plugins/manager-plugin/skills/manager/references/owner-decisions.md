@@ -48,6 +48,19 @@ show the conflict in one line. A valid Decided entry is never asked again.
 A decision that unblocks a phase a brake had blocked: **Brakes** says how that phase's counts
 restart.
 
+At step 0 (item 4): phases blocked only by decided decisions become ready; correct their status
+lines in the next PR.
+
+## Plan records
+
+New open decisions, Decided moves (owner's exact words, date), new binding
+decisions from them, status corrections and the model-strategy record ride the next PR that lands,
+as the implementer's `Plan records` field, written by you verbatim; the reviewer gets the same field
+and blocks any plan record in the diff that doesn't match it. Before the final report, if anything
+is still unpersisted, land one plan-only bookkeeping PR. If no branch or checkout is free for it (a
+designated branch holding a blocked phase's work, or a shared checkout holding uncommitted or
+unpushed work), the final report is the record instead; say so.
+
 ## Asking the batch
 
 Once, at the end, when no ready phase is left; only unresolved decisions. In the owner's language

@@ -11,6 +11,29 @@
             "onFailure": "continue"
           }
         ]
+      },
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/manager-run-compact.sh\" SessionStart",
+            "timeout": 10,
+            "onFailure": "continue"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/manager-run-compact.sh\" PreCompact",
+            "timeout": 10,
+            "onFailure": "continue"
+          }
+        ]
       }
     ],
     "PreToolUse": [

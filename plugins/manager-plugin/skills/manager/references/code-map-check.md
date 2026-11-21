@@ -4,6 +4,12 @@ Read by the manager skill at step 6 of every run (**Code map**), and again after
 the check or a setup PR is still open. It covers the vault, the code map and the rules block
 (the `code-map` skill's **The rules block**); they are set up together, in one setup PR.
 
+The check runs before any dispatch, whatever the model strategy, and settles `Code map: <cmd> |
+none`. Its questions join the gate when
+asked, else end the turn as one question, once per run (never for the hooks line alone).
+Keep one working-notes line, `Run <id>: code map <set up | setup PR #<n> | none (owner:
+"<quote>")>`, so a compaction keeps it.
+
 - **Set up** = on the default branch: a vault (`.codemap.json`'s `vault`), `.codemap.json` with a
   `map` (`git show origin/<default>:.codemap.json`), and the current rules block (`git show
   origin/<default>:AGENTS.md` holds `manager-plugin:code-map:begin v2`, or a higher version;
