@@ -211,7 +211,7 @@ them against the documented schema); README documents how to run them.
 Validation: standard.
 
 ### P8. Docs and version 0.9.0
-Status: todo
+Status: done (PR #51)
 Objective: documentation matches 0.9.0.
 Scope: README.md, docs/TODO.md (Done entry), .claude-plugin/marketplace.json description if it
 changes, plugins/manager-plugin/.claude-plugin/plugin.json (0.9.0).
@@ -278,6 +278,12 @@ Validation: standard.
   parses them against its case format and its `unittest discover` joins the Validation line; the
   cases have not been run (README.md's Development section gives the command and the limits), so
   a first run may need to adjust them
+- 2026-11-21: P8 also carries a P1 and a P7 review note, both on README.md (the session-start
+  rules-version line is described as information; the eval run needs a shell sandbox, since the
+  runner refuses a granted `Bash` it can't confine); both manifest descriptions name the 0.9.0
+  additions; the Done entry is docs/TODO.md item 12, and item 11's "Still open (0.9.0)" line
+  points at it; README.md and item 12 say what has not been exercised live (the three
+  manager-run hooks, the eval cases, `usage` lines in a run record)
 
 ## How to keep this plan alive
 - A phase PR updates its own status line and links itself; other status lines only to correct facts.

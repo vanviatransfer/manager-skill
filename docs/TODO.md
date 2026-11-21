@@ -305,6 +305,85 @@ from those. The session was still running, so each count is as of its measuremen
   ignored-data guard is POSIX `sh`; the short return has a `Risks:` line; a clean shared checkout
   ends the run on `origin/<default>`; the usage-percentage step is gone; waiting for a
   subagent's completion notification is the normal path.
-- Still open (0.9.0): the manager skill's size; hooks around compaction; an orchestrator
+- Done in 0.9.0 (item 12): the manager skill's size; hooks around compaction; an orchestrator
   context-size hook; real token accounting; a plan validate/extract script; a reviewer "changed"
   code-map command; plugin evals.
+
+### 12. Compaction, real token accounting, plan and diff scripts, evals (plugin 0.9.0)
+
+From two independent audits and a research report on 0.8.x, run as a living plan of eight
+phases, one reviewed PR each. Evidence tags as in item 11; what is tagged [measured] here was
+measured on 2026-11-21 on one Linux machine (4 CPUs), timings as the median of 20 runs.
+
+- **0.8.3 follow-ups.** The session-start rules-version line is information, not an order, and
+  an unversioned rules block with the template's text counts as current (both noted in item
+  11). The brake-reset rule is stated once. The briefs' plan read also prints the `## Phases`
+  preamble and says what to do when a plan names its sections differently. The implementer's
+  dispatch gets a `Project rules` field like the reviewer's, listing every rules file the
+  repository has (`CLAUDE.md`, `AGENTS.md`, `.claude/CLAUDE.md`, `.claude/rules/*.md` and their
+  `@path` imports), since `omitClaudeMd` drops the whole instruction block. The final report
+  reads a phase's report file only when its short return's `Risks:` line is not `none`; loop
+  step 2's fact checks run in one Bash call. Self-training skill files, lessons and records are
+  English, like plan and vault text.
+- **A manager skill that fits after a compaction.** [docs] After a compaction Claude Code
+  re-attaches the first 5,000 tokens of each invoked skill, within 25,000 tokens for all of
+  them (code.claude.com/docs/en/skills, checked 2026-11-21). [measured] The manager skill had
+  35,351 characters in 0.8.3 and has 17,997 now. The invariants and the loop's skeleton stay
+  in it; step detail moved to seven new reference files (25 in all), each named in the skill
+  with its trigger and read at its step and again after a compaction. Step 0 reads the plan's
+  headings and every phase's `Status`, `Depends on` and `Risk` lines, not the phases' sections;
+  a phase's section is read when the phase is scheduled. A test holds the ceilings: the manager
+  skill 18,000 characters, the code-map skill 20,000, the implementer brief 1,327 words, the
+  reviewer brief 1,347.
+- **Compaction hooks.** The manager writes a run marker,
+  `~/.claude/manager-runs/active/<session id>`, once the run's model strategy is settled and
+  removes it when the run ends. While it exists, a `PreCompact` hook tells the summary to keep
+  the working-notes lines verbatim, and a `SessionStart` hook (matcher `compact`) tells the
+  session to re-read the skill and the references whose triggers apply. Both are one POSIX `sh`
+  script without Python: silent without the marker, in a subagent and on any error; it writes
+  nothing. [measured] About 5 ms a call, with or without the marker.
+- **Real token accounting.** `skills/manager/scripts/usage.py` reads the session's transcript
+  and its `subagents/agent-*.jsonl` and prints, for the orchestrator and per subagent: requests,
+  uncached input, cache reads, cache writes by lifetime, output, context at return, warm and
+  cold resumes, seconds. `--since` bounds the orchestrator's line to the run (the run marker's
+  time). The run record gets these as `usage` lines and `manager-retro` measures them. A resume
+  is a request sent 60 seconds or more after the previous one, cold when it read under half of
+  the previous prompt from the cache; a subagent's counts leave out the requests a tool result
+  started. The transcript format is undocumented, so what can't be read is skipped or
+  `unknown`. Tested on synthetic transcripts; [measured] on one real session's transcripts it
+  ended with exit status 0 and no `unknown` value.
+- **Context watch.** A `PostToolUse` hook on the Agent tool reads, during a run, the
+  orchestrator's last request from the transcript's end (its last 1 MiB) and, above 200,000
+  tokens (`MANAGER_CONTEXT_BUDGET` sets another budget), adds one line: write the working-notes
+  lines out now, suggest `/compact` to the owner at the next stop. [measured] With a 15 MiB
+  synthetic transcript: 2 ms when the machine has no run marker (no Python started), 24 ms with
+  only another session's marker, 28 ms in a run, over or under the budget.
+- **Plan script.** `skills/living-plan/scripts/plan.py`: `check` (every phase id used once,
+  every `Depends on` resolves, no cycle, the seven required lines of each phase; a warning when
+  two phases, neither done and neither depending on the other, name the same path) and
+  `phase <id>` (that phase's section with the constraints, the binding decisions, the
+  `## Phases` preamble, the open owner decisions and the model-strategy record). Both read the
+  plan from standard input and take no path, so the plan is still read as the base commit has
+  it. The briefs and the orchestrator use `phase`, with the `awk` command kept as the
+  no-Python fallback; the `living-plan` skill runs `check` before a plan's PR.
+- **`changed` for reviewers.** `codemap.py changed --base <sha> --head <sha>` prints, per
+  changed file (map pages left out), the top-level definitions whose text differs, its
+  importers, its tests and the vault lines that mention it: at most 60 lines, then a count of
+  the cut. The reviewer brief runs it for pointers only, never as a filter; the definitions are
+  approximate (a change between two definitions names the one above).
+- **Eval cases.** `plugins/manager-plugin/evals/` holds three cases for `claude plugin eval`:
+  no general-purpose spawn when a plugin agent fits; a reviewer before a merge pinned to the
+  reviewed SHA; the brake at the fix-round limit. The two manager cases also fail on any `Edit`
+  or `Write` call. The CLI (2.1.329) has no offline check for cases, so a test parses them
+  against its case format.
+- **Not verified.** The three new hooks have not run inside a live session: the compaction
+  hooks and the context watch are tested through their scripts with synthetic hook input, and
+  no compaction of a manager run has been observed with them. The eval cases have not been run
+  (paid sessions): a first run may need to adjust them, and it needs a shell sandbox, since
+  the runner refuses a granted `Bash` it can't confine. No run of this version has been
+  recorded yet, so there are no `usage` lines to measure and the rotation thresholds (item
+  11) stand unchanged.
+- Left out on purpose: delta-only re-review (it weakens review independence); a 1-hour cache
+  for subagents (the plan records it as measured to cost more for reviewers and implementers;
+  not re-measured here); dynamic workflows for the phase loop (large, and unverified with
+  plugin agents).
