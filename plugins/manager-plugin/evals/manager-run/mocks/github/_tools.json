@@ -1,0 +1,70 @@
+{
+  "tools": [
+    {
+      "name": "list_pull_requests",
+      "description": "List pull requests in a GitHub repository.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "owner": {"type": "string", "description": "Repository owner"},
+          "repo": {"type": "string", "description": "Repository name"},
+          "state": {"type": "string", "enum": ["open", "closed", "all"],
+                    "description": "Filter by state"},
+          "head": {"type": "string", "description": "Filter by head user/org and branch"},
+          "base": {"type": "string", "description": "Filter by base branch"},
+          "fields": {"type": "array", "items": {"type": "string"},
+                     "description": "Subset of fields to return for each pull request"}
+        },
+        "required": ["owner", "repo"]
+      }
+    },
+    {
+      "name": "pull_request_read",
+      "description": "Get information on a specific pull request in GitHub repository.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "method": {"type": "string", "enum": ["get", "get_comments"],
+                     "description": "get: the pull request's details. get_comments: its comments."},
+          "owner": {"type": "string", "description": "Repository owner"},
+          "repo": {"type": "string", "description": "Repository name"},
+          "pullNumber": {"type": "number", "description": "Pull request number"}
+        },
+        "required": ["method", "owner", "repo", "pullNumber"]
+      }
+    },
+    {
+      "name": "merge_pull_request",
+      "description": "Merge a pull request in a GitHub repository.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "owner": {"type": "string", "description": "Repository owner"},
+          "repo": {"type": "string", "description": "Repository name"},
+          "pullNumber": {"type": "number", "description": "Pull request number"},
+          "merge_method": {"type": "string", "enum": ["merge", "squash", "rebase"],
+                           "description": "Merge method"},
+          "commit_title": {"type": "string", "description": "Title for the merge commit"},
+          "commit_message": {"type": "string", "description": "Extra detail for the merge commit"},
+          "expectedHeadSha": {"type": "string",
+                              "description": "SHA the pull request head must match to merge"}
+        },
+        "required": ["owner", "repo", "pullNumber"]
+      }
+    },
+    {
+      "name": "add_issue_comment",
+      "description": "Add a comment to an issue or a pull request in a GitHub repository.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "owner": {"type": "string", "description": "Repository owner"},
+          "repo": {"type": "string", "description": "Repository name"},
+          "issue_number": {"type": "number", "description": "Issue or pull request number"},
+          "body": {"type": "string", "description": "Comment content"}
+        },
+        "required": ["owner", "repo", "issue_number", "body"]
+      }
+    }
+  ]
+}

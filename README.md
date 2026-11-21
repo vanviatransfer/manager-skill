@@ -334,3 +334,60 @@ version hint) and for the shell commands the manager skill and its briefs give:
 `python3 -m unittest discover -s plugins/manager-plugin/hooks`.
 Tests for the self-training-skills script:
 `python3 -m unittest discover -s plugins/manager-plugin/skills/self-training-skills/scripts`.
+Tests that hold the eval cases (below) to the CLI's case format:
+`python3 -m unittest discover -s plugins/manager-plugin/evals`.
+
+### Eval cases
+
+`plugins/manager-plugin/evals/` holds cases for Claude Code's `claude plugin eval` (an
+experimental command), so that a change that breaks one of the plugin's invariants shows up:
+
+- `plugin-agent-spawn`: no general-purpose subagent when a plugin agent fits. A small task is
+  delegated; it must go to a `manager-plugin:` agent, without the hook's escape marker and
+  without a general-purpose subagent doing any of the work.
+- `review-before-pinned-merge`: a reviewer after every implementer round, and a merge pinned to
+  the reviewed SHA. A manager run resumes a phase whose pull request is open and whose ledger
+  already says PASS: it must still send a reviewer the pull request's head, then merge with
+  that commit as the expected head.
+- `fix-round-brake`: the brake at the fix-round limit. The ledger holds as many refused
+  candidates as the plan allows fix rounds, and the candidate fails its test: the run must
+  review it, dispatch no implementer, merge nothing and report the phase blocked.
+
+Both manager cases also fail on any `Edit` or `Write` call (the orchestrator never implements):
+the one subagent they need is the reviewer, which has neither tool. Their `scaffold.sh` builds a
+small repository with a living plan in the run's folder, and `mocks/github/` answers the GitHub
+MCP tools from a recording, so no real repository or pull request is involved.
+
+Running the cases starts paid sessions, and the two manager cases are long ones. From the
+repository root:
+
+```
+claude plugin eval plugins/manager-plugin --ablation none --scaffold --no-publish \
+  --allow-tools Agent SendMessage ToolSearch Bash Edit Write
+```
+
+- `--ablation none`: run with the plugin only. The default also runs every case with the plugin
+  off and scores the difference, which means nothing for a manager run.
+- `--scaffold`: lets the two manager cases build their repository (their `scaffold.sh` runs with
+  bash and git on your machine).
+- `--allow-tools`: the operator's grant of tools beyond the read-only ones. Every tool named
+  here goes to every case; such a tool in a case's own `allowed_tools` takes effect only when it
+  is granted here, and a case's `disallowed_tools` keeps one out of that case. Keep `Edit` and
+  `Write` in: a tool that is not granted is withheld from the model, and the graders on those
+  two could then never fail.
+- `--no-publish`: the report stays on your machine.
+
+Pick cases with `--case <glob>` or `--tag <tag>` (`general-purpose-spawn`,
+`reviewer-every-round`, `pinned-merge`, `fix-round-brake`, `orchestrator-no-edit`), set the runs
+per case with `--runs <n>` and a spend ceiling with `--max-cost-usd <usd>`. Results go to
+`plugins/manager-plugin/evals/results/<timestamp>/`, which git ignores. The first run asks you to
+confirm that you trust the plugin directory.
+
+The cases follow the case format of Claude Code 2.1.329 and have not been run yet. That CLI has
+no offline check for cases (`claude plugin validate` does not read them), so the test above
+parses them against the format, builds both fixture repositories and checks every commit SHA
+that the recordings and graders name. Expect a first run to need adjusting, and start with one
+case (`--case plugin-agent-spawn`). Two limits of the GitHub stand-in: its answers are fixed, so
+a manager case starts from an open pull request instead of an implementer opening one during the
+run; and its tool list (`_tools.json`) is written by hand from the plugin's GitHub operation map,
+not captured from the real server.
