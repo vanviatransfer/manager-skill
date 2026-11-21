@@ -41,7 +41,7 @@ Out (deliberately not doing now):
 - Version: only P8 bumps `plugins/manager-plugin/.claude-plugin/plugin.json` (to 0.9.0).
 
 ## Model strategy
-Model strategy: Fable xhigh — scope: run R2026-11-20-2300 — owner: "worker (fable xhigh) … fable xhigh review etsin"
+Model strategy: Fable xhigh — scope: run R2026-11-20-2300 — owner: "fable xhigh review etsin"
 
 ## Binding decisions
 - B1. Invariant text is moved, never reworded weaker: exact-SHA review, owner authority, Git safety,
