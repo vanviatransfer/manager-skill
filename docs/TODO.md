@@ -747,7 +747,7 @@ caught it; a skill's routing to its reference files was checked only by hand.
   `--include`) targets `.claude/skills/`, `SKILL.md`, `lessons.md`, a skill's `references/` or
   a marked skill's records file, in a repository with a marked skill, is blocked once per
   session (exit 2, one `manager-plugin: skills first:` line naming `<python>
-  "<plugin>/skills/self-training-skills/scripts/skilltrain.py" query "<repo root>" "<term>"`, the
+  "<plugin>/skills/self-training-skills/scripts/skilltrain.py" query "<repo root>" -- "<term>"`, the
   term taken from the search pattern, else `<term>`); repeated, it is allowed. (The brief first
   asked for a non-blocking `additionalContext` note; the owner changed it to block like the
   code-map branch.) Its state is its own marker file, so it neither uses up nor gets the code-map
@@ -772,4 +772,9 @@ caught it; a skill's routing to its reference files was checked only by hand.
   kept only inside a longer word, or with other casing, counts as kept or dropped accordingly.
   The hook's term comes from the last search pattern it sees, so `grep -e a -e b` suggests `b`.
   A non-wildcard path named `references` outside `.claude/skills/` never counts as a skill
-  search.
+  search. Rebase merges: when the run's first landed phase was rebase-merged with more than one
+  commit, `<merged SHA>^1` is not the default branch from before the run, so a trigger dropped in
+  an earlier commit of that phase goes unreported; the value is exact for squash and merge-commit
+  landings. A reference file whose path contains a space can't be routed (backticked text with
+  whitespace is no routing), so it always fails with "has no routing". `rules-hint --remove` can
+  leave an extra blank line in a `CLAUDE.md` it created.

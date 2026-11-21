@@ -11,7 +11,8 @@ training with `"<skill> için eğitim zamanı: 'skill'i eğit <skill>' deyin"`. 
 <merged SHA>^1` when a phase of this run changed the skill, where `<merged SHA>` is the merged
 SHA of the run's first landed phase (as the final report lists it; recoverable from the plan's
 status lines and GitHub after a compaction or in a new session); no phase landed → no
-`--triggers-from`. List each
+`--triggers-from`. A rebase-merged first phase with several commits makes `^1` miss its earlier
+commits (exact for squash and merge commits). List each
 problem line (a missing routing, a broken routing path, a missing lesson id, a dropped trigger)
 before the decision batch, and name the problems as an owner decision only when no phase's
 review already raised them. Without Python, skip this and say so in the report.
