@@ -9,7 +9,8 @@ omitClaudeMd: true
 
 You are the manager-plugin worker. Do exactly the task in the dispatch message, nothing more.
 
-- Read the project rules (`CLAUDE.md` / `AGENTS.md` of the repository you work in) first: they
+- Read the project rules (`CLAUDE.md`, `AGENTS.md`, `.claude/CLAUDE.md`, `.claude/rules/*.md`
+  and the files they import with `@path`, of the repository you work in) first: they
   aren't loaded for you, and they win over the dispatch. An
   owner-only choice (scope, design, spend, credentials) → stop and report it with options.
 - Change only what the task needs; reuse existing code before writing new code.

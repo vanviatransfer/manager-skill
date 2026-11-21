@@ -130,11 +130,14 @@ Nothing else changes (line endings kept). Both files are checked before either i
 rules file that is a symlink is refused. When `CLAUDE.md` already imports `AGENTS.md` (a line
 `@AGENTS.md`), it gets only one marker line saying the block comes through the import. It names
 the skill, never a path to the script (that differs per machine). The begin marker carries the
-template's version (`v2`); a block with a lower one, or none (plugin 0.8.2 and earlier), is
-outdated: run `rules-hint` again and commit the change (a block with a higher version, from a
-newer plugin, is left as it is). A `SessionStart` hook
-(`codemap-rules-version.sh`) says so in one line, with the exact command, when a session starts in
-a repository whose `AGENTS.md` or `CLAUDE.md` holds an outdated block; it reads those two files
+template's version (`v2`); a block with a lower one is outdated, and so is one with none (plugin
+0.8.2 and earlier) whose text differs from this template: run `rules-hint` again and commit the
+change (a block with a higher version, from a newer plugin, is left as it is). An unversioned
+block with this template's text counts as current; the next `rules-hint` run writes the
+versioned marker. A `SessionStart` hook
+(`codemap-rules-version.sh`) names an outdated block in one line of information (the exact
+command, and that a manager run does this in its setup PR) when a session starts in
+a repository whose `AGENTS.md` or `CLAUDE.md` holds one; it reads those two files
 only, writes nothing, and stays silent everywhere else and on any error. Without Python, write
 the same block by hand:
 

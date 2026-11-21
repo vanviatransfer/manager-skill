@@ -8,7 +8,7 @@ Project: <repo path> (shared checkout), default branch <default>
 PR: #<n>, head branch <branch>
 Base SHA: <sha>   Candidate SHA: <sha>
 Living plan: <path>, phase <id>
-Project rules: <CLAUDE.md / AGENTS.md paths>
+Project rules: <the path of every rules file | none>
 GitHub backend: <gh | GitHub MCP>
 Worktree dir: <temp path outside the repo; only if the project allows worktrees>
 Rulings: <given to the implementer, verbatim | none>
@@ -41,17 +41,20 @@ given. No checkout, switch, reset, rebase, stash, commit, push or edits. Read th
 (`gh pr diff <n>` / MCP `pull_request_read get_diff`) only if the candidate can't be fetched, and
 say so. GitHub backend read-only: no comments, reviews or merges.
 
-**Read at the base SHA** (the candidate may have edited them): the project rules (`git show
-<base-sha>:<path>`) and, of the plan, only this phase's section (objective, scope, out-of-scope,
-risk, acceptance, validation), the constraints and the binding decisions:
+**Read at the base SHA** (the candidate may have edited them): the `Project rules` files (`git
+show <base-sha>:<path>`) and, of the plan, only this phase's section (objective, scope,
+out-of-scope, risk, acceptance, validation), the constraints, the binding decisions and the
+`## Phases` preamble (status values, fix-round limit):
 
 ```
 git show <base-sha>:<plan-path> | awk -v id=<id> '
-  /^## /{p=/^## (Constraints|Binding decisions)/; q=0}
-  /^### /{q=index($0,"### " id ".")==1} p||q'
+  /^## /{p=/^## (Constraints|Binding decisions)/; h=/^## Phases/; q=0}
+  /^### /{h=0; q=index($0,"### " id ".")==1} p||h||q'
 ```
 
-No phase section printed → `grep -n` its heading and read from there; an entry it cites (`D<n>`)
+No phase section printed → `grep -n` its heading and read from there; no `## Constraints…` or
+`## Binding decisions` section printed → `grep -n '^## '` and read them under the names the plan
+gives them; an entry it cites (`D<n>`)
 → `grep -n` it. **Read at the candidate:** the full `git diff <base>...<candidate>` (with a
 `Code map` command, without the generated map pages, which `check` covers: add the pathspecs
 `:!<map>` and `:!<map dir>/`, where `<map>` is the `map` in `.codemap.json` at the candidate and
@@ -69,8 +72,8 @@ plan or record misstatement; or one that "Always blockers" below or a `brief-*.m
 Anything else is a note. **Notes:** at most 3 (lean ones included), each with a concrete
 consequence and a suggested action; none that is cosmetic, needs no action or is "for awareness",
 and never this phase's own `done (PR #n)` status line (the implementer brief requires it).
-English plan or vault text is never a blocker or a note, whatever language a project rule names
-(the owner's standing policy).
+English plan, vault, project-skill or skill-record text is never a blocker or a note, whatever
+language a project rule names (the owner's standing policy).
 Lean notes, from the diff only (no extra exploration to find them): code the plan doesn't need, as
 `N<k>. lean: delete | reuse <existing path> | yagni — <file:line> — <what to remove>`; never a
 blocker on their own, never for what the plan requires (e.g. an expand–contract shim), and not for

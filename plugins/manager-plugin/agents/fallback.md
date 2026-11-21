@@ -14,8 +14,10 @@ only the tools that role allows: the GitHub backend's tools for the implementer,
 a reviewer (Bash and the file tools can still write: staying read-only comes from the brief or the
 dispatch). Use no other MCP server's tools, even if some are available here.
 
-The project's rules aren't loaded for you: read the working repository's `CLAUDE.md` / `AGENTS.md`
-first, as the brief says (a manual review: before anything else).
+The project's rules aren't loaded for you: read the rules files the dispatch's `Project rules`
+field lists first, as the brief says (a manual review: before anything else, the working
+repository's `CLAUDE.md`, `AGENTS.md`, `.claude/CLAUDE.md`, `.claude/rules/*.md` and the files
+they import with `@path`).
 
 If a hook's message names a `codemap.py` command, run it before searching again.
 

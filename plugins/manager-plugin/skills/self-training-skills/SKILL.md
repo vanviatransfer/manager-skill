@@ -6,8 +6,9 @@ description: Write, adopt and train self-training skills for work that repeats i
 # Self-training skills
 
 A self-training skill standardises work that repeats in a project and gets better from its own
-use. Talk to the owner in Turkish unless they write otherwise; write skill files in English, or in
-the language the project's rules name for them.
+use. Talk to the owner in Turkish unless they write otherwise; write skill files, lessons and
+records in English, whatever language the project's rules name for them (the owner's standing
+policy; owner quotes stay verbatim, in the owner's words).
 
 ## What it is
 

@@ -829,6 +829,35 @@ class HookTest(unittest.TestCase):
         run("rules-hint", "--remove", "--root", self.root)
         self.assertEqual(self.read("AGENTS.md", "rb").decode(), agents + "After the block.\n")
 
+    def test_unversioned_block_with_the_template_text_is_current(self):
+        old_begin = "<!-- manager-plugin:code-map:begin (managed by the code-map skill) -->"
+        old_created = old_begin.replace(") -->", codemap.RULES_CREATED_NOTE)
+        body = codemap.RULES_BLOCK[1:]
+        for begin in (old_begin, old_created):
+            same = "# Agents\n\n" + "\n".join([begin] + body) + "\nAfter the block.\n"
+            self.assertEqual(codemap.rules_block_version(same), codemap.RULES_VERSION, begin)
+            self.assertEqual(codemap.rules_block_version(same.replace("\n", "\r\n")),
+                             codemap.RULES_VERSION, begin)
+        changed = {
+            "a reworded line": [body[0].replace("Before", "before")] + body[1:],
+            "the 0.8.1 text": [line.replace("grep/glob;", "grep/glob.") for line in body
+                               if "without the Skill tool" not in line],
+            "an added line": body[:-1] + ["- one more rule"] + body[-1:],
+            "a removed line": body[1:],
+            "no end marker": body[:-1],
+        }
+        for what, lines in sorted(changed.items()):
+            text = "# Agents\n\n" + "\n".join([old_begin] + lines) + "\n"
+            self.assertEqual(codemap.rules_block_version(text), 1, what)
+        # The marker is rewritten when the block is next written.
+        agents = "# Agents\n\nUse tabs.\n\n"
+        self.write("AGENTS.md", agents + "\n".join([old_begin] + body) + "\n")
+        self.write("CLAUDE.md", "@AGENTS.md\n")
+        code, out = run("rules-hint", "--root", self.root)
+        self.assertEqual(code, 0)
+        self.assertIn("AGENTS.md: block written", out)
+        self.assertEqual(self.read("AGENTS.md"), agents + "\n".join(codemap.RULES_BLOCK) + "\n")
+
     def test_rules_hint_leaves_a_newer_block_alone(self):
         newer = ("# Agents\n\n<!-- manager-plugin:code-map:begin v%d (managed by the code-map "
                  "skill) -->\n- a later template\n%s\n" % (codemap.RULES_VERSION + 1,
