@@ -25,7 +25,7 @@ UNKNOWN = " | unknown" * 11
 ORCHESTRATOR = "usage | orchestrator | main | model-c | 4 | 10 | 47000 | 400 | 35500 | 650 | " \
                "21352 | 1 | 1 | 5020"
 REVIEWER = "usage | b2 | manager-plugin:reviewer | model-b | 2 | 5 | 7000 | 7500 | 0 | 1100 | " \
-           "8402 | 0 | 0 | 32"
+           "8402 | 0 | 0 | 92"
 IMPLEMENTER = "usage | a1 | manager-plugin:implementer | model-a | 7 | 17 | 29250 | 24600 | 0 | " \
               "5680 | 3092 | 1 | 1 | 900"
 UNTIMED = "usage | c3 | unknown | model-a | 1 | 5 | 0 | 800 | 0 | 20 | 825 | unknown | unknown | " \
@@ -48,7 +48,8 @@ def other(at, kind="user", **fields):
 def request(at, key, fresh, cached, written, output, hour=0, blocks=1, model="model-a",
             split=True):
     """One request as a transcript holds it: a record per content block, each with the request's
-    message id and usage (here the earlier ones with the output still at 1)."""
+    message id and usage (here the earlier ones with the output still at 1) and stamped when the
+    block ends (here the first at `at`): later than the prompt or tool result that started it."""
     records = []
     for block in range(blocks):
         use = {"input_tokens": fresh, "cache_read_input_tokens": cached,
@@ -99,7 +100,7 @@ class Fixture(unittest.TestCase):
         self.write(self.old, SESSION + ".jsonl", (
             other(0),
             request(10, "o1", 4, 0, 20000, 300, hour=20000, blocks=3),
-            other(400),  # a subagent returns after 398 s: the 1-hour cache is still there
+            other(400),  # a subagent returns 388 s after o1: the 1-hour cache is still there
             waited))
         self.write(self.new, SESSION + ".jsonl", (
             waited,  # the same request, in both files
@@ -110,21 +111,23 @@ class Fixture(unittest.TestCase):
         self.agent(self.old, "b2", "manager-plugin:reviewer", (
             other(500),
             request(510, "r1", 3, 0, 7000, 200, model="model-b"),
-            other(520),
-            request(530, "r2", 2, 7000, 500, 900, blocks=3, model="model-b")))
+            other(520),  # a tool result 10 s after r1: r2 is sent at once
+            # ... and thinks for 70 s before its first block ends: its own time, not a resume
+            request(590, "r2", 2, 7000, 500, 900, blocks=3, model="model-b")))
         self.agent(self.new, "a1", "manager-plugin:implementer", (
             other(1000),
             request(1005, "m1", 3, 0, 9000, 100, blocks=2),
-            other(1020),
-            request(1025, "m2", 2, 9000, 300, 50),  # 19 s later: not a resume
-            other(1220),
-            request(1225, "m3", 2, 9300, 200, 400),  # 200 s later, the context read: warm
-            other(1700),
-            request(1705, "m4", 4, 0, 9950, 60, blocks=2),  # 480 s later, written again: cold
+            other(1020),  # 14 s after m1: not a resume
+            request(1025, "m2", 2, 9000, 300, 50),
+            other(1220),  # 195 s after m2, and m3 reads the context: warm
+            request(1225, "m3", 2, 9300, 200, 400),
+            other(1700),  # 475 s after m3, and m4 writes it again: cold
+            request(1705, "m4", 4, 0, 9950, 60, blocks=2),
             request(1710, "m5", 2, 9950, 100, 5000),
             other(1800, kind="system", subtype="compact_boundary"),
-            request(1805, "m6", 2, 1000, 2000, 30),  # 95 s later, a smaller prompt: a compaction
-            request(1825, "m7", 2, 0, 3050, 40),  # nothing read, but 20 s later: not a resume
+            other(1801, isCompactSummary=True),  # 91 s after m5, but a compaction: not counted
+            request(1805, "m6", 2, 1000, 2000, 30),
+            request(1825, "m7", 2, 0, 3050, 40),  # nothing read, but nothing new started it
             request(1830, "e1", 0, 0, 0, 0, model="<synthetic>"),  # an error message
             other(1900)),
             junk=("not json\n", "\n", "[1, 2]\n", '"text"\n', '{"type": "assistant"\n',
@@ -254,39 +257,81 @@ class UsageTest(Fixture):
 
 
 class ResumeTest(Fixture):
-    """A resume: a request 60 s or more after the agent's previous one. Cold: under half of the
-    previous prompt read from the cache. A smaller prompt than before: a compaction, not counted."""
+    """A resume: a request sent 60 s or more after the agent's previous one ended, by the prompt
+    or tool result that started it. Cold: under half of the previous prompt read from the cache.
+    The first request after a compaction is not counted."""
 
     def resumes(self, *groups):
         path = self.write(self.tmp, "one.jsonl", groups)
         totals = usage.read([path])
         return totals["warm"], totals["cold"]
 
-    def test_the_gap_is_taken_from_the_previous_requests_last_record(self):
-        first = request(0, "p1", 0, 0, 10000, 10, blocks=3)  # its last record: at 2 s
-        self.assertEqual(self.resumes(first, request(61, "p2", 0, 10000, 10, 10)), (0, 0))
-        self.assertEqual(self.resumes(first, request(62, "p2", 0, 10000, 10, 10)), (1, 0))
-        self.assertEqual(self.resumes(first, request(61, "p2", 0, 0, 10010, 10)), (0, 0))
-        self.assertEqual(self.resumes(first, request(62, "p2", 0, 0, 10010, 10)), (0, 1))
+    def test_the_gap_runs_from_the_previous_requests_last_record_to_what_started_this_one(self):
+        first = other(0) + request(5, "p1", 0, 0, 10000, 10, blocks=3)  # its last record: at 7 s
+        warm, cold = request(70, "p2", 0, 10000, 10, 10), request(70, "p2", 0, 0, 10010, 10)
+        self.assertEqual(self.resumes(first, other(66), warm), (0, 0))
+        self.assertEqual(self.resumes(first, other(67), warm), (1, 0))
+        self.assertEqual(self.resumes(first, other(66), cold), (0, 0))
+        self.assertEqual(self.resumes(first, other(67), cold), (0, 1))
+        # Several tool results: the last one before the request started it.
+        self.assertEqual(self.resumes(first, other(8), other(67), warm), (1, 0))
+        self.assertEqual(self.resumes(first, other(8), warm, other(75)), (0, 0))
+
+    def test_a_requests_own_time_is_not_a_gap(self):
+        first = other(0) + request(5, "p1", 3, 0, 9000, 10)
+        slow = request(80, "p2", 0, 9000, 300, 10)  # its only record: 75 s after p1's
+        self.assertEqual(self.resumes(first, other(6), slow), (0, 0))  # sent at 6 s
+        self.assertEqual(self.resumes(first, other(6), request(80, "p2", 0, 0, 9300, 10)), (0, 0))
+        self.assertEqual(self.resumes(first, other(65), slow), (1, 0))
+        self.assertEqual(self.resumes(first, slow), (0, 0))  # no record of what started it
+        # A prompt or a tool result starts a request, no other record does.
+        self.assertEqual(self.resumes(first, other(6), other(70, kind="attachment"),
+                                      other(71, kind="system", subtype="stop_hook_summary"),
+                                      slow), (0, 0))
+        self.assertEqual(self.resumes(first, other(6), slow, other(85),
+                                      request(700, "p3", 0, 9300, 10, 10)), (0, 0))
 
     def test_cold_is_under_half_of_the_previous_prompt(self):
-        first = request(0, "p1", 0, 0, 10000, 10)
+        first = other(0) + request(5, "p1", 0, 0, 10000, 10)
         for cached, expected in ((10000, (1, 0)), (5000, (1, 0)), (4999, (0, 1)), (0, (0, 1))):
-            again = request(600, "p2", 10, cached, 10000 - cached, 10)
+            again = other(600) + request(605, "p2", 10, cached, 10000 - cached, 10)
             self.assertEqual(self.resumes(first, again), expected, cached)
-        grown = request(600, "p2", 0, 10000, 30000, 10)  # a long tool result: all read, more new
-        self.assertEqual(self.resumes(first, grown), (1, 0))
+        grown = request(605, "p2", 0, 10000, 30000, 10)  # a long tool result: all read, more new
+        self.assertEqual(self.resumes(first, other(600), grown), (1, 0))
 
-    def test_a_smaller_prompt_follows_a_compaction(self):
-        first = request(0, "p1", 0, 0, 10000, 10)
-        self.assertEqual(self.resumes(first, request(600, "p2", 0, 2000, 7999, 10)), (0, 0))
-        self.assertEqual(self.resumes(first, request(600, "p2", 0, 2000, 8000, 10)), (0, 1))
+    def test_a_smaller_prompt_is_not_a_compaction(self):
+        first = other(0) + request(5, "p1", 0, 0, 455000, 10)
+        again = other(80000) + request(80005, "p2", 0, 46000, 372000, 10)
+        self.assertEqual(self.resumes(first, again), (0, 1))
+        self.assertEqual(self.resumes(first, other(80000),
+                                      request(80005, "p2", 0, 400000, 18000, 10)), (1, 0))
+
+    def test_the_first_request_after_a_compaction_is_not_counted(self):
+        boundary = other(100, kind="system", subtype="compact_boundary")
+        first = other(0) + request(5, "p1", 0, 0, 10000, 10)
+        small = other(99, isCompactSummary=True) + request(105, "p2", 0, 1000, 2000, 10)
+        self.assertEqual(self.resumes(first, small), (0, 1))
+        self.assertEqual(self.resumes(first, boundary, small), (0, 0))
+        self.assertEqual(self.resumes(first, small, boundary), (0, 0))  # by time, not by line
+        later = other(700) + request(705, "p3", 0, 0, 3020, 10)  # counted: against p2's prompt
+        self.assertEqual(self.resumes(first, boundary, small, later), (0, 1))
+        # A compaction before the previous request, or after this one, hides nothing.
+        self.assertEqual(self.resumes(other(1, kind="system", subtype="compact_boundary"), first,
+                                      other(700), request(705, "p2", 0, 10000, 10, 10),
+                                      other(710, kind="system", subtype="compact_boundary")),
+                         (1, 0))
+        # Another `system` record is not a compaction.
+        self.assertEqual(self.resumes(first, other(100, kind="system", subtype="informational"),
+                                      small), (0, 1))
 
     def test_every_resume_of_an_agent_is_counted(self):
         self.assertEqual(self.resumes(
-            request(0, "p1", 0, 0, 10000, 10), request(100, "p2", 0, 10000, 10, 10),
-            request(500, "p3", 0, 0, 10020, 10), request(900, "p4", 0, 0, 10030, 10),
-            request(905, "p5", 0, 10030, 10, 10), request(1000, "p6", 0, 10040, 10, 10)), (2, 2))
+            other(0), request(1, "p1", 0, 0, 10000, 10),
+            other(100), request(101, "p2", 0, 10000, 10, 10),
+            other(500), request(501, "p3", 0, 0, 10020, 10),
+            other(900), request(901, "p4", 0, 0, 10030, 10),
+            other(905), request(906, "p5", 0, 10030, 10, 10),
+            other(1000), request(1001, "p6", 0, 10040, 10, 10)), (2, 2))
 
 
 if __name__ == "__main__":

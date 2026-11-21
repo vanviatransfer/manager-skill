@@ -20,11 +20,13 @@ those, in that order. Each line, with ` | ` between its fields:
   the API's default.
 - context at return: the last request's input + cache write + cache read + output, the figure the
   Agent tool reports as `subagent_tokens`.
-- warm resumes, cold resumes: requests that came 60 seconds or more after the agent's previous
-  one (a resume, a wait for a subagent or the owner, a long tool call). Cold: it read less than
-  half of the previous request's prompt from the cache, so the cache had expired and the context
-  was written again; warm otherwise. A request whose prompt is smaller than the previous one
-  follows a compaction and is not counted.
+- warm resumes, cold resumes: requests sent 60 seconds or more after the agent's previous one
+  ended (a resume, a wait for a subagent or the owner, a long tool call). A record is stamped
+  when its content block ends, so a request counts as sent at the prompt or tool result that
+  started it (the last `user` record before its first record), and its own time, thinking
+  included, is no gap. Cold: it read less than half of the previous request's prompt from the
+  cache, so the cache had expired and the context was written again; warm otherwise. The first
+  request after a compaction (a `compact_boundary` record between the two) is not counted.
 - seconds: from the transcript's first record to its last (a reviewer's: how long the review
   took; a resumed agent's includes the waits between its rounds).
 
@@ -42,6 +44,7 @@ written but the lines on standard output, and nothing is sent anywhere. Exit sta
 is missing (2 for a command line without a session id).
 """
 import argparse
+import bisect
 import datetime
 import glob
 import json
@@ -54,7 +57,7 @@ COLUMNS = ("agent", "role", "model", "requests", "input", "cache read", "cache w
            "seconds")
 FIELDS = ("model", "requests", "input", "read", "write_5m", "write_1h", "output", "context",
           "warm", "cold", "seconds")
-GAP = 60  # seconds after the previous request from which the next one counts as a resume
+GAP = 60  # seconds after the previous request's end from which the next one counts as a resume
 NAME = re.compile(r"[A-Za-z0-9_-]+")  # a session id, an agent id: never a path or a pattern
 
 
@@ -76,6 +79,7 @@ def read(paths):
     """The totals of one conversation's transcript files: a dict with the keys of FIELDS and
     `start`, the time of the first record (None: unknown), or None when no file can be read."""
     requests = {}  # message id -> [time of its first record, of its last, model, usage]
+    sent, compacted = [], []  # the times of the prompts and tool results, of the compactions
     start = end = None
     opened = False
     for path in paths:
@@ -93,8 +97,13 @@ def read(paths):
                     if at is not None:
                         start = at if start is None else min(start, at)
                         end = at if end is None else max(end, at)
-                    message = record.get("message")
-                    if record.get("type") != "assistant" or not isinstance(message, dict):
+                    kind, message = record.get("type"), record.get("message")
+                    if at is not None and kind == "user":
+                        sent.append(at)
+                    elif at is not None and kind == "system" \
+                            and record.get("subtype") == "compact_boundary":
+                        compacted.append(at)
+                    if kind != "assistant" or not isinstance(message, dict):
                         continue
                     key, usage, model = (message.get(k) for k in ("id", "usage", "model"))
                     if not isinstance(key, str) or not isinstance(usage, dict) \
@@ -114,6 +123,7 @@ def read(paths):
     total.update(model=None, context=None, start=start,
                  seconds=int(end - start) if timed else None,
                  warm=0 if timed else None, cold=0 if timed else None)
+    sent.sort()
     before = None  # the previous request: (time of its last record, its prompt's size)
     for first, last, model, usage in sorted(requests.values(),
                                             key=lambda r: (r[0] is None, r[0] or 0)):
@@ -130,9 +140,11 @@ def read(paths):
         total["output"] += output
         total["context"] = prompt + output
         total["model"] = model
-        if before and None not in (first, before[0]) and first - before[0] >= GAP \
-                and prompt >= before[1]:
-            total["cold" if cached * 2 < before[1] else "warm"] += 1
+        if before and None not in (first, before[0]):
+            asked = bisect.bisect_right(sent, first)  # what started it: the last one before it
+            if asked and sent[asked - 1] - before[0] >= GAP \
+                    and not any(before[0] < at <= first for at in compacted):
+                total["cold" if cached * 2 < before[1] else "warm"] += 1
         before = (last, prompt)
     return total
 

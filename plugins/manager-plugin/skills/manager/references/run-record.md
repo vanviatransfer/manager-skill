@@ -62,8 +62,8 @@ Agent tool returned it, or `orchestrator` for you.
   and every round's reviewer), so an interrupted run still leaves them.
 - Before each `summary:` line, in the same Bash call: `orchestrator`. Its line counts this
   session from its start, an earlier run or other work in it included.
-- An id you no longer hold (a compaction): leave it out and, before the `summary:` line, name no
-  agent instead: the script then prints `orchestrator` and every subagent of the session.
+- An id you no longer hold (a compaction): leave it out. Always name the agents: with none, the
+  script prints every subagent of the session, another run's and other work's included.
 
 A later line for the same agent replaces its earlier one (an implementer resumed after its
 phase's line, a run that continues). In a line, `agent` is that id or `orchestrator`, `role` the
