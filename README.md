@@ -370,9 +370,11 @@ claude plugin eval plugins/manager-plugin --ablation none --scaffold --no-publis
   off and scores the difference, which means nothing for a manager run.
 - `--scaffold`: lets the two manager cases build their repository (their `scaffold.sh` runs with
   bash and git on your machine).
-- `--allow-tools`: the tools beyond the read-only ones that a case may give the model; a case
-  gets only those its own `allowed_tools` names. Keep `Edit` and `Write` in: a tool that is not
-  granted is withheld from the model, and the graders on those two could then never fail.
+- `--allow-tools`: the operator's grant of tools beyond the read-only ones. Every tool named
+  here goes to every case; such a tool in a case's own `allowed_tools` takes effect only when it
+  is granted here, and a case's `disallowed_tools` keeps one out of that case. Keep `Edit` and
+  `Write` in: a tool that is not granted is withheld from the model, and the graders on those
+  two could then never fail.
 - `--no-publish`: the report stays on your machine.
 
 Pick cases with `--case <glob>` or `--tag <tag>` (`general-purpose-spawn`,
