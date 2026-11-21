@@ -682,3 +682,72 @@ printed whole. Each print cost some 1k tokens or more and brought the next compa
   JavaScript string length counts: a notes file full of characters outside the Basic Multilingual
   Plane could, under bash, come to more than 8,000 such units (still under 10,000 in total only
   while those are few).
+
+### 17. Skill map: check routing, lessons and triggers, query, a skills-first search block (plugin 0.9.5)
+
+A description trigger was dropped in two separate migration phases, and both times only review
+caught it; a skill's routing to its reference files was checked only by hand.
+
+- **`skilltrain.py check`** (marked worker skills only) now also checks the routing. A
+  `## Knowledge` routing is a bullet that starts with one path in backticks (the template's form,
+  now `` `<path>` — read when <...>``); a path that starts with `references/` is in the skill's
+  folder, any other is from the repository root. Every routed path must exist (a file or a
+  folder; `knowledge routing points at a missing file: <path>`), and every file under the
+  skill's `references/` needs a routing of its own (`references/<file> has no routing in ##
+  Knowledge ...`; a folder's routing doesn't cover its files; dot files and symlinks are left
+  out). A cited lesson id missing from `lessons.md` was already a problem; it has its own test
+  now. Exit codes unchanged: 0, 1 with one line per problem, 2 for a bad path.
+- **`check --triggers-from <ref>`.** Every quoted phrase (straight `"..."` or curly `“...”`; a
+  YAML double-quoted description's `\"` and a single-quoted one's `''` are unescaped first) in the
+  skill's description at the ref, and in the description of the folder `<name>-trainer` beside
+  it at the ref (the retired trainer), must still be in the current description (whitespace
+  collapsed, case kept). A dropped one is a problem that names the phrase and its source (`from
+  the skill's description` / `from the trainer's description`, with the ref and the path). Choices:
+  a ref that isn't a commit, a folder that isn't in a git repository, or no git → exit 2 with a
+  `--triggers-from: ...` line (an error: in Adopt the check is mandatory, so it must never pass
+  silently); a skill missing at the ref is new → a `note:` line, not a problem; a trainer missing
+  at the ref is skipped silently (most skills never had one). git is run read-only (`rev-parse`,
+  `ls-tree`, `cat-file`); a symlink at the ref counts as missing. Adopt mode runs `check <skill
+  dir> --triggers-from <base ref>` after marking a skill.
+- **`skilltrain.py query <repo root> <term>`.** One line per matching line of every marked
+  skill's `SKILL.md`, `references/` files, `lessons.md` (with the row's lesson id) and records file
+  (from its `Records:` path): `<skill>: <file>:<line>[ L<n>]: <text>`, case-insensitive, at most
+  50 lines, then `(cut: <n> more hits; use a longer term)`, as code-map's `query` caps its lists.
+  Exit 0 with hits, 1 with none (also with no marked skill), 2 for a bad path. It reads the files on
+  every call and writes nothing.
+- **No duplicate work.** Create and Adopt first look for a project tool that already maps or
+  checks its skills and use it; replacing it is an owner decision. The implementer brief says
+  "duplicate no existing project script or test" (paid for with shorter wording in the same
+  step and in step 1; 1,327 → 1,326 words), and `brief-skill-records.md` gives the skill-phase
+  detail (use it, or `NEEDS_OWNER_DECISION` to replace it; run `check`, with `--triggers-from` when
+  the phase marks or migrates a skill, and `rules-hint`).
+- **One instruction line.** "before searching skill files use `skilltrain.py query`; after
+  changing a skill run `skilltrain.py check`" is in the skill's SKILL.md, and `skilltrain.py
+  rules-hint <repo root>` (`--remove`) puts it in the project's rules once: a line ending with
+  `<!-- manager-plugin:self-training-skills -->`, updated in place where it already is
+  (`AGENTS.md` or `CLAUDE.md`; a second copy is dropped), else appended to `CLAUDE.md` (created
+  with a title if missing), and only when the repository has a marked skill. Not added to
+  code-map's block: that block is versioned against a template the code-map SKILL.md prints for
+  the no-Python case (at 19,999 of 20,000 characters), a conditional block would break the
+  version check, and a project with marked skills may have no code map at all.
+- **The manager runs it.** `self-training-due.md` runs `check` on each marked skill (with
+  `--triggers-from <the run's first Base SHA>` when a phase of the run changed it) and lists the
+  problems before the decision batch; `final-report.md` names that line.
+- **Skills first, a branch of the search hook.** Same hook, same fast path. A Grep, Glob or Bash
+  search whose path or file pattern (Grep's `glob`, find's `-name`/`-path`, rg's `-g`, grep's
+  `--include`) targets `.claude/skills/`, `SKILL.md`, `lessons.md`, a skill's `references/` or
+  the vault's `skills/<name>/records.md`, in a repository with a marked skill, is blocked once per
+  session (exit 2, one `manager-plugin: skills first:` line naming `<python>
+  "<plugin>/skills/self-training-skills/scripts/skilltrain.py" query "<repo root>" "<term>"`, the
+  term taken from the search pattern, else `<term>`); repeated, it is allowed. (The brief first
+  asked for a non-blocking `additionalContext` note; the owner changed it to block like the
+  code-map branch.) Its state is its own marker file, so it neither uses up nor gets the code-map
+  block, and a skill search gets only this branch. It needs no map: no `.codemap.json` → on; one,
+  map or not, with `"search_nudge": false` → off. No marked skill → silent.
+- **Ceilings.** Manager SKILL.md 17,986 and code-map SKILL.md 19,999: unchanged (no edit). The
+  self-training-skills SKILL.md went from 10,434 to 13,331 characters (no ceiling).
+- **Not verified.** [not measured] No live session has hit the skills-first block, so whether
+  sessions run the suggested `query` and whether the derived term helps is unknown. [not
+  measured] No real project's skills have been run through the new routing or trigger checks; an
+  existing skill whose `## Knowledge` bullets start with a backticked command or a placeholder
+  will now fail `check`. No eval was run.

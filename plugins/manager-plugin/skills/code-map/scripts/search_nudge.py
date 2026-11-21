@@ -17,10 +17,20 @@ repository root or a top-level directory (no path counts as the working director
 whose pattern reaches `**` from there. Paths two or more levels deep, files, the vault folder and
 the map pages are narrow. `grep` counts only with -r / -R; `rg`, `ag` and `ack` without a path
 after a pipe read stdin and don't count; `find -maxdepth 0|1` is a listing.
+
+The skills branch: a search whose path or file pattern targets skill files (`.claude/skills/`,
+`SKILL.md`, `lessons.md`, a skill's `references/` under `.claude/skills/`, the vault's
+`skills/<name>/records.md`) in a repository with at least one marked self-training skill is
+blocked once per session the same way, with its own state, and its line names the runnable
+`skilltrain.py query <repo root> <term>` command (the term taken from the search pattern). Such a
+search is handled only by this branch: it never uses up, or gets, the code map's block, and a
+code-map block doesn't use up this one. It needs no map: with no `.codemap.json` it is on; with
+one (map or not), `"search_nudge": false` turns it off. No marked skill: silent.
 """
 import json
 import os
 import posixpath
+import re
 import sys
 
 CONFIG = ".codemap.json"
@@ -57,6 +67,11 @@ OPTIONS = {
 OPTIONS["egrep"] = OPTIONS["fgrep"] = OPTIONS["grep"]
 INFO = {"--help", "--version", "-V"}
 PYTHONS = ("python3", "python", "py -3")  # as the sh wrapper tries them
+SKILL_FILES = ("SKILL.md", "lessons.md")
+# Options whose value is a file-name pattern: find's tests, rg's globs, grep's --include.
+NAME_TESTS = {"-name", "-iname", "-path", "-ipath", "-wholename", "-iwholename"}
+NAME_OPTIONS = {"-g", "--glob", "--iglob", "--include"}
+MAX_TERM = 60
 
 
 def is_drive(p):
@@ -445,6 +460,141 @@ def targets_of(data, cwd):
     return False, []
 
 
+def scan_skill_search(cmd):
+    """([file-name patterns], [search patterns]) of the search commands in a Bash command."""
+    names, patterns = [], []
+    for words, _ in simple_commands(cmd):
+        while words and (words[0] in PREFIXES or is_assignment(words[0])):
+            words = words[1:]
+        if not words:
+            continue
+        name, args = command_name(words[0]), words[1:]
+        if name == "find":
+            for k, a in enumerate(args[:-1]):
+                if a in NAME_TESTS:
+                    names.append(args[k + 1])
+                    patterns.append(args[k + 1])
+            continue
+        if name == "git" and "grep" in args:
+            name, args = "git grep", args[args.index("grep") + 1:]
+        if name not in OPTIONS:
+            continue
+        short, long_, pattern_opts = OPTIONS[name]
+        flags, values, operands = parse(args, short, long_)
+        for opt in NAME_OPTIONS:
+            if opt in values and values[opt]:
+                names.append(values[opt])
+        for opt in ("-e", "--regexp"):
+            if values.get(opt):
+                patterns.append(values[opt])
+        if not flags & pattern_opts and operands:
+            patterns.append(operands[0])
+    return names, patterns
+
+
+def skill_search(data, cwd):
+    """([(path, cwd, glob tool)], [file-name patterns], [search patterns]) of a hook input, for
+    the skills branch."""
+    tool, ti = data.get("tool_name"), data.get("tool_input")
+    if not isinstance(ti, dict):
+        return [], [], []
+    _, targets = targets_of(data, cwd)
+    names, patterns = [], []
+    if tool == "Grep":
+        if isinstance(ti.get("glob"), str):
+            names.append(ti["glob"])
+        if isinstance(ti.get("pattern"), str):
+            patterns.append(ti["pattern"])
+    elif tool == "Glob" and isinstance(ti.get("pattern"), str):
+        patterns.append(ti["pattern"].replace("\\", "/").rsplit("/", 1)[-1])
+    elif tool == "Bash" and isinstance(ti.get("command"), str):
+        names, patterns = scan_skill_search(ti["command"])
+    return targets, names, patterns
+
+
+def skill_parts(parts, vault):
+    """True if repository-relative path parts name skill files."""
+    clean = [p for p in parts if p not in ("**", "*")]
+    for i in range(len(clean) - 1):
+        if clean[i] == ".claude" and clean[i + 1] == "skills":
+            return True
+    if clean and clean[-1] in SKILL_FILES:
+        return True
+    if len(clean) >= 3 and clean[-3] == "skills" and clean[-1] == "records.md":
+        return True
+    v = [p for p in vault.split("/") if p and p != "."]
+    return bool(v) and clean[:len(v) + 1] == v + ["skills"]
+
+
+def targets_skills(targets, names, top, vault):
+    for path, cwd, _ in targets:
+        if "$" in path or path.startswith("~"):
+            continue
+        parts = rel_parts(path, cwd, top)
+        if parts is not None and skill_parts(parts, vault):
+            return True
+    for name in names:
+        n = name.replace("\\", "/")
+        if n.rsplit("/", 1)[-1] in SKILL_FILES or ".claude/skills" in n or \
+                re.search(r"(^|/)skills/[^/]+/records\.md$", n):
+            return True
+    return False
+
+
+def skill_term(patterns):
+    """A query term from the search's pattern: the pattern itself when it is plain text, else
+    its longest run of word characters (3 or more); None when there is none."""
+    for p in patterns:
+        p = p.strip()
+        if re.match(r"^[\w .-]{2,%d}$" % MAX_TERM, p) and p.strip("."):
+            return p
+        runs = sorted(re.findall(r"\w[\w-]{2,}", p), key=len, reverse=True)
+        if runs and len(runs[0]) <= MAX_TERM:
+            return runs[0]
+    return None
+
+
+def has_marked_skill(top):
+    here = os.path.dirname(os.path.abspath(__file__))
+    scripts = os.path.normpath(os.path.join(here, "..", "..", "self-training-skills", "scripts"))
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    import skilltrain
+    return bool(skilltrain.marked_skills(top))
+
+
+def skills_branch(data, cwd, top, key):
+    """The skills branch's answer (exit status) for a search that targets skill files."""
+    path = os.path.join(top, CONFIG)
+    vault = "docs/vault"
+    if os.path.isfile(path) and not os.path.islink(path) and os.path.getsize(path) <= 65536:
+        with open(path, "rb") as fh:
+            cfg = json.loads(fh.read().decode("utf-8"))
+        if isinstance(cfg, dict) and cfg.get("search_nudge") is False:
+            return 0
+        if isinstance(cfg, dict) and isinstance(cfg.get("vault"), str):
+            vault = cfg["vault"].strip("/")
+    targets, names, patterns = skill_search(data, cwd.replace("\\", "/"))
+    if not targets_skills(targets, names, top, vault):
+        return None
+    if not key or not has_marked_skill(top):
+        return 0
+    if not mark(key + "\0skills", (top, cwd, os.getcwd())):
+        return 0
+    cmd = plugin_command("self-training-skills", "skilltrain.py")
+    qtop = quote_path(top, os.name == "nt")
+    term = skill_term(patterns)
+    qterm = quote_path(term) if term else None
+    if cmd and qtop:
+        use = "%s query %s %s" % (cmd, qtop, qterm or "<term>")
+    else:
+        use = ("the `manager-plugin:self-training-skills` skill's `skilltrain.py query <repo "
+               "root> <term>`")
+    print("manager-plugin: skills first: run %s before searching skill files; if that doesn't "
+          "answer it, repeat the search and it will be allowed." % use, file=sys.stderr)
+    return 2
+
+
 def run(data):
     if not isinstance(data, dict):
         return 0
@@ -457,6 +607,9 @@ def run(data):
     top = find_top(cwd)
     if not top:
         return 0
+    skills = skills_branch(data, cwd, top, state_key(data, top))
+    if skills is not None:
+        return skills  # a search of skill files: the skills branch alone
     cfg = load_config(top)
     key = state_key(data, top)
     if not cfg or not key:
@@ -499,11 +652,16 @@ def map_command():
     """`<python> "<plugin>/skills/code-map/scripts/codemap.py"`, from the Python and the plugin
     folder the sh wrapper passes (CODEMAP_NUDGE_PYTHON, CODEMAP_NUDGE_ROOT), or None when either
     is missing or the script isn't there."""
+    return plugin_command("code-map", "codemap.py")
+
+
+def plugin_command(skill, name):
+    """`<python> "<plugin>/skills/<skill>/scripts/<name>"`, as map_command."""
     python = os.environ.get("CODEMAP_NUDGE_PYTHON")
     root = os.environ.get("CODEMAP_NUDGE_ROOT")
     if python not in PYTHONS or not root or not os.path.isabs(root):
         return None
-    script = os.path.normpath(os.path.join(root, "skills", "code-map", "scripts", "codemap.py"))
+    script = os.path.normpath(os.path.join(root, "skills", skill, "scripts", name))
     if not os.path.isfile(script):
         return None
     quoted = quote_path(script, os.name == "nt")

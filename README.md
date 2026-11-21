@@ -58,6 +58,12 @@ A Claude Code plugin with six skills:
     search, which is allowed; a `query` run first means no block. Narrow searches pass. Off:
     `"search_nudge": false` in `.codemap.json`. The state is a marker file in the OS temp
     folder, never in the repository.
+  - **Skills first (same hook).** In a repository with at least one marked self-training skill,
+    the first search of skill files in a session (`.claude/skills/`, `SKILL.md`, `lessons.md`, a
+    skill's `references/`, the vault's `skills/<name>/records.md`) is blocked once the same way,
+    with the exact `skilltrain.py query <repo root> <term>` command; repeated, it is allowed. Its
+    one-time state is its own, so it neither uses up nor gets the map-first block, and it needs
+    no code map (`"search_nudge": false` turns it off too).
   - **In the manager.** At the start of every run the manager checks that the default branch has
     the vault, the map and the current rules block. With no vault it asks once, in the
     model-strategy question, whether to set one up (yes / not this time / never in this repo); with
@@ -75,8 +81,11 @@ A Claude Code plugin with six skills:
   become records too. On request it trains a skill from that evidence: it measures the records,
   proposes at most three changes, and lands the owner's choice through a reviewed PR.
   A skill can never override the project rules, the plan or the manager's review and owner-authority
-  rules. Its `skilltrain.py` (standard-library Python) checks the files and tells the manager which
-  skills are due for training.
+  rules. Its `skilltrain.py` (standard-library Python) checks the files (shape, routing of every
+  `references/` file from `## Knowledge`, cited lesson ids, and with `--triggers-from <ref>` the
+  description's quoted trigger phrases, including a retired trainer's), finds a term in every
+  skill's files (`query`), writes one instruction line into `CLAUDE.md` (`rules-hint`), and tells
+  the manager which skills are due for training and which fail their check.
 
 ## Learning from runs
 
@@ -276,8 +285,8 @@ one exception that comes from git: to see what `git add` would store for a rebui
 check has git run that page's clean filter, and a filter that stores what it cleans (git-lfs,
 when the map pages are LFS-tracked) then adds the page's object under `.git/lfs/objects`, the
 one that `git add` stores anyway; nothing else is written. A third, on Grep, Glob and
-Bash, is the code-map "map first" nudge above: it does nothing in a repository without a code map,
-and fails open the same way. A `SessionStart` hook (startup, resume, clear) reads the repository's
+Bash, is the code-map "map first" nudge above, with its "skills first" branch: it does nothing in
+a repository without a code map or a marked self-training skill, and fails open the same way. A `SessionStart` hook (startup, resume, clear) reads the repository's
 `AGENTS.md` and `CLAUDE.md` and, when their code-map rules block is older than the plugin's
 template, adds one line of information to the session's context (the `rules-hint` command that
 updates the block, and that a manager run does this in its setup PR); otherwise it prints

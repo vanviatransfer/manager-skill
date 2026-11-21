@@ -2,12 +2,20 @@
 """skilltrain: check and measure a project's self-training skills.
 
 Usage:
-  skilltrain.py check SKILL_DIR [--root DIR]   exit 0 if the skill is well formed,
-                                               1 with one line per problem, 2 for a bad path
+  skilltrain.py check SKILL_DIR [--root DIR] [--triggers-from REF]
+                                               exit 0 if the skill is well formed, 1 with one
+                                               line per problem, 2 for a bad path (or a REF
+                                               that isn't a commit, or no git)
   skilltrain.py stats SKILL_DIR [--root DIR]   records, outcomes and tags since the last
                                                training, and whether training is due
   skilltrain.py due REPO_ROOT                  one line per marked skill under .claude/skills/:
                                                its training-due state
+  skilltrain.py query REPO_ROOT TERM           one line per line of a marked skill's files
+                                               holding TERM (case-insensitive): exit 0 with
+                                               hits, 1 with none, 2 for a bad path
+  skilltrain.py rules-hint REPO_ROOT [--remove]
+                                               the one-line instruction in CLAUDE.md (or where
+                                               it already is): exit 0, 2 when refused
 
 A worker skill is SKILL.md with the marker <!-- self-training-skill v1 --> right after its
 frontmatter, lessons.md beside it, and the records file its "## Record" section names. A SKILL.md
@@ -19,18 +27,32 @@ further down, is reported.
 SKILL_DIR is normally <repo>/.claude/skills/<name>; the repository root is then three folders up,
 or --root gives it. Paths in the files are relative to the repository root.
 
+check also holds the skill's knowledge routing to its files: every file under the skill's
+references/ needs a "## Knowledge" bullet that starts with its path in backticks
+(`references/<file>` — read when ...), and every such bullet's path must exist (a path that
+starts with references/ is in the skill's folder, any other is from the repository root). Every
+lesson id a rule cites must be in lessons.md. With --triggers-from REF, every quoted phrase
+("..." or “...”) of the skill's description at REF, and of the description of the folder
+<name>-trainer beside it at REF (the retired trainer), must still be in the current
+description. A skill missing at REF is new: a note, not a problem; a trainer missing at REF is
+skipped silently.
+
+query and rules-hint read the marked skills the same way; query writes nothing, rules-hint
+writes only CLAUDE.md or AGENTS.md.
+
 "Since the last training" means the record rows after the count its last changelog entry gives
 as `records: <n>`, or, for an entry without one, the rows dated strictly after its date.
 
-Only the Python standard library is used (Python 3.8+). Nothing is executed and nothing is sent
-anywhere. Nothing is read through a symlink (on Windows also a junction, with Python 3.12+).
-CRLF files are accepted.
+Only the Python standard library is used (Python 3.8+). Nothing is executed but git (read-only,
+for --triggers-from) and nothing is sent anywhere. Nothing is read through a symlink (on Windows
+also a junction, with Python 3.12+). CRLF files are accepted.
 """
 import argparse
 import datetime
 import os
 import posixpath
 import re
+import subprocess
 import sys
 
 MARKER = "<!-- self-training-skill v1 -->"
@@ -61,6 +83,15 @@ LESSON_CITE = re.compile(r"\((L\d+(?:,\s*L\d+)*)\)\s*$")
 OWNER_CITE = re.compile(r"\(owner: \".+\", " + DATE + r"\)\s*$")
 PATH_LINE = re.compile(r"^(Records):\s*`([^`]+)`")
 CELL_SPLIT = re.compile(r"(?<!\\)\|")
+# A ## Knowledge routing: a bullet that starts with a path in backticks.
+ROUTE = re.compile(r"^`([^`]+)`")
+QUOTED = re.compile(r'"([^"\n]+)"|\u201c([^\u201d\n]+)\u201d')
+MAX_HITS = 50
+MAX_SNIPPET = 100
+RULES_MARK = "<!-- manager-plugin:self-training-skills -->"
+RULES_LINE = ("- before searching skill files use `skilltrain.py query`; after changing a skill "
+              "run `skilltrain.py check` " + RULES_MARK)
+RULES_TITLE = "# Project instructions"
 
 
 NEAR_MISS = ("the marker doesn't match: the line right after the frontmatter must be exactly %s"
@@ -139,13 +170,21 @@ def split_frontmatter(text):
                 elif more:  # a plain scalar continued on indented lines
                     val = " ".join([val] + [ln for ln in more if ln])
                 if len(val) >= 2 and val[0] == val[-1] and val[0] in "\"'":
-                    val = val[1:-1]
+                    val = unquote(val)
                 meta[m.group(1)] = val
             body = lines[i + 1:]
             if body and body[-1] == "":
                 body = body[:-1]
             return meta, body
     return None, lines
+
+
+def unquote(val):
+    """A YAML quoted scalar's text: \\" and \\\\ (and \\n, \\t) in double quotes, '' in single."""
+    if val[0] == "'":
+        return val[1:-1].replace("''", "'")
+    return re.sub(r"\\(.)", lambda m: {"n": "\n", "t": "\t"}.get(m.group(1), m.group(1)),
+                  val[1:-1])
 
 
 def marker_kind(body):
@@ -427,6 +466,130 @@ def check_worker(sk):
                            % (counts[-1][0], counts[-1][1], len(rows)))
 
 
+def reference_files(sk):
+    """The repository-relative paths of the plain files under the skill's references/ (dot
+    files and symlinks left out)."""
+    base = sk.rel_dir + "/references"
+    top = os.path.join(sk.root, *base.split("/"))
+    if link_in_path(sk.root, base) or not os.path.isdir(top):
+        return []
+    out = []
+    for folder, dirs, files in os.walk(top):
+        dirs[:] = sorted(d for d in dirs if not d.startswith(".")
+                         and not is_link(os.path.join(folder, d)))
+        for f in sorted(files):
+            if f.startswith(".") or is_link(os.path.join(folder, f)):
+                continue
+            rel = os.path.relpath(os.path.join(folder, f), sk.root).replace(os.sep, "/")
+            out.append(rel)
+    return out
+
+
+def routings(sk):
+    """[(path as written, repository-relative path or None)] of the ## Knowledge bullets that
+    start with a path in backticks. A path starting with references/ is in the skill's folder;
+    any other is from the repository root; a #anchor is dropped."""
+    items, _ = bullets(section(sk.secs, "Knowledge") or [])
+    out = []
+    for b in items:
+        m = ROUTE.match(b)
+        if not m:
+            continue
+        written = m.group(1).strip()
+        path = written.split("#", 1)[0].strip()
+        if path.startswith("./"):
+            path = path[2:]
+        if path.startswith("references/"):
+            path = sk.rel_dir + "/" + path
+        out.append((written, safe_rel(path) if path else None))
+    return out
+
+
+def check_routing(sk):
+    routed = set()
+    for written, rel in routings(sk):
+        if rel is None:
+            sk.problems.append("knowledge routing points outside the repository: %s" % written)
+            continue
+        routed.add(rel)
+        if link_in_path(sk.root, rel):
+            sk.problems.append("knowledge routing %s is, or lies under, a symlink" % written)
+        elif not os.path.exists(os.path.join(sk.root, *rel.split("/"))):
+            sk.problems.append("knowledge routing points at a missing file: %s" % written)
+    prefix = sk.rel_dir + "/"
+    for rel in reference_files(sk):
+        if rel not in routed:
+            short = rel[len(prefix):]
+            sk.problems.append("%s has no routing in ## Knowledge (a bullet \"- `%s` — read "
+                               "when ...\")" % (short, short))
+
+
+def quoted(text):
+    """The quoted phrases ("..." or \u201c...\u201d) of a text, whitespace collapsed."""
+    out = []
+    for a, b in QUOTED.findall(text or ""):
+        phrase = " ".join((a or b).split())
+        if phrase and phrase not in out:
+            out.append(phrase)
+    return out
+
+
+def git(root, *args):
+    try:
+        return subprocess.run(["git", "-C", root] + list(args), stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, stdin=subprocess.DEVNULL)
+    except OSError:
+        raise PathError("--triggers-from needs git, and git can't be run")
+
+
+def resolve_ref(root, ref):
+    """The commit SHA of REF in the repository at root. Raises PathError."""
+    if not ref or ref.startswith("-") or any(ord(c) < 32 for c in ref):
+        raise PathError("--triggers-from: not a git ref: %r" % ref)
+    if git(root, "rev-parse", "--git-dir").returncode != 0:
+        raise PathError("--triggers-from: %s is not in a git repository" % root)
+    p = git(root, "rev-parse", "--verify", "--quiet", ref + "^{commit}")
+    sha = p.stdout.decode("ascii", "replace").strip()
+    if p.returncode != 0 or not sha:
+        raise PathError("--triggers-from: no commit %s in %s (fetch it first?)" % (ref, root))
+    return sha
+
+
+def file_at(root, sha, rel):
+    """The text of a plain file at a commit, or None when it isn't there (or is a symlink)."""
+    p = git(root, "ls-tree", "-z", sha, "--", rel)
+    entry = p.stdout.split(b"\0")[0] if p.returncode == 0 else b""
+    if not entry.startswith((b"100644 blob ", b"100755 blob ")):
+        return None
+    p = git(root, "cat-file", "blob", "%s:./%s" % (sha, rel))
+    if p.returncode != 0 or len(p.stdout) > MAX_BYTES:
+        return None
+    text = p.stdout.replace(b"\r\n", b"\n").decode("utf-8", "replace")
+    return text[1:] if text.startswith("\ufeff") else text
+
+
+def check_triggers(sk, ref, sha, notes):
+    """Every quoted phrase of the skill's and its retired trainer's description at the commit
+    must still be in the current description."""
+    current = " ".join((sk.meta or {}).get("description", "").split())
+    name = posixpath.basename(sk.rel_dir)
+    parent = posixpath.dirname(sk.rel_dir)
+    trainer = (parent + "/" if parent else "") + name + "-trainer"
+    for source, rel in (("skill", sk.rel_dir), ("trainer", trainer)):
+        text = file_at(sk.root, sha, rel + "/SKILL.md")
+        if text is None:
+            if source == "skill":
+                notes.append("note: %s/SKILL.md is not in %s: a new skill, no triggers to keep"
+                             % (rel, ref))
+            continue
+        meta = split_frontmatter(text)[0] or {}
+        for phrase in quoted(meta.get("description")):
+            if phrase not in current:
+                sk.problems.append("description dropped the trigger \"%s\" (from the %s's "
+                                   "description at %s: %s/SKILL.md)"
+                                   % (phrase, source, ref, rel))
+
+
 def resolve(skill_dir, root_arg):
     """(root, skill rel dir). Raises PathError."""
     full = os.path.abspath(skill_dir)
@@ -459,17 +622,24 @@ def load(root, rel):
         raise PathError(str(exc))
 
 
-def run_check(root, rel):
+def run_check(root, rel, triggers_from=None):
+    sha = resolve_ref(root, triggers_from) if triggers_from is not None else None
     sk = load(root, rel)
     if sk.kind is None:
         print("not a self-training skill")
         return 0
+    notes = []
     if sk.kind == "near-miss":
         sk.problems.append(NEAR_MISS)
     elif sk.kind == "trainer":
         sk.problems.append(RETIRED)
     else:
         check_worker(sk)
+        check_routing(sk)
+        if sha:
+            check_triggers(sk, triggers_from, sha, notes)
+    for n in notes:
+        print(n)
     for p in sk.problems:
         print("%s: %s" % (rel, p))
     if not sk.problems:
@@ -620,25 +790,206 @@ def run_due(root):
     return 0
 
 
+def marked_skills(root):
+    """[(name, rel dir)] of the marked worker skills under .claude/skills/ (sorted); [] when
+    there is none or the folder is, or lies under, a symlink."""
+    base = ".claude/skills"
+    folder = os.path.join(root, ".claude", "skills")
+    if link_in_path(root, base) or not os.path.isdir(folder):
+        return []
+    out = []
+    for name in sorted(os.listdir(folder)):
+        rel = base + "/" + name
+        if link_in_path(root, rel + "/SKILL.md") or \
+                not os.path.isfile(os.path.join(folder, name, "SKILL.md")):
+            continue
+        try:
+            text = read_rel(root, rel + "/SKILL.md")
+        except ValueError:
+            continue
+        if marker_kind(split_frontmatter(text)[1]) == "skill":
+            out.append((name, rel))
+    return out
+
+
+def snippet(line, needle):
+    """The line, stripped, control characters replaced, cut around the first match."""
+    text = re.sub(r"[\x00-\x1f\x7f]", "?", line.strip())
+    at = text.lower().find(needle)
+    if len(text) <= MAX_SNIPPET:
+        return text
+    start = max(0, min(at - MAX_SNIPPET // 3, len(text) - MAX_SNIPPET))
+    return ("..." if start else "") + text[start:start + MAX_SNIPPET] + \
+        ("..." if start + MAX_SNIPPET < len(text) else "")
+
+
+def query_files(sk):
+    """[(label, repository-relative path)] of a skill's files: SKILL.md, references/...,
+    lessons.md and its records file (labelled from the skill's folder when inside it)."""
+    prefix = sk.rel_dir + "/"
+    files = [("SKILL.md", prefix + "SKILL.md")]
+    files += [(rel[len(prefix):], rel) for rel in reference_files(sk)]
+    files.append(("lessons.md", prefix + "lessons.md"))
+    path = section_paths(section(sk.secs, "Record") or []).get("Records")
+    rel = safe_rel(path) if path else None
+    if rel and rel not in (f[1] for f in files):
+        files.append((rel[len(prefix):] if rel.startswith(prefix) else rel, rel))
+    return files
+
+
+def run_query(root, term):
+    if link_in_path(root, ".claude/skills"):
+        print("error: .claude/skills is, or lies under, a symlink; refused", file=sys.stderr)
+        return 2
+    needle = term.lower()
+    skills = marked_skills(root)
+    hits = []
+    for name, rel in skills:
+        try:
+            sk = Skill(root, rel)
+        except ValueError:
+            continue
+        for label, frel in query_files(sk):
+            try:
+                text = read_rel(root, frel)
+            except ValueError:
+                continue
+            is_lessons = frel == rel + "/lessons.md"
+            for n, line in enumerate(text.split("\n"), 1):
+                at = line.lower().find(needle)
+                if at < 0:
+                    continue
+                lid = ""
+                if is_lessons:
+                    row = cells(line)
+                    if row and re.match(r"^L\d+$", row[0]):
+                        lid = " " + row[0]
+                hits.append("%s: %s:%d%s: %s" % (name, label, n, lid, snippet(line, needle)))
+    if not skills:
+        print("no self-training skills")
+        return 1
+    if not hits:
+        print("no hits for %s in %d marked skill%s" % (term, len(skills),
+                                                       "" if len(skills) == 1 else "s"))
+        return 1
+    for h in hits[:MAX_HITS]:
+        print(h)
+    if len(hits) > MAX_HITS:
+        print("(cut: %d more hits; use a longer term)" % (len(hits) - MAX_HITS))
+    return 0
+
+
+def rules_update(text, line, remove):
+    """New text with every rules-mark line dropped, then (unless remove) RULES_LINE at the
+    first one's place, or appended (a blank line before it) when there was none and line is
+    True. Line endings are kept."""
+    eol = "\r\n" if "\r\n" in (text or "") else "\n"
+    lines = (text or "").splitlines(True)
+    marks = [i for i, ln in enumerate(lines) if RULES_MARK in ln]
+    if marks:
+        first = marks[0]
+        out = []
+        for i, ln in enumerate(lines):
+            if i in marks:
+                if i == first and not remove:
+                    out.append(RULES_LINE + (eol if ln.endswith("\n") else ""))
+                continue
+            out.append(ln)
+        if remove and out and not out[-1].strip() and first >= len(lines) - 1:
+            out.pop()  # the blank line added before an appended line
+            if out:
+                out[-1] = out[-1] if out[-1].endswith("\n") else out[-1] + eol
+        return "".join(out)
+    if remove or not line:
+        return text
+    if text is None:
+        return RULES_TITLE + eol + eol + RULES_LINE + eol
+    if text and not text.endswith("\n"):
+        text += eol
+    return text + (eol if text else "") + RULES_LINE + eol
+
+
+def run_rules_hint(root, remove=False):
+    """The one-line instruction: updated in place in AGENTS.md or CLAUDE.md where it is (a
+    second copy dropped), else appended to CLAUDE.md (created if missing), only when the
+    repository has marked skills. --remove drops it from both."""
+    texts = {}
+    for name in ("AGENTS.md", "CLAUDE.md"):
+        path = os.path.join(root, name)
+        if is_link(path) or os.path.isdir(path):
+            print("error: %s is a symlink or a folder; refused" % name, file=sys.stderr)
+            return 2
+        texts[name] = None
+        if os.path.lexists(path):
+            with open(path, "rb") as fh:
+                raw = fh.read()
+            try:
+                texts[name] = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                print("error: %s is not UTF-8; add the line by hand" % name, file=sys.stderr)
+                return 2
+    holders = [n for n in texts if texts[n] and RULES_MARK in texts[n]]
+    if not holders and not remove and not marked_skills(root):
+        print("no self-training skills: nothing written")
+        return 0
+    new = {}
+    for name in texts:
+        if remove or holders:
+            keep = not remove and name == holders[0]
+            stripped = rules_update(texts[name], False, True) if not keep else \
+                rules_update(texts[name], True, False)
+            new[name] = stripped
+        else:
+            new[name] = rules_update(texts[name], name == "CLAUDE.md", False)
+    for name in texts:
+        old = texts[name]
+        if new[name] == old:
+            print("%s: unchanged" % name)
+            continue
+        with open(os.path.join(root, name), "wb") as fh:
+            fh.write(new[name].encode("utf-8"))
+        print("%s: %s" % (name, "created" if old is None else
+                          "line removed" if RULES_MARK not in new[name] else "line written"))
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="skilltrain.py", description="Self-training skills.")
-    ap.add_argument("action", choices=["check", "stats", "due"])
-    ap.add_argument("path", help="check/stats: the skill folder; due: the repository root")
+    ap.add_argument("action", choices=["check", "stats", "due", "query", "rules-hint"])
+    ap.add_argument("path", help="check/stats: the skill folder; due, query, rules-hint: the "
+                    "repository root")
+    ap.add_argument("term", nargs="?", help="query: the term to find")
     ap.add_argument("--root", help="check/stats: the repository root (default: three folders up)")
+    ap.add_argument("--triggers-from", metavar="REF",
+                    help="check: the quoted trigger phrases of the description at this git ref "
+                    "(the skill's and its retired <name>-trainer's) must still be in it")
+    ap.add_argument("--remove", action="store_true", help="rules-hint: remove the line")
     args = ap.parse_args(argv)
+    if (args.term is not None) != (args.action == "query"):
+        ap.error("query takes one TERM; the other actions take none")
+    if args.triggers_from is not None and args.action != "check":
+        ap.error("--triggers-from is for check")
+    if args.remove and args.action != "rules-hint":
+        ap.error("--remove is for rules-hint")
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(errors="backslashreplace")
         except AttributeError:
             pass
     try:
-        if args.action == "due":
+        if args.action in ("due", "query", "rules-hint"):
             root = os.path.abspath(args.path)
             if not os.path.isdir(root):
                 raise PathError("no such directory: %s" % args.path)
+            if args.action == "query":
+                return run_query(root, args.term)
+            if args.action == "rules-hint":
+                return run_rules_hint(root, args.remove)
             return run_due(root)
         root, rel = resolve(args.path, args.root)
-        return (run_check if args.action == "check" else run_stats)(root, rel)
+        if args.action == "check":
+            return run_check(root, rel, args.triggers_from)
+        return run_stats(root, rel)
     except PathError as exc:
         print("error: %s" % exc, file=sys.stderr)
         return 2

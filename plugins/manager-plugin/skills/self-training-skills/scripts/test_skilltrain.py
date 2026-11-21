@@ -5,6 +5,8 @@ import os
 import sys
 import tempfile
 import re
+import shutil
+import subprocess
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -128,6 +130,7 @@ class SkilltrainTest(unittest.TestCase):
         self.write(".claude/skills/release-notes/SKILL.md", SKILL)
         self.write(".claude/skills/release-notes/lessons.md", LESSONS)
         self.write("docs/vault/skills/release-notes/records.md", RECORDS)
+        self.write("docs/vault/releases.md", "# Releases\n")
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -165,7 +168,8 @@ class SkilltrainTest(unittest.TestCase):
         records = "docs/vault/skills/sample/records.md"
         self.write(".claude/skills/sample/SKILL.md", from_template("skill-template.md", [
             ("<name>", "sample"), ("<YYYY-MM-DD>", "2026-11-01"), ("<seed lesson ids>", "L1"),
-            ("<records path, relative to the repository root>", records)]))
+            ("<records path, relative to the repository root>", records),
+            ("<vault page, project path or references/<file>>", "docs/vault/releases.md")]))
         self.write(".claude/skills/sample/lessons.md", LESSONS.replace("| L3 |", "| L4 |"))
         self.write(records, RECORDS)
         sample = os.path.join(self.root, ".claude", "skills", "sample")
@@ -471,6 +475,182 @@ class SkilltrainTest(unittest.TestCase):
                          "release-notes-trainer: %s\n" % retired)
         self.assertNotIn("[trainer:", out)
         self.assertEqual(run("check", self.dir)[0], 0)
+
+    def test_reference_without_routing(self):
+        self.write(".claude/skills/release-notes/references/style.md", "# Style\n")
+        self.check_fails("references/style.md has no routing in ## Knowledge (a bullet "
+                         "\"- `references/style.md` — read when ...\")")
+        self.edit("- `docs/vault/releases.md`\n", "- `docs/vault/releases.md`\n"
+                  "- `references/style.md` — read when wording a heading\n")
+        code, out = run("check", self.dir)
+        self.assertEqual(code, 0, out)
+        self.edit("- `docs/vault/releases.md`\n", "- `docs/vault/releases.md`\n"
+                  "- `.claude/skills/release-notes/references/style.md` — read when x\n")
+        self.assertEqual(run("check", self.dir)[0], 0, "a repository-root path counts too")
+        self.edit("- `docs/vault/releases.md`\n", "- `docs/vault/releases.md`\n"
+                  "- `references/` — read when x\n")
+        self.check_fails("references/style.md has no routing")
+
+    def test_broken_routing_path(self):
+        self.edit("- `docs/vault/releases.md`\n", "- `docs/vault/releases.md`\n"
+                  "- `references/gone.md` — read when x\n"
+                  "- `docs/vault/old.md#intro` — read when y\n"
+                  "- prose without a path is no routing\n")
+        code, out = run("check", self.dir)
+        self.assertEqual(code, 1, out)
+        self.assertIn("knowledge routing points at a missing file: references/gone.md", out)
+        self.assertIn("knowledge routing points at a missing file: docs/vault/old.md#intro", out)
+        self.assertEqual(out.count("knowledge routing"), 2, out)
+        self.edit("- `docs/vault/releases.md`\n", "- `../elsewhere.md` — read when x\n")
+        self.check_fails("knowledge routing points outside the repository: ../elsewhere.md")
+
+    def test_missing_lesson_id(self):
+        self.edit("- Lead with user-visible changes. (L1)", "- Lead with user-visible changes. (L7)")
+        self.check_fails("rule cites L7, which lessons.md lacks")
+
+    def git(self, *args):
+        subprocess.run(["git", "-C", self.root, "-c", "user.name=t", "-c", "user.email=t@t",
+                        "-c", "commit.gpgsign=false"] + list(args), check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def commit_all(self):
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "x")
+
+    def init_git(self):
+        if not shutil.which("git"):
+            self.skipTest("no git")
+        self.git("init", "-q")
+
+    def test_dropped_trigger_from_the_skill(self):
+        self.init_git()
+        quoted = ('description: "Write the release notes. Use for \\"sürüm notu\\", '
+                  '\u201crelease notes\u201d or \\"changelog\\"."\n')
+        self.edit("description: Write the release notes for a tagged release. Not for changelogs "
+                  "of single PRs.\n", quoted)
+        self.commit_all()
+        code, out = run("check", self.dir, "--triggers-from", "HEAD")
+        self.assertEqual(code, 0, out)
+        self.edit("description: Write the release notes for a tagged release. Not for changelogs "
+                  "of single PRs.\n", 'description: Write the release notes. Use for '
+                  '"sürüm notu" or "release notes".\n')
+        code, out = run("check", self.dir, "--triggers-from", "HEAD")
+        self.assertEqual(code, 1, out)
+        self.assertEqual(out, ".claude/skills/release-notes: description dropped the trigger "
+                         "\"changelog\" (from the skill's description at HEAD: "
+                         ".claude/skills/release-notes/SKILL.md)\n")
+
+    def test_dropped_trigger_from_the_retired_trainer(self):
+        self.init_git()
+        self.write(".claude/skills/release-notes-trainer/SKILL.md", TRAINER)
+        self.commit_all()
+        shutil.rmtree(os.path.join(self.root, ".claude", "skills", "release-notes-trainer"))
+        code, out = run("check", self.dir, "--triggers-from", "HEAD")
+        self.assertEqual(code, 1, out)
+        for phrase in ("kaydet", "iyi oldu", "kötü oldu", "hangisi daha iyi"):
+            self.assertIn("description dropped the trigger \"%s\" (from the trainer's description "
+                          "at HEAD: .claude/skills/release-notes-trainer/SKILL.md)" % phrase, out)
+        self.edit("Not for changelogs of single PRs.", 'Use for "kaydet", "iyi oldu", '
+                  '"kötü oldu" or "hangisi daha iyi".')
+        code, out = run("check", self.dir, "--triggers-from", "HEAD")
+        self.assertEqual(code, 0, out)
+
+    def test_triggers_from_a_new_skill_or_a_bad_ref(self):
+        self.init_git()
+        self.write("README.md", "x\n")
+        self.git("add", "README.md")
+        self.git("commit", "-q", "-m", "x")
+        code, out = run("check", self.dir, "--triggers-from", "HEAD")
+        self.assertEqual(code, 0, out)
+        self.assertIn("note: .claude/skills/release-notes/SKILL.md is not in HEAD: a new skill, "
+                      "no triggers to keep\n", out)
+        code, out = run("check", self.dir, "--triggers-from", "no-such-branch")
+        self.assertEqual(code, 2, out)
+        self.assertIn("--triggers-from: no commit no-such-branch in", out)
+        self.assertEqual(run("check", self.dir, "--triggers-from=-x")[0], 2)
+
+    def test_triggers_from_outside_git(self):
+        if not shutil.which("git"):
+            self.skipTest("no git")
+        code, out = run("check", self.dir, "--triggers-from", "HEAD")
+        if "is not in a git repository" not in out:
+            self.skipTest("the temp folder lies inside a git repository")
+        self.assertEqual(code, 2, out)
+
+    def test_query(self):
+        self.rows(("2026-11-02", "phase P1", "pending-review", "breaking", "migration=yes"))
+        self.write(".claude/skills/release-notes/references/style.md", "Breaking first.\n")
+        self.write(".claude/skills/plain/SKILL.md", "---\nname: plain\ndescription: breaking\n"
+                   "---\nbreaking\n")
+        code, out = run("query", self.root, "Breaking")
+        self.assertEqual(code, 0, out)
+        lines = out.splitlines()
+        self.assertIn("release-notes: SKILL.md:24: - Name breaking changes first, with the", lines)
+        self.assertIn("release-notes: references/style.md:1: Breaking first.", lines)
+        self.assertIn("release-notes: lessons.md:6 L2: | L2 | Breaking changes need a migration "
+                      "step. | sourced | project rules | active |", lines)
+        self.assertIn("release-notes: lessons.md:7 L3: | L3 | Breaking changes go first. | "
+                      "hypothesis | none yet | active |", lines)
+        self.assertIn("release-notes: docs/vault/skills/release-notes/records.md:5: | 2026-11-02 "
+                      "| phase P1 | pending-review | breaking | migration=yes |", lines)
+        self.assertFalse([ln for ln in lines if ln.startswith("plain:")], "unmarked: not searched")
+        code, out = run("query", self.root, "nowhere-to-be-found")
+        self.assertEqual((code, out), (1, "no hits for nowhere-to-be-found in 1 marked skill\n"))
+        empty = os.path.join(self.root, "empty")
+        os.makedirs(empty)
+        self.assertEqual(run("query", empty, "x"), (1, "no self-training skills\n"))
+        self.assertEqual(run("query", os.path.join(self.root, "nope"), "x")[0], 2)
+
+    def test_query_output_is_capped(self):
+        self.write(".claude/skills/release-notes/references/long.md", "needle\n" * 70)
+        code, out = run("query", self.root, "needle")
+        self.assertEqual(code, 0, out)
+        lines = out.splitlines()
+        self.assertEqual(len(lines), 51)
+        self.assertEqual(lines[-1], "(cut: 20 more hits; use a longer term)")
+        self.write(".claude/skills/release-notes/references/long.md", "x" * 300 + "needle\n")
+        line = run("query", self.root, "needle")[1].splitlines()[0]
+        self.assertLess(len(line), 160)
+        self.assertIn("needle", line)
+
+    def test_rules_hint_is_idempotent(self):
+        line = skilltrain.RULES_LINE
+        self.assertEqual(run("rules-hint", self.root), (0, "AGENTS.md: unchanged\n"
+                                                         "CLAUDE.md: created\n"))
+        claude = os.path.join(self.root, "CLAUDE.md")
+        with open(claude, encoding="utf-8") as fh:
+            self.assertEqual(fh.read(), "# Project instructions\n\n%s\n" % line)
+        self.assertEqual(run("rules-hint", self.root)[1], "AGENTS.md: unchanged\n"
+                         "CLAUDE.md: unchanged\n")
+        os.remove(claude)
+        self.write("AGENTS.md", "# Agents\n\n- old wording %s\n" % skilltrain.RULES_MARK)
+        self.write("CLAUDE.md", "# Rules\n\n@AGENTS.md\n")
+        self.assertEqual(run("rules-hint", self.root)[1], "AGENTS.md: line written\n"
+                         "CLAUDE.md: unchanged\n")
+        with open(os.path.join(self.root, "AGENTS.md"), encoding="utf-8") as fh:
+            self.assertEqual(fh.read(), "# Agents\n\n%s\n" % line)
+        self.assertEqual(run("rules-hint", self.root, "--remove")[1], "AGENTS.md: line removed\n"
+                         "CLAUDE.md: unchanged\n")
+        with open(os.path.join(self.root, "AGENTS.md"), encoding="utf-8") as fh:
+            self.assertEqual(fh.read(), "# Agents\n")
+        self.write("CLAUDE.md", "# Rules\n")
+        run("rules-hint", self.root)
+        with open(claude, encoding="utf-8") as fh:
+            self.assertEqual(fh.read().count(skilltrain.RULES_MARK), 1)
+        run("rules-hint", self.root, "--remove")
+        with open(claude, encoding="utf-8") as fh:
+            self.assertEqual(fh.read(), "# Rules\n")
+
+    def test_rules_hint_needs_marked_skills(self):
+        self.edit("<!-- self-training-skill v1 -->\n", "")
+        self.assertEqual(run("rules-hint", self.root),
+                         (0, "no self-training skills: nothing written\n"))
+        self.assertFalse(os.path.exists(os.path.join(self.root, "CLAUDE.md")))
+
+    def test_the_rules_line_is_the_skills_line(self):
+        with open(os.path.join(os.path.dirname(REFS), "SKILL.md"), encoding="utf-8") as fh:
+            skill = fh.read()
+        self.assertTrue(skilltrain.RULES_LINE.split(" <!--")[0][2:] in skill, "not in SKILL.md")
 
 
 if __name__ == "__main__":

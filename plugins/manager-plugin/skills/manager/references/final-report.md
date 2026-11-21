@@ -12,7 +12,8 @@ Final report, compact: phases landed (PR, merged SHA); phases blocked and why; t
 used and any model concerns; the plugin version; by the retro switch's line (step 0 item 1):
 `on` → the run record path, or that no record was written and why; `off` → nothing about a
 record; a switch never read in this run → say so;
-the vault and code map (set up, set up now, or not and why); session-check
+the vault and code map (set up, set up now, or not and why); the self-training skills' `due` and
+`check` lines (`references/self-training-due.md`); session-check
 recommendations not already given at the gate; one line on repo-enabled plugins, MCP servers or
 skills found in step 0 (names, "disable for this repo if unneeded") and any fallback dispatch
 (`manager-plugin:fallback` or `general-purpose`); unresolved risks (including validation the
