@@ -509,8 +509,9 @@ machine for the hooks, and the three eval cases run once each (`--model sonnet`)
 
 ### 14. Retro switch read at step 0, git-lfs exception stated (plugin 0.9.2)
 
-The two notes the review of 0.9.1 left, and one eval run on 2026-11-21 (Claude Code 2.1.330,
-Linux, `--model sonnet`, one case, once).
+The two notes the review of 0.9.1 left, and two eval runs of one case on 2026-11-21 (Claude
+Code 2.1.330, Linux, `--model sonnet`, switch off): one before and one after the fix that the
+first led to.
 
 - **The retro switch is read at step 0.** In 0.9.1 only the manager skill's **Run record**
   section named the switch's script, with "(step 0)"; step 0's own list did not, and
@@ -534,7 +535,7 @@ Linux, `--model sonnet`, one case, once).
   over whole strings, so the script named in a description, a Read of it, a subagent's call and a
   quoted call do not count. A test holds the pattern to synthetic events with Python's `re`; on
   such events the pattern gave the same answers as a JavaScript regular expression (Node 22).
-- **The eval run, and the one fix it led to.** `review-before-pinned-merge` ran once (56
+- **The first eval run, and the one fix it led to.** `review-before-pinned-merge` ran once (56
   seconds, 0.34 USD, 17 turns) on this change's first text: the call in item 1 of
   `establish-state.md`, and in the skill's step 0 only the words "check the retro switch". 8 of
   its 9 graders passed (the pinned merge, the review before it, no `Edit` or `Write` by the
@@ -543,16 +544,29 @@ Linux, `--model sonnet`, one case, once).
   so there is no run record". That is the new final-report rule at work, and it shows that item
   1 of `establish-state.md` was not acted on at all (the version read stands there too), while
   the commands the skill itself gives inline (the fetch, the run marker) were run. The one fix
-  made after that run: the command moved out of the **Run record** section into step 0's item
-  1.
-  [not measured] The text after the fix has not been run, so whether an orchestrator now makes
-  the call is not known; the trace of the run was not kept, so what it read at step 0 is known
-  only from its final report. `fix-round-brake` and `plugin-agent-spawn` were not run on 0.9.2.
+  made after that run: the command moved out of the **Run record** section into item 1 of
+  step 0. The trace of that run was not kept, so what it read at step 0 is known only from its
+  final report.
+- **The second eval run, on the text after the fix.** The same case, once, with the same
+  settings and the switch off, on the pull request's commit `ced669b`: exit 0, 50 seconds, 23
+  turns, 0.31 USD, all 9 graders passed, `retro-switch-read` among them. Its trace was kept:
+  the orchestrator's first Bash call, made before it read `establish-state.md`, runs the script
+  ahead of the fetch in one command line, and the script printed `off (no flag file)`; the
+  final report gives the switch as `off`.
+  [not measured] How often the case passes: this is one run of the text after the fix.
+  `fix-round-brake` and `plugin-agent-spawn` were not run on 0.9.2.
+- **Open, seen in the passing run.** [not changed in 0.9.2] Only the first line of item 1's
+  three-line call ran. The other two, the version read and the listing of the reference files,
+  were not run by anyone in that run, although the orchestrator read `establish-state.md` right
+  after its first call; so that run made no plugin-copy check. Its final report then gave a
+  wrong reason for the missing version, that "the one command that would show it was denied":
+  the only call that the run was denied was its last, a clean-up that reads no version.
 - **A run with the switch on.** [not measured] No run-record line was seen to land. A case file
   can set only `EVAL_*` variables (read in the 2.1.330 binary: the runner refuses any other `env`
   key, which "must come from the operator's shell"), no run was started with `MANAGER_RETRO=on` in
-  that shell, and in an eval run the shell can't write the record anyway (in this run too, the
-  fetch and the run-marker write ended on a read-only file system). So the `on` path is tested
+  that shell, and in an eval run the shell can't write the record anyway (in these runs too: by
+  the first one's final report the fetch and the run-marker write ended on a read-only file
+  system, and the second one's trace shows the same for the fetch). So the `on` path is tested
   through the script, the texts and the step-0 call only. That call is run by a test with the
   skill's folder filled in, in a temporary home: `off` by default, `on` with the flag file, either
   one by the variable, the version line, the reference files, nothing written.

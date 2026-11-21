@@ -531,11 +531,17 @@ open pull request), and the `tool_used` graders on `Edit` and `Write` of that ve
 the implementer's calls. With 0.9.1 all three cases passed every grader, in two runs (the second
 on its final text). Two runs of a case say nothing about how often it passes, and neither
 manager case reached the run record or its switch: no orchestrator ran the switch's script.
-0.9.2 holds `review-before-pinned-merge` to that call. Its one run with the call named in
-`establish-state.md` and only pointed to from the skill passed the other eight graders and
-failed this one: the orchestrator never made the call, and its final report said that it had
-not read the switch. The command then moved into step 0's own list in the skill; that text has
-not been run, and no run with the switch on has been observed. That CLI has no offline check for
+0.9.2 holds `review-before-pinned-merge` to that call, and ran that case twice (switch off).
+The first run, with the call named in `establish-state.md` and only pointed to from the skill,
+passed the other eight graders and failed this one: the orchestrator never made the call, and
+its final report said that it had not read the switch. The command then moved into step 0's
+own list in the skill, and the second run, on that text, passed all nine graders (exit 0, 50
+seconds, 23 turns, 0.31 USD): the orchestrator's first Bash call ran the script, which printed
+`off (no flag file)`. Open, not changed in 0.9.2: in that run only the first of the three
+lines of step 0's Bash call in `establish-state.md` ran (the version read and the listing of
+the reference files were skipped), and the final report gave a wrong reason for the missing
+version. One run says nothing about how often the case passes, the other two cases were not
+run on 0.9.2, and no run with the switch on has been observed. That CLI has no offline check for
 cases (`claude plugin validate` does not read them), so the test above parses them against the
 format, builds both fixture repositories and checks every commit SHA that the recordings and
 graders name. Start with one case (`--case plugin-agent-spawn`). Two limits of the GitHub
