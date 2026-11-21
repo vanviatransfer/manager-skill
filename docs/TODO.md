@@ -387,3 +387,122 @@ measured on 2026-11-21 on one Linux machine (4 CPUs), timings as the median of 2
   for subagents (the plan records it as measured to cost more for reviewers and implementers;
   not re-measured here); dynamic workflows for the phase loop (large, and unverified with
   plugin agents).
+
+### 13. Live-test fixes (plugin 0.9.1)
+
+From a live test of 0.9.0 on 2026-11-21: nested Claude Code 2.1.330 sessions on one Linux
+machine for the hooks, and the three eval cases run once each (`--model sonnet`).
+
+- **Commit check: a `git add` that can run.** Its line always named the map page and the page
+  folder; a one-page map has no folder, so the `git add` it led to failed ("pathspec ... did
+  not match"). It now gives the `git add` command itself and names the folder only when the
+  folder exists or the index holds pages of it. The check runs before the Bash command starts,
+  so `build && git add ... && git commit` in one command was blocked every time: the line now
+  says to run `build` and `git add` each as a command of its own.
+- **Commit check: a rebuilt map left unstaged.** The check judged the working tree alone, so
+  after `build` it let a commit through with the stale pages still in the index. It now also
+  blocks while the index does not hold the map pages as the working tree has them (a changed
+  or new page, a removed page the index still has; a page git ignores is left out) and names
+  the `git add`. It still writes nothing. Known: `git commit -a`, and a `git add` chained in
+  front of the commit, are blocked once in that state, as the line says.
+  Two cases where that `git add` could not end the block are covered. A page under a clean
+  filter that changes content (git-crypt, LFS, a filter of the repository's own), `ident` or
+  `working-tree-encoding` never has the blob's bytes, so it counts as staged when `git add`
+  would store the blob the index has (`git hash-object` with the filters: git runs the page's
+  clean filter and writes no object; a filter that fails lets the commit pass). A page whose
+  index entry is marked assume-unchanged or skip-worktree is passed by `git add`, so the line
+  names `git update-index --no-assume-unchanged` / `--no-skip-worktree` first. Known (seen
+  with git 2.43): in a sparse checkout whose rules leave the page out, `git add` still
+  refuses after that, and its own message names `--sparse`.
+- **The note on a leftover run marker.** The compaction line and the context line ended "(That
+  run has ended: ignore this line and remove ...)". In a live session with a marker written by
+  hand, the compaction's summary took that for a fact and wrote that no manager run was in
+  progress. Both lines now state a condition: "(If no manager run is in progress any more,
+  ignore this line and remove ...)". In that session all three manager-run hooks fired: the
+  context line at a lowered budget, the `PreCompact` instructions, the `SessionStart` line
+  after a manual `/compact`.
+- **A resumed open PR reads its ledger.** The brakes count ledger lines, but the path of a new
+  session that resumes an open PR (`establish-state.md`, item 5) never said to read the PR's
+  review-ledger comments. In the eval run of `fix-round-brake` the orchestrator skipped that
+  read and dispatched a sixth fix round as the first of five. The path now names the read, on
+  both backends, ahead of the fresh review: the fix-round and integration counts and any
+  `blocked` entry come from those comments, the rounds of earlier sessions included.
+- **Eval graders that tell the orchestrator from a subagent.** The runner's `tool_used` grader
+  counts the tool calls of every `assistant` event of a run, a subagent's too (read in the
+  2.1.330 binary), so the manager cases' `no-edit` and `no-write` failed on an implementer's
+  edits. They are now `regex` graders on the trace that match only a call of the orchestrator
+  itself (an `assistant` event with `"parent_tool_use_id":null`); a third grader holds the same
+  pattern to the reviewer dispatch, so a trace of another shape fails instead of passing those
+  two for nothing. A test holds the pattern to synthetic events, and the three traces of the
+  re-run agree with it (a subagent's `Write` is not matched).
+- **Eval sandbox.** In these runs the shell could write nothing in the run's folder, which
+  the runner made below `/tmp`, where its sandbox settings deny the shell writes: `git fetch`,
+  `mkdir` and `touch` ended with "Read-only file system", while the `Write` tool wrote. So no
+  commit, fetch or switch works in such a run. The fixtures leave the checkout on the PR's
+  head with both branches fetched, so the path each case expects needs no write by the shell;
+  the README says so.
+- **Re-run with 0.9.1.** All three cases passed every grader (8, 8 and 4 of them), twice, one run
+  per case each time: before the idle-compaction and retro-switch changes below (115 seconds, 0.68
+  USD) and on the final text (130 seconds, 0.73 USD). Both times `fix-round-brake` read the ledger,
+  reviewed the head, posted its ledger lines and blocked the phase without an implementer;
+  `review-before-pinned-merge` reviewed, then merged pinned to the reviewed SHA;
+  `plugin-agent-spawn` used a plugin agent. Two runs of a case are no pass rate.
+- **Idle compaction: a recommendation at the gate.** Read again for 2.1.330.
+  [docs] (code.claude.com/docs/en: `settings-reference`, `env-vars`, `hooks`, `prompt-caching`; read
+  2026-11-21) `idleCompaction` is a Boolean, default `true`, in any settings file (2.1.290 on). It
+  runs in an interactive terminal session, the VS Code panel and the desktop app's Code tab (on the
+  machine or over SSH) when auto-compact is on (`DISABLE_AUTO_COMPACT` turns both off), the
+  conversation is on the one-hour cache, the context has reached
+  `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` (default 200000; a value below 100000 is raised to 100000)
+  and "about an hour" has passed since the last request with the computer awake. Cloud sessions are
+  not in that list. No setting for the delay is documented. `PreCompact` hooks with the `auto`
+  matcher fire for it.
+  [source] (the 2.1.330 binary) The timer is set at nine tenths of the cache's lifetime after the
+  last request (54 minutes of an hour): a constant, with no setting or variable. It is armed only
+  when the last main-thread request used the one-hour cache, and it gives up when the cache is no
+  longer warm or the timer fires more than 60 seconds late, when the context is below the threshold
+  (`max(100000, the variable or 200000)`), or when a newer request exists. In a cloud session
+  (`CLAUDE_CODE_REMOTE`) one path depends on a server-side flag, so the binary doesn't settle
+  whether it runs there. `CLAUDE_CODE_IDLE_THRESHOLD_MINUTES` and `CLAUDE_CODE_IDLE_TOKEN_THRESHOLD`
+  belong to another feature (a hint to `/clear`), and `claude --help` has no idle option.
+  [inferred] It fires before the cache expires, so the summary's request reads the cache; the delay
+  can't be moved (to 50 minutes or anywhere); with the 300k window the plugin recommends, an
+  orchestrator that waits between 100,000 and 200,000 tokens is covered only with the threshold at
+  its minimum; the plugin's `PreCompact` hook has no matcher, so an idle compaction gets its
+  instructions too.
+  So `references/session-check.md` gains item (d): in a local session the manager recommends
+  `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=100000` in the `env` block of `~/.claude/settings.json`
+  unless it is already that low, and says so when `idleCompaction: false` or `DISABLE_AUTO_COMPACT`
+  keeps idle compaction off. The `/compact` line at a stop stays, for what idle compaction doesn't
+  cover (a cloud session, a smaller context, a five-minute cache, a sleeping computer).
+  [not measured] No idle compaction was observed (it takes an idle hour on a subscription's
+  session): neither the 54 minutes nor the hooks firing on one was seen live, and whether one can
+  start inside a long turn (a wait for a subagent) is not known.
+- **Retro switch, off by default.** The run record is now opt-in, so someone who only runs plans
+  pays nothing for the retro. `/manager-plugin:manager-retro on`, `off` and `status` run
+  `skills/manager/scripts/retro.sh` (POSIX sh, so the switch needs no Python): `on` writes a flag
+  file, `manager-plugin/retro` in the Claude config folder (`CLAUDE_CONFIG_DIR`, else `~/.claude`),
+  `off` removes it, and `MANAGER_RETRO=on|off` in the environment overrides the file (a cloud
+  environment, where the file doesn't persist). The manager runs the script once at step 0 (so after
+  a compaction too): anything but `on` → no run record and no `usage.py`. The run marker is written
+  as before, since the compaction hooks need it. Typed while off, `manager-retro` says so and how to
+  turn it on, then goes on with the dated records already there (none: it stops), so turning
+  recording off does not lock the records out of a retro. No record is ever deleted. After the
+  update a machine that recorded runs stops recording until its owner types `on` once.
+  [docs, source] `disable-model-invocation: true`, which the skill already had, holds for a plugin
+  skill in 2.1.330: the skills page's table says "Description not in context, full skill loads when
+  invoked", the plugin loader reads the key, the listing sent to the model leaves such skills out,
+  and the Skill tool refuses one the user didn't type. So the skill costs other sessions nothing;
+  its description, which the `/` menu shows, is shorter anyway.
+  To stay under its 18,000 characters, the manager skill lost two summaries of what a reference
+  holds (`review-round.md`, `final-report.md`: each file states its own contents). Tests: the script
+  (default off, the file, `CLAUDE_CONFIG_DIR`, the variable, `on`/`off`, run records untouched) and
+  the four texts that send to it. [not measured] No live manager run with the switch on.
+- README: the context-watch hook and the record's `usage` lines need Python; without it the
+  hook is silent and the record has no such lines.
+- **Not verified.** No compaction of a real manager run has been observed with the hooks, and no run
+  of this version is recorded. Of the four manager sessions of the two re-runs, one tried to write
+  the run marker (the sandbox refused it, and it went on without it, as the rule says); none ran the
+  retro switch's script or reached for a run record, so the switch is tested through its script and
+  texts only, and its `on` path has not run live. The commit check's new block is tested through the
+  script and the hook's shell wrapper, not inside a live session.

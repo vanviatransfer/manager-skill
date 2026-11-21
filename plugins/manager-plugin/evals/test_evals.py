@@ -3,7 +3,8 @@ python3 -m unittest discover -s <this folder>
 
 `claude plugin eval` checks a case only when it is about to run it, which is a paid session, and
 `claude plugin validate` does not read this folder. So this test loads every case the way the CLI
-(Claude Code 2.1.329) does and holds it to that CLI's case format:
+(Claude Code 2.1.329; the graders' part read again in 2.1.330) does and holds it to that CLI's
+case format:
 
 - A case is a folder below the eval folder with a `case.yaml`, a `prompt.md` or `graders/*.md`, in
   any mix. `prompt.md` frontmatter may hold the top-level keys `schema_version`, `name`,
@@ -28,6 +29,11 @@ python3 -m unittest discover -s <this folder>
 Stricter than the CLI where the CLI would ignore a mistake: an unknown key is an error anywhere, a
 tool a grader names must be one the case allows (also for a must-not grader, which a withheld tool
 would pass for nothing), and every mocked tool needs its schema. A weight is a whole number here.
+
+What the graders see (2.1.330): `tool_used` and `tool_order` count the tool calls of every
+`assistant` event of the run, a subagent's as well as the orchestrator's. A `regex` grader on
+`trace` reads the events as JSON, one per line, and an orchestrator's event is one with
+`"parent_tool_use_id":null`; that is how the manager cases tell whose `Edit` or `Write` it was.
 
 The files are read with a small subset of YAML (`key: value` lines at column 0; a value is a plain
 word or sentence, an integer, true/false, a quoted string, or a one-line `[list]` or `{mapping}`
@@ -92,6 +98,11 @@ FRONTMATTER = re.compile(r"---[ \t]*\n(.*?\n)?---[ \t]*(?:\n|$)", re.S)
 SEGMENT = re.compile(r"[A-Za-z0-9_-]+$")
 FILE_TEMPLATE = re.compile(r"\{\{\s*file:((?:[^{}]|\{input\.[A-Za-z0-9_.-]+\})+?)\s*\}\}")
 SHA = re.compile(r"\b[0-9a-f]{40}\b")
+# A tool call of the orchestrator itself in the trace (see the docstring): the pattern of the
+# manager cases' `no-edit`, `no-write` and `trace-shows-the-orchestrator` graders.
+ORCHESTRATOR_CALL = (r'^\{"type":\s*"assistant",(?=.*"parent_tool_use_id":\s*null).*'
+                     r'\{(?=[^{}]*"type":\s*"tool_use")[^{}]*"name":\s*"%s"')
+ORCHESTRATOR_NEVER = {"no-edit": "Edit", "no-write": "Write"}
 
 
 class FormatError(ValueError):
@@ -411,6 +422,30 @@ def graded_tools(case):
     return found
 
 
+def trace_event(kind, parent, blocks):
+    """One event of a run's stream as Claude Code 2.1.330 writes it: an `assistant` or `user`
+    message with its `parent_tool_use_id` (None: the orchestrator's own), or a `system` line."""
+    if kind == "system":
+        return {"type": "system", "subtype": "task_notification", "summary": blocks,
+                "session_id": "s", "uuid": "u"}
+    message = {"role": kind, "content": blocks}
+    if kind == "assistant":
+        message = dict({"model": "m", "id": "msg_1", "type": "message"}, **message)
+    return {"type": kind, "message": message, "parent_tool_use_id": parent, "session_id": "s",
+            "uuid": "u"}
+
+
+def tool_use(name, tool_input):
+    return {"type": "tool_use", "id": "toolu_1", "name": name, "input": tool_input,
+            "caller": {"type": "direct"}}
+
+
+def trace_text(events):
+    """What a `regex` grader on `trace` reads: every event as compact JSON, one per line."""
+    return "\n".join(json.dumps(event, separators=(",", ":"), ensure_ascii=False)
+                     for event in events)
+
+
 def mocks(folder):
     """The stand-ins a case runs with: ({server: {tool: (responder path, frontmatter, body)}},
     {server: {tool: its `_tools.json` entry}}), from every `mocks/` folder between this folder
@@ -657,6 +692,57 @@ class CasesTest(unittest.TestCase):
                 self.assertEqual(sorted(tool for tool in allowed if tool.startswith("mcp__")), [],
                                  "a mocked tool is allowed without being listed")
 
+    def test_the_orchestrator_never_graders_read_the_orchestrator_s_events_only(self):
+        """`no-edit` and `no-write` of a manager case: a trace pattern that an orchestrator's
+        own call matches and a subagent's does not (a `tool_used` grader would count both, and a
+        fix round's implementer edits). The tool is one the case allows, or the grader would pass
+        for nothing; so it would on a trace of another shape, which the third grader catches."""
+        quoted = '{"type":"tool_use","id":"toolu_2","name":"%s","input":{}}'
+        for folder, case in self.cases.items():
+            if not folder.startswith("manager-run/"):
+                continue
+            graders = {grader["name"]: grader for grader in case["graders"]}
+            allowed = case["execution"].get("allowed_tools", [])
+            for name, tool in sorted(ORCHESTRATOR_NEVER.items()):
+                with self.subTest(case=folder, grader=name):
+                    grader = dict(graders[name])
+                    self.assertEqual(grader.pop("pattern"), ORCHESTRATOR_CALL % tool)
+                    self.assertEqual(grader, {"name": name, "type": "regex", "target": "trace",
+                                              "flags": "m", "match": "not_contains",
+                                              "arm": "both"})
+                    self.assertIn(tool, allowed)
+                    self.assertIn("Agent", allowed)
+            seen = dict(graders["trace-shows-the-orchestrator"])
+            self.assertEqual(seen.pop("pattern"), ORCHESTRATOR_CALL % "Agent")
+            self.assertEqual(seen, {"name": "trace-shows-the-orchestrator", "type": "regex",
+                                    "target": "trace", "flags": "m"})
+            self.assertFalse(any(grader["type"] == "tool_used" and grader["tool"] in ("Edit",
+                                                                                     "Write")
+                                 for grader in case["graders"]), folder)
+        for tool in ("Edit", "Write", "Agent"):
+            found = re.compile(ORCHESTRATOR_CALL % tool, re.M).search
+            dispatch = tool_use("Agent", {"subagent_type": "manager-plugin:implementer",
+                                          "prompt": "Use %s. %s" % (tool, quoted % tool)})
+            others = [
+                trace_event("system", None, "the subagent called %s: %s" % (tool, quoted % tool)),
+                trace_event("assistant", "toolu_1", [tool_use(tool, {"file_path": "greet.sh"})]),
+                trace_event("user", "toolu_1", [{"type": "tool_result", "tool_use_id": "toolu_1",
+                                                 "content": "done"}]),
+                trace_event("user", None, [{"type": "tool_result", "tool_use_id": "toolu_1",
+                                            "content": quoted % tool}]),
+                trace_event("assistant", None, [{"type": "text", "text": quoted % tool},
+                                                tool_use("Read", {"file_path": "%s.md" % tool})]),
+            ]
+            if tool != "Agent":
+                others.append(trace_event("assistant", None, [dispatch]))
+            own = trace_event("assistant", None, [{"type": "text", "text": "Next."},
+                                                  tool_use(tool, {"file_path": "greet.sh"})])
+            with self.subTest(tool=tool):
+                self.assertIsNone(found(trace_text(others)))
+                for place in range(len(others) + 1):
+                    self.assertIsNotNone(found(trace_text(others[:place] + [own]
+                                                          + others[place:])), place)
+
     def test_a_file_grader_has_a_tool_that_can_write(self):
         for folder, case in self.cases.items():
             if any(grader["type"] == "file_exists" and grader.get("exists", True)
@@ -774,6 +860,9 @@ class ScaffoldTest(unittest.TestCase):
                 self.assertEqual(git(work, "status", "--porcelain", "--ignored")[1], "")
 
     def test_the_workspace_is_the_candidate_with_a_clean_tree(self):
+        """The eval sandbox (2.1.330, Linux) keeps the run's shell from writing under `.git`:
+        no fetch, switch or commit works in a run. So the scaffold leaves what a review needs
+        in place: the checkout on the pull request's head, both branches already fetched."""
         for folder, work in self.work.items():
             pull, _ = self.pull(folder)
             head = git(work, "rev-parse", "HEAD")[1]

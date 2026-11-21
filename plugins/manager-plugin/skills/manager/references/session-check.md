@@ -28,5 +28,18 @@ the project rules, name the ones this project's work won't use and recommend `/m
 for each: it turns the server off for this project only, from the next session on, and `/mcp enable
 <name>` turns it back on. Never recommend the GitHub backend's server or any server the plan or
 project rules use; when unsure, leave it out. You can't run these commands; the owner types them.
+(d) Idle compaction, in a local session only (not a cloud session, where `CLAUDE_CODE_REMOTE` is
+`true`). Claude Code compacts an idle conversation by itself shortly before its one-hour prompt
+cache expires (about 54 minutes after the last request; the delay is not a setting), so the
+summary reads the cache and the owner's next message starts on a small context. It runs only when
+the context has reached `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` (default 200000; a value below
+100000 counts as 100000), `idleCompaction` isn't `false`, auto-compact is on, the session is on
+the one-hour cache (a subscription's main session, by default) and the computer stays awake. Read
+that variable (the environment, and the `env` block of the settings files above) and the
+`idleCompaction` key: recommend `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=100000` in the `env` block of
+`~/.claude/settings.json` (it counts from the next session on) unless the variable is already
+100000 or less; and if `idleCompaction` is `false` or `DISABLE_AUTO_COMPACT` is set, say that this
+keeps idle compaction off. It doesn't replace the final report's `/compact` line: don't count on
+it in a cloud session, below the threshold, on a five-minute cache or on a computer that sleeps.
 Put these recommendations in the model-strategy question when you ask it, otherwise in the final
 report, once per run.

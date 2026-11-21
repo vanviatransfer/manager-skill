@@ -1,6 +1,7 @@
 """Tests for codemap.py: python3 -m unittest discover -s <this folder>"""
 import contextlib
 import io
+import json
 import os
 import shutil
 import subprocess
@@ -719,6 +720,255 @@ class HookTest(unittest.TestCase):
         for name in os.listdir(os.path.join(self.root, "vault", "map")):
             os.remove(os.path.join(self.root, "vault", "map", name))
         self.assertEqual((self.check(), self.check("--quiet")), (1, 1))
+
+    def claude(self, command="git commit -m x"):
+        """(exit code, stderr) of the Claude Code commit check before this Bash command."""
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code = codemap.claude_hook(json.dumps({
+                "tool_name": "Bash", "cwd": self.root, "tool_input": {"command": command}}),
+                "python3")
+        return code, err.getvalue()
+
+    def split(self):
+        old = codemap.SPLIT_ABOVE
+        codemap.SPLIT_ABOVE = 0  # group pages too
+        self.addCleanup(setattr, codemap, "SPLIT_ABOVE", old)
+        return old
+
+    def test_claude_hook_names_the_page_folder_only_when_it_can_be_added(self):
+        self.opt_in()
+        self.assertEqual(self.claude(), (0, ""))
+        self.write("src/new.py", "def fresh():\n    pass\n")
+        self.git("add", "src/new.py")
+        both = "`git add -- vault/map.md vault/map/`"
+        code, err = self.claude()
+        self.assertEqual(code, 2)
+        self.assertTrue(err.startswith("codemap: the code map is stale; in "), err)
+        self.assertIn("build`, then `git add -- vault/map.md`, each as a command of its own "
+                      "(this check runs before a command starts", err)
+        self.assertNotIn("vault/map/", err)  # a one-page map: git add would fail on the folder
+        self.assertEqual(len(err.strip().splitlines()), 1)
+        large = self.split()
+        self.assertNotIn("vault/map/", self.claude()[1])  # still no folder before the build
+        run("build", "--root", self.root)
+        code, err = self.claude()  # the build made the folder: its pages are named now
+        self.assertEqual(code, 2)
+        self.assertTrue(err.startswith("codemap: the code map is rebuilt but not staged (3 pages "
+                                       "the index does not hold as built)"), err)
+        self.assertIn("run %s as a command of its own" % both, err)
+        self.git("add", "--", "vault/map.md", "vault/map/")
+        self.assertEqual(self.claude(), (0, ""))
+        self.git("commit", "-qm", "split", "--no-verify")
+        self.write("src/more.py", "def more():\n    pass\n")
+        self.git("add", "src/more.py")
+        code, err = self.claude()  # stale, with a page folder: both are named
+        self.assertEqual(code, 2)
+        self.assertIn("build`, then %s, each as a command of its own" % both, err)
+        run("build", "--root", self.root)
+        self.assertEqual(codemap.unstaged_map_pages(self.root, "vault/map.md"),
+                         ["vault/map.md", "vault/map/src.md"])
+        self.git("add", "--", "vault/map.md")  # the page alone is not the map
+        code, err = self.claude()
+        self.assertEqual(code, 2)
+        self.assertIn("(1 page the index does not hold as built)", err)
+        self.assertIn("run `git add -- vault/map/` as a command of its own", err)
+        self.git("add", "--", "vault/map/")
+        self.assertEqual(self.claude(), (0, ""))
+        self.git("commit", "-qm", "more", "--no-verify")
+
+    def test_claude_hook_takes_a_removed_page_the_index_still_holds(self):
+        """A map that goes back to one page: the build removes the group pages and their
+        folder, and `git add` still takes the folder's name, for the index holds its pages."""
+        self.write(".codemap.json", '{"vault": "vault", "map": "docs/map.md", '
+                   '"commit_check": true}\n')
+        self.git("rm", "-q", "vault/map.md")
+        large = self.split()
+        run("build", "--root", self.root)
+        self.git("add", "-A")
+        self.git("commit", "-qm", "split map", "--no-verify")
+        self.assertEqual(self.claude(), (0, ""))
+        both = "`git add -- docs/map.md docs/map/`"
+        codemap.SPLIT_ABOVE = large
+        code, err = self.claude()
+        self.assertEqual(code, 2)
+        self.assertIn("build`, then %s, each as a command of its own" % both, err)
+        run("build", "--root", self.root)
+        folder = os.path.join(self.root, "docs", "map")
+        if os.path.isdir(folder):
+            os.rmdir(folder)
+        self.assertEqual(self.check(), 0)
+        self.assertEqual(codemap.unstaged_map_pages(self.root, "docs/map.md"),
+                         ["docs/map.md", "docs/map/_vault-pages.md", "docs/map/src.md"])
+        code, err = self.claude()
+        self.assertEqual(code, 2)
+        self.assertIn("(3 pages the index does not hold as built)", err)
+        self.assertIn("run %s as a command of its own" % both, err)
+        self.git("add", "--", "docs/map.md", "docs/map/")
+        self.assertEqual(self.claude(), (0, ""))
+        self.assertEqual(self.git("ls-files", "docs/map").stdout, b"")
+
+    def test_claude_hook_leaves_out_a_page_git_ignores(self):
+        self.opt_in()
+        self.split()
+        self.write(".git/info/exclude", "vault/map/src.md\n")
+        run("build", "--root", self.root)
+        self.assertEqual(self.check(), 0)
+        self.assertEqual(codemap.unstaged_map_pages(self.root, "vault/map.md"),
+                         ["vault/map.md", "vault/map/_vault-pages.md"])
+        self.git("add", "--", "vault/map.md", "vault/map/")
+        self.assertEqual(self.claude(), (0, ""))  # git add can't take it: never asked for
+
+    def files(self):
+        """{path: bytes} of every file under the repository, the index and the rest of .git
+        included."""
+        found = {}
+        for base, _, names in os.walk(self.root):
+            for name in names:
+                with open(os.path.join(base, name), "rb") as fh:
+                    found[os.path.join(base, name)] = fh.read()
+        return found
+
+    def test_claude_hook_writes_nothing(self):
+        self.opt_in()
+        self.write("src/new.py", "def fresh():\n    pass\n")
+        self.git("add", "src/new.py")
+        for state in ("stale", "rebuilt, not staged"):
+            before = self.files()
+            self.assertEqual(self.claude()[0], 2, state)
+            self.assertEqual(self.files(), before, state)
+            run("build", "--root", self.root)
+
+    def test_claude_hook_takes_a_page_a_clean_filter_changes(self):
+        """A clean filter that changes content (git-crypt, LFS, a filter of the repository's
+        own) covers the map pages: the index never holds a page's working-tree bytes, so a page
+        is staged when git would store its bytes as the blob the index has."""
+        self.opt_in()
+        self.split()
+        self.git("config", "filter.upper.clean", "tr a-z A-Z")
+        self.git("config", "filter.upper.smudge", "cat")
+        self.write(".gitattributes", "vault/map.md filter=upper\nvault/map/*.md filter=upper\n")
+        self.git("add", "--", ".gitattributes")
+        pages = ["vault/map.md", "vault/map/_vault-pages.md", "vault/map/src.md"]
+        add = "run `git add -- vault/map.md vault/map/` as a command of its own"
+        run("build", "--root", self.root)
+        self.assertEqual(codemap.unstaged_map_pages(self.root, "vault/map.md"), pages)
+        code, err = self.claude()
+        self.assertEqual(code, 2)
+        self.assertIn("(3 pages the index does not hold as built)", err)
+        self.assertIn(add, err)
+        self.git("add", "--", "vault/map.md", "vault/map/")
+        for page in pages:  # the index holds what the filter made of the page, not its bytes
+            stored = self.git("cat-file", "blob", ":" + page).stdout
+            self.assertEqual(stored, self.read(page, "rb").upper(), page)
+            self.assertNotEqual(stored, self.read(page, "rb"), page)
+        blobs = {path: blob for _, blob, _, path in codemap.git_index(self.root)}
+        self.assertEqual(codemap.worktree_differs(self.root, pages, blobs), pages)  # raw bytes
+        before = self.files()
+        self.assertEqual(self.claude(), (0, ""))
+        self.assertEqual(self.files(), before)  # the filter ran; nothing was written
+        self.git("commit", "-qm", "filtered", "--no-verify")
+        self.assertEqual(self.claude(), (0, ""))
+        self.write("src/more.py", "def more():\n    pass\n")
+        self.git("add", "src/more.py")
+        run("build", "--root", self.root)  # a real change under the filter is still seen
+        self.assertEqual(codemap.unstaged_map_pages(self.root, "vault/map.md"),
+                         ["vault/map.md", "vault/map/src.md"])
+        code, err = self.claude()
+        self.assertEqual(code, 2)
+        self.assertIn("(2 pages the index does not hold as built)", err)
+        self.assertIn(add, err)
+        self.git("add", "--", "vault/map.md", "vault/map/")
+        self.assertEqual(self.claude(), (0, ""))
+
+    def test_claude_hook_fails_open_when_the_clean_filter_fails(self):
+        self.opt_in()
+        self.write("src/new.py", "def fresh():\n    pass\n")
+        self.git("add", "src/new.py")
+        run("build", "--root", self.root)
+        self.assertEqual(self.claude()[0], 2)
+        self.git("config", "filter.broken.clean", "exit 3")
+        self.git("config", "filter.broken.required", "true")
+        self.write(".git/info/attributes", "vault/map.md filter=broken\n")
+        self.assertEqual(self.claude(), (0, ""))
+
+    def test_claude_hook_names_the_index_mark_git_add_passes_by(self):
+        """`git add` stages nothing for an entry marked assume-unchanged or skip-worktree, and
+        says nothing when the entry is named through its folder: the line names the command
+        that takes the mark off, and the commands it names, run in turn, end the block."""
+        self.opt_in()
+        self.split()
+        run("build", "--root", self.root)
+        self.git("add", "--", "vault/map.md", "vault/map/")
+        self.git("commit", "-qm", "split", "--no-verify")
+        self.assertEqual(self.claude(), (0, ""))
+        add = "git add -- vault/map.md vault/map/"
+        marks = (("--assume-unchanged", "vault/map.md"), ("--skip-worktree", "vault/map/src.md"),
+                 ("--assume-unchanged", "vault/map/src.md"))
+        for mark, page in marks:
+            self.git("update-index", mark, "--", page)
+        self.write("src/more.py", "def more():\n    pass\n")
+        self.git("add", "src/more.py")
+        run("build", "--root", self.root)
+        self.assertEqual(codemap.marked_pages(self.root, ["vault/map.md", "vault/map/src.md",
+                                                          "vault/map/_vault-pages.md"]),
+                         (["vault/map.md", "vault/map/src.md"], ["vault/map/src.md"]))
+        self.git("add", "--", "vault/map.md")  # git takes neither page, without a word
+        self.assertEqual(self.git("add", "--", "vault/map/").stderr, b"")
+        self.assertEqual(self.git("diff", "--cached", "--name-only").stdout, b"src/more.py\n")
+        code, err = self.claude()
+        self.assertEqual(code, 2)
+        self.assertEqual(len(err.strip().splitlines()), 1)
+        self.assertIn("(2 pages the index does not hold as built)", err)
+        self.assertIn(
+            "run `git update-index --no-assume-unchanged -- vault/map.md vault/map/src.md`, "
+            "then `git update-index --no-skip-worktree -- vault/map/src.md` (`git add` passes "
+            "by an index entry with such a mark), then `%s`, each as a command of its own (this "
+            "check runs before a command starts" % add, err)
+        self.git("update-index", "--no-assume-unchanged", "--", "vault/map.md",
+                 "vault/map/src.md")
+        code, err = self.claude()  # one mark left: only its command is named
+        self.assertEqual(code, 2)
+        self.assertNotIn("assume-unchanged", err)
+        self.assertIn("run `git update-index --no-skip-worktree -- vault/map/src.md` (`git add` "
+                      "passes by an index entry with such a mark), then `%s`, each" % add, err)
+        self.git("update-index", "--no-skip-worktree", "--", "vault/map/src.md")
+        code, err = self.claude()
+        self.assertEqual(code, 2)
+        self.assertNotIn("update-index", err)
+        self.assertIn("run `%s` as a command of its own" % add, err)
+        self.git("add", "--", "vault/map.md", "vault/map/")
+        self.assertEqual(self.claude(), (0, ""))
+
+    def test_claude_hook_names_the_mark_on_a_removed_page(self):
+        """A group page the build removed, its index entry marked: `git add` of the folder
+        leaves the entry, so the stale page would stay in the commit."""
+        self.write(".codemap.json", '{"vault": "vault", "map": "docs/map.md", '
+                   '"commit_check": true}\n')
+        self.git("rm", "-q", "vault/map.md")
+        large = self.split()
+        run("build", "--root", self.root)
+        self.git("add", "-A")
+        self.git("commit", "-qm", "split map", "--no-verify")
+        self.git("update-index", "--skip-worktree", "--", "docs/map/src.md")
+        codemap.SPLIT_ABOVE = large
+        run("build", "--root", self.root)
+        folder = os.path.join(self.root, "docs", "map")
+        if os.path.isdir(folder):
+            os.rmdir(folder)
+        self.assertEqual(self.check(), 0)
+        self.git("add", "--", "docs/map.md", "docs/map/")
+        self.assertEqual(codemap.unstaged_map_pages(self.root, "docs/map.md"),
+                         ["docs/map/src.md"])
+        code, err = self.claude()
+        self.assertEqual(code, 2)
+        self.assertIn("run `git update-index --no-skip-worktree -- docs/map/src.md` (`git add` "
+                      "passes by an index entry with such a mark), then `git add -- docs/map/`, "
+                      "each as a command of its own", err)
+        self.git("update-index", "--no-skip-worktree", "--", "docs/map/src.md")
+        self.git("add", "--", "docs/map/")
+        self.assertEqual(self.claude(), (0, ""))
+        self.assertEqual(self.git("ls-files", "docs/map").stdout, b"")
 
     def test_redetect_keeps_the_opt_in(self):
         self.opt_in()

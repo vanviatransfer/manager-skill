@@ -33,8 +33,9 @@ BUDGET = 200000
 LINE = ("manager-plugin: this session's context is {size:,} tokens, over the manager run's "
         "budget of {budget:,}: write every working-notes line of the run out now, each as it "
         "stands (when this line comes again: only the ones that changed since), and when you "
-        "next stop for the owner, suggest that they run `/compact` before they answer. (That "
-        "run has ended: ignore this line and remove ~/.claude/manager-runs/active/{session}.)")
+        "next stop for the owner, suggest that they run `/compact` before they answer. (If no "
+        "manager run is in progress any more, ignore this line and remove "
+        "~/.claude/manager-runs/active/{session}.)")
 
 
 def budget():

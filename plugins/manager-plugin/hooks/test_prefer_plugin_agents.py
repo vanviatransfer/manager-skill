@@ -143,6 +143,102 @@ class CodemapCommitCheckTest(unittest.TestCase):
                     "echo git commit"):
             self.assertEqual(self.hook(cmd, cwd=self.tmp)[0], 0, cmd)  # can't tell: fail open
 
+    def test_the_stale_line_names_only_what_git_add_can_take(self):
+        """A one-page map has no page folder: `git add vault/map.md vault/map/` would fail on
+        the folder and stage nothing. The hook runs before the command starts, so a build or a
+        `git add` chained in front of the commit is blocked like the bare commit."""
+        self.opt_in()
+        self.write("src/new.py", "def fresh():\n    pass\n")
+        self.git("add", "-A")
+        code, err = self.hook("git commit -m x")
+        self.assertEqual(code, 2)
+        self.assertIn("then `git add -- vault/map.md`, each as a command of its own", err)
+        self.assertNotIn("vault/map/", err)
+        self.assertIn("one chained with the commit is not seen", err)
+        chained = ('python3 "%s" build && git add vault/map.md && git commit -m x'
+                   % CODEMAP.replace("\\", "/"))
+        self.assertEqual(self.hook(chained), (code, err))
+        self.assertEqual(self.codemap("build"), 0)  # the two commands the line names, in turn
+        self.git("add", "--", "vault/map.md")
+        self.assertEqual(self.hook("git commit -m x"), (0, ""))
+
+    def test_a_rebuilt_map_left_unstaged_blocks_the_commit(self):
+        """After `build` the working tree's map is current, but a commit takes the index: with
+        the page not added, the stale map would be committed beside the new source file."""
+        self.opt_in()
+        self.git("add", "-A")
+        self.git("commit", "-qm", "opt in")
+        self.write("src/new.py", "def fresh():\n    pass\n")
+        self.git("add", "-A")
+        self.assertEqual(self.hook("git commit -m x")[0], 2)
+        self.assertEqual(self.codemap("build"), 0)
+        self.assertEqual(self.codemap("check"), 0)
+        before = snapshot(self.root)
+        for command in ("git commit -m x", "git add -A && git commit -m x"):
+            code, err = self.hook(command)
+            self.assertEqual(code, 2, command)
+            self.assertEqual(len(err.strip().splitlines()), 1)
+            self.assertTrue(err.startswith("codemap: the code map is rebuilt but not staged (1 "
+                                           "page the index does not hold as built)"), err)
+            self.assertIn("run `git add -- vault/map.md` as a command of its own", err)
+            self.assertNotIn("vault/map/", err)
+            self.assertNotIn(" build", err)
+        self.assertEqual(snapshot(self.root), before)  # the index included: nothing is written
+        self.git("add", "--", "vault/map.md")
+        self.assertEqual(self.hook("git commit -m x"), (0, ""))
+        self.git("commit", "-qm", "new")
+        self.assertEqual(self.hook("git commit --amend --no-edit"), (0, ""))
+
+    def test_a_clean_filter_on_the_map_page_does_not_block_a_staged_map(self):
+        """Under a clean filter that changes content the index never holds the page's raw
+        bytes: the page is staged when git would store its bytes as the blob the index has."""
+        self.write(".codemap.json", '{"vault": null, "map": "docs/code-map.md", '
+                   '"commit_check": true}\n')
+        self.assertEqual(self.codemap("build"), 0)
+        self.git("add", "-A")
+        self.git("commit", "-qm", "opt in")
+        self.git("config", "filter.upper.clean", "tr a-z A-Z")
+        self.git("config", "filter.upper.smudge", "cat")
+        self.write(".gitattributes", "*.md filter=upper\n")
+        self.write("src/d.py", "def d():\n    pass\n")
+        self.git("add", "--", ".gitattributes", "src/d.py")
+        self.assertEqual(self.codemap("build"), 0)
+        code, err = self.hook("git commit -m x")
+        self.assertEqual(code, 2)
+        self.assertIn("run `git add -- docs/code-map.md` as a command of its own", err)
+        self.git("add", "--", "docs/code-map.md")
+        before = snapshot(self.root)
+        self.assertEqual(self.hook("git commit -m x"), (0, ""))
+        self.assertEqual(snapshot(self.root), before)  # the filter ran: still nothing written
+        self.write("src/e.py", "def e():\n    pass\n")
+        self.git("add", "--", "src/e.py")
+        self.assertEqual(self.codemap("build"), 0)
+        self.assertEqual(self.hook("git commit -m x")[0], 2)  # a real change is still seen
+
+    def test_a_marked_index_entry_gets_the_command_that_clears_it(self):
+        """`git add` passes by a page whose index entry is marked assume-unchanged or
+        skip-worktree, so the line names `git update-index` first; its commands end the block."""
+        self.opt_in()
+        self.git("add", "-A")
+        self.git("commit", "-qm", "opt in")
+        for mark in ("assume-unchanged", "skip-worktree"):
+            self.git("update-index", "--" + mark, "--", "vault/map.md")
+            self.write("src/%s.py" % mark.replace("-", "_"), "def fresh():\n    pass\n")
+            self.git("add", "-A")
+            self.assertEqual(self.codemap("build"), 0)
+            subprocess.run(["git", "-C", self.root, "add", "--", "vault/map.md"],
+                           capture_output=True, env=self.env)  # stages nothing
+            code, err = self.hook("git commit -m x")
+            self.assertEqual(code, 2, mark)
+            self.assertEqual(len(err.strip().splitlines()), 1)
+            self.assertIn("run `git update-index --no-%s -- vault/map.md` (`git add` passes by "
+                          "an index entry with such a mark), then `git add -- vault/map.md`, "
+                          "each as a command of its own" % mark, err)
+            self.git("update-index", "--no-" + mark, "--", "vault/map.md")
+            self.git("add", "--", "vault/map.md")
+            self.assertEqual(self.hook("git commit -m x"), (0, ""), mark)
+            self.git("commit", "-qm", mark)
+
     def test_opted_in_current_map_passes(self):
         self.opt_in()
         self.assertEqual(self.hook("git commit -m x")[0], 0)

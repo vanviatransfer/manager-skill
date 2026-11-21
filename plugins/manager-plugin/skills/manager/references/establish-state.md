@@ -44,11 +44,14 @@ phase is scheduled (loop step 1), as on its base SHA. Read the rest only when a 
 
 - open PR → that phase resumes at loop step 2, checking the Git/PR facts only (there is no
   report, and its Plan records are unknown: send the reviewer `unknown (resumed)`), with base
-  SHA = `git merge-base origin/<default> <headRefOid>`, then a fresh review; a ledger PASS is
-  never a reason to skip it, and a ledger `blocked` entry keeps the phase parked unless the
-  decision behind it is now decided; loop step 1 is skipped, so first read the phase's section
-  as on that base SHA (the `plan.py` command in the implementer brief's step 1, or its `awk`):
-  step 2's scope check needs it;
+  SHA = `git merge-base origin/<default> <headRefOid>`; first read the PR's review-ledger
+  comments (`gh pr view <n> --json comments`; MCP: `pull_request_read` `method: get_comments`):
+  the fix-round and integration counts (**Brakes**) and any `blocked` entry come from them, the
+  rounds of earlier sessions included, never from memory or from the commits; then a fresh
+  review; a ledger PASS is never a reason to skip it, and a ledger `blocked` entry keeps the
+  phase parked unless the decision behind it is now decided; loop step 1 is skipped, so first
+  read the phase's section as on that base SHA (the `plan.py` command in the implementer brief's
+  step 1, or its `awk`): step 2's scope check needs it;
 - a remote `phase/*` branch or the designated branch with no open PR: look up closed PRs for
   it (`gh pr list --state closed --head <branch> --json number,headRefOid,mergedAt`). Head =
   a merged PR's head → landed work, at most a designated branch still to reconcile (loop step

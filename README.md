@@ -46,7 +46,9 @@ A Claude Code plugin with six skills:
     input has unstaged changes or the build refuses, and keeps an existing hook, run first. A
     Claude Code commit check, versioned (`"commit_check": true` in `.codemap.json`): before a
     `git commit` it runs `check --quiet` (the full check) and blocks the commit while the map is
-    stale, telling Claude to rebuild and stage it. Exact commands: the `code-map` skill.
+    stale, or rebuilt but not staged, telling Claude to rebuild it and `git add` the pages it
+    names, each as a command of its own: the check runs before the command starts, so a `build`
+    or a `git add` chained with the commit is not seen. Exact commands: the `code-map` skill.
   - **Map first (on by default).** In a repository whose `.codemap.json` has a `map`, a Claude
     Code hook on Grep, Glob and Bash blocks the first broad search of each session (or subagent)
     once: the whole repository or a top-level folder, by the Grep or Glob tool or by `grep -r`,
@@ -78,13 +80,22 @@ A Claude Code plugin with six skills:
 
 ## Learning from runs
 
-Each manager run appends a compact record (header: repository name, plugin version, model strategy;
-then per phase: risk, models, rounds, agent context sizes, verdicts, blocker classes, skipped
-validation, fallbacks; `usage` lines, below; and a summary line with compactions and owner
-questions) to `~/.claude/manager-runs/` in your home directory. It is local to your machine, shared
-by all your projects, outside every repository, and holds no code or file contents; delete the
-folder to reset it (between runs: its `active/` subfolder holds the markers of runs in progress).
-It may not persist in cloud sessions.
+The run record is optional and **off by default**. Type `/manager-plugin:manager-retro on` once to
+turn it on (`off` turns it off again, `status` says which it is; all three work in any session).
+That writes a flag file, `manager-plugin/retro` in the Claude config folder (`CLAUDE_CONFIG_DIR`,
+else `~/.claude`), outside every repository. In a cloud environment, where that file doesn't
+persist, set `MANAGER_RETRO=on` among the environment's variables instead; the variable (`on` or
+`off`) overrides the file. While it is off a run writes no record and doesn't run `usage.py`
+(one small shell command at the start of a run reads the switch). Turning it off deletes nothing:
+records already written stay.
+
+While it is on, each manager run appends a compact record (header: repository name, plugin
+version, model strategy; then per phase: risk, models, rounds, agent context sizes, verdicts,
+blocker classes, skipped validation, fallbacks; `usage` lines, below; and a summary line with
+compactions and owner questions) to `~/.claude/manager-runs/` in your home directory. It is local to
+your machine, shared by all your projects, outside every repository, and holds no code or file
+contents; delete the folder to reset it (between runs: its `active/` subfolder holds the markers of
+runs in progress). It may not persist in cloud sessions.
 
 **What a run spent.** An agent's context size is not what it cost, so the record also holds
 `usage` lines. The manager skill's `usage.py` (standard-library Python; it only reads) takes them
@@ -95,7 +106,8 @@ the output, the context at the last return, the warm and cold resumes (a request
 or more after the previous one: cold when the cache had expired and the context was written
 again) and the seconds from its first record to its last. The orchestrator's line counts the run
 only, from the time its run marker (under **How `manager` works**) was written. `manager-retro`
-measures these lines too, among other things to re-tune the rotation thresholds. Limits: the
+measures these lines too, among other things to re-tune the rotation thresholds. The lines need
+Python: on a machine without one the record gets none, and the final report says so. Limits: the
 transcript format is undocumented, so a line or a field that can't be read is skipped and a
 missing value is `unknown`; the script is tested on synthetic transcripts and was run on one real
 session's; and no threshold has been changed from these figures yet.
@@ -108,7 +120,9 @@ Two things learn from the record:
   decision in the plan that later phases and runs follow.
 - **Across projects:** run `manager-retro` in a session on this repository (on the same machine):
   type `/manager-plugin:manager-retro` (it starts only that way, never from a phrase, so it isn't
-  listed to the model in other sessions). It measures the records, proposes changes, and
+  listed to the model in other sessions; while the record is off it says so and how to turn it
+  on, then goes on with the records already written, or stops when there are none). It measures
+  the records, proposes changes, and
   opens a reviewed PR only for the ones you pick. It never weakens the review, owner-authority or
   Git-safety rules, and never puts project details into this public repository.
 
@@ -179,7 +193,8 @@ against run records, not measurements):
   session afterwards to re-read the skill and the references whose triggers apply, and a third
   watches the orchestrator's own context: above 200,000 tokens it has the manager write its
   notes out and suggest `/compact` to you at its next stop. The three hooks and their limits
-  (none has been exercised in a live session yet) are described with the other hooks, below.
+  (no compaction of a real manager run has been observed with them yet) are described with the
+  other hooks, below.
 - **Agent caps:** the plugin's agents set `autoCompactWindow` (implementer, worker and fallback
   300000; reviewer and researcher 200000) and `maxTurns` (implementer, worker and fallback 500;
   reviewer and researcher 300). The window is a ceiling: when the parent session's window is
@@ -277,14 +292,18 @@ every other session, in subagents and on any error.
   request from the end of the session's transcript and, when that context is above 200,000
   tokens (the environment variable `MANAGER_CONTEXT_BUDGET` sets another budget), adds one line:
   write the working-notes lines out now, and suggest `/compact` to the owner at the next stop.
+  This one needs Python (`python3`, `python` or `py -3`): without it the hook says nothing.
 
 None of the three writes anything. Their limits: they are tested through their scripts with
-synthetic hook input, not yet inside a live session, so no real compaction of a manager run has
-been observed with them; a summary can still drop a line, which is why a resumed run is rebuilt
+synthetic hook input. Inside a live session they have fired once (Claude Code 2.1.330, with a
+marker written by hand, a lowered budget and a manual `/compact`, not a manager run): all three
+spoke, and the summary took the note on a leftover marker for a fact and wrote that no run was
+in progress, so 0.9.1 words that note as a condition. No real compaction of a manager run has
+been observed with them. A summary can still drop a line, which is why a resumed run is rebuilt
 from the plan, `git` and the review ledger and not from the notes alone; the context line comes
 again after every subagent while the context stays above the budget; and a marker left behind
 by a run that ended without removing it keeps the hooks speaking in that session (the two
-context lines say how to remove it).
+context lines say how to remove it, if no run is in progress any more).
 
 Everything runs in one turn with subagents, so it works the same in the Claude desktop app, the
 terminal and cloud sessions.
@@ -389,10 +408,18 @@ Three habits keep the main session's own cost down:
 - On a Claude subscription the main session's prompt cache lasts an hour (5 minutes on an API key,
   usage credits or a cloud provider, unless you set `promptCacheTtl`). When the manager stops to
   wait for you and you will answer later than about 50 minutes, run `/compact` before you leave,
-  or answer in a new session (the manager adds this line when it stops). Claude Code's idle
-  compaction (`idleCompaction`, on by default from 2.1.290) does this by itself in local
-  interactive sessions once the context is 200,000 tokens or more; it doesn't run in cloud
-  sessions or on smaller contexts.
+  or answer in a new session (the manager adds this line when it stops). In a session on your own
+  machine, Claude Code's idle compaction (`idleCompaction`, on by default from 2.1.290) does this
+  by itself: shortly before the one-hour cache expires (in 2.1.330 about 54 minutes after the last
+  request; the delay is fixed, no setting changes it), so the summary reads the cache. By default
+  it waits for a context of 200,000 tokens. Set `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=100000`, the
+  lowest value it takes, in the `env` block of `~/.claude/settings.json`, so that a manager
+  session between 100,000 and 200,000 tokens is covered too; the manager recommends it in its
+  first question when the variable isn't set. Idle compaction needs auto-compact on, the one-hour
+  cache and a computer that stays awake, and the documentation lists it for the terminal, VS Code
+  and the desktop app (on your machine or over SSH), not for cloud sessions: where it doesn't
+  run, the `/compact` line above is still the way. What is documented, read in the source or
+  only inferred here: `docs/TODO.md`, item 13.
 - During a run, once the orchestrator's context is above 200,000 tokens the manager suggests
   `/compact` at its next stop (the context hook, above). Run it before you answer: every later
   turn then carries a smaller context, and the compaction hooks ask the summary to keep the
@@ -442,14 +469,28 @@ experimental command), so that a change that breaks one of the plugin's invarian
   candidates as the plan allows fix rounds, and the candidate fails its test: the run must
   review it, dispatch no implementer, merge nothing and report the phase blocked.
 
-Both manager cases also fail on any `Edit` or `Write` call (the orchestrator never implements):
-the one subagent they need is the reviewer, which has neither tool. Their `scaffold.sh` builds a
-small repository with a living plan in the run's folder, and `mocks/github/` answers the GitHub
-MCP tools from a recording, so no real repository or pull request is involved.
+Both manager cases also fail on an `Edit` or `Write` call of the orchestrator (it never
+implements). The runner's `tool_used` graders count the calls of every session of a run, a
+subagent's too, and an implementer edits; so their `no-edit` and `no-write` graders read the
+run's trace instead, where the orchestrator's own turns are the `assistant` events with
+`"parent_tool_use_id":null`. A third grader, `trace-shows-the-orchestrator`, holds the same
+pattern to the reviewer dispatch: on a trace of another shape it fails, where those two would
+pass for nothing. The cases' `scaffold.sh` builds a small repository with a living plan in the
+run's folder, and `mocks/github/` answers the GitHub MCP tools from a recording, so no real
+repository or pull request is involved.
 
 Prerequisite: Claude Code's shell sandbox. The command below grants `Bash`, and the eval runner
-(2.1.329) refuses a run whose shell tool it can't confine, so where the platform has no sandbox
-backend, or it isn't installed, every case is refused.
+(2.1.329, 2.1.330) refuses a run whose shell tool it can't confine, so where the platform has no
+sandbox backend, or it isn't installed (on Linux: bubblewrap and socat), every case is refused.
+
+What that sandbox does to a run, as seen with 2.1.330 on Linux, where the runner made the run's
+folder below `/tmp`: the run's shell could write nothing there (`git fetch`, `mkdir` and `touch`
+in the working folder all ended with "Read-only file system"; the sandbox settings the runner
+writes deny the shell writes below `/tmp`), while the `Write` tool did write. So in such a run
+no commit, fetch or branch switch works, an implementer could edit but not commit, and the
+manager's shell can write neither the run marker nor a run record. The fixtures are built for
+that: the checkout stands on the pull request's head with both branches already fetched, so the
+path each case expects needs no write by the shell.
 
 Running the cases starts paid sessions, and the two manager cases are long ones. From the
 repository root:
@@ -476,11 +517,17 @@ per case with `--runs <n>` and a spend ceiling with `--max-cost-usd <usd>`. Resu
 `plugins/manager-plugin/evals/results/<timestamp>/`, which git ignores. The first run asks you to
 confirm that you trust the plugin directory.
 
-The cases follow the case format of Claude Code 2.1.329 and have not been run yet. That CLI has
-no offline check for cases (`claude plugin validate` does not read them), so the test above
-parses them against the format, builds both fixture repositories and checks every commit SHA
-that the recordings and graders name. Expect a first run to need adjusting, and start with one
-case (`--case plugin-agent-spawn`). Two limits of the GitHub stand-in: its answers are fixed, so
-a manager case starts from an open pull request instead of an implementer opening one during the
-run; and its tool list (`_tools.json`) is written by hand from the plugin's GitHub operation map,
-not captured from the real server.
+The cases follow the case format of Claude Code 2.1.329 and were run on 2.1.330 (Linux,
+`--model sonnet`, one run per case, 2026-11-21). The first run, of 0.9.0, failed
+`fix-round-brake`: the orchestrator never read the pull request's ledger comments and dispatched
+a sixth fix round as the first of five (0.9.1 names that read where a new session resumes an
+open pull request), and the `tool_used` graders on `Edit` and `Write` of that version counted
+the implementer's calls. With 0.9.1 all three cases passed every grader, in two runs (the second
+on its final text). Two runs of a case say nothing about how often it passes, and neither
+manager case reaches the run record or its switch. That CLI has no offline check for cases
+(`claude plugin validate` does not read them), so the test above parses them against the
+format, builds both fixture repositories and checks every commit SHA that the recordings and
+graders name. Start with one case (`--case plugin-agent-spawn`). Two limits of the GitHub
+stand-in: its answers are fixed, so a manager case starts from an open pull request instead of
+an implementer opening one during the run; and its tool list (`_tools.json`) is written by hand
+from the plugin's GitHub operation map, not captured from the real server.

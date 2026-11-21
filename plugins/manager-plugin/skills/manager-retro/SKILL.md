@@ -1,6 +1,7 @@
 ---
 name: manager-retro
-description: "Improve the manager skill from recorded runs in ~/.claude/manager-runs/: measure, propose at most three changes, land the owner's choice through a reviewed PR."
+description: "Improve the manager skill from recorded runs; on/off switches the run record."
+argument-hint: "[on|off|status]"
 disable-model-invocation: true
 ---
 
@@ -8,7 +9,32 @@ disable-model-invocation: true
 
 Run this in a session whose working repository is the manager-skill source repository, on the
 machine where the manager runs (the records live there). Talk to the owner in Turkish unless they
-write otherwise.
+write otherwise. Before anything else: **The retro switch**.
+
+## The retro switch
+
+The owner typed this command with these arguments (maybe none): `$ARGUMENTS`
+
+Manager runs keep a run record only while the retro switch is on, and it is off until the owner
+turns it on. `sh "${CLAUDE_SKILL_DIR}/../manager/scripts/retro.sh" <status|on|off>` prints `on` or
+`off` and what decided it: the flag file `manager-plugin/retro` in the Claude config folder
+(`CLAUDE_CONFIG_DIR`, else `~/.claude`; `on` writes it, `off` removes it), or `MANAGER_RETRO=on` /
+`off` in the environment, which overrides the file.
+
+- The arguments are `on`, `off` or `status` alone (in any session, any repository): run the script
+  with that word, tell the owner in a line or two what it printed and what that means for the
+  manager runs that follow, and stop: nothing below applies. If the line names `MANAGER_RETRO`,
+  the variable decides whatever the file says: say so, and that it changes only where it was set
+  (a cloud environment's variables, a shell profile, the `env` block of a settings file), which
+  the owner does, never you. In a cloud session the flag file doesn't persist: there the owner
+  sets `MANAGER_RETRO=on` among the environment's variables.
+- Anything else, or no arguments: run it with `status`. `on` → continue below. `off` → say that
+  recording is off, so manager runs record nothing, and that `/manager-plugin:manager-retro on`
+  turns it on (in a cloud environment: `MANAGER_RETRO=on` among its variables). Then look for
+  dated run records, written while it was on (`ls ~/.claude/manager-runs/[0-9]*.md` through
+  Bash): none → stop; one or more → say how many there are and continue below with those records.
+- The switch never deletes a run record, and you never delete a run record either: whatever is in
+  `~/.claude/manager-runs/` stays, on or off.
 
 ## Hard limits (no retro changes these)
 

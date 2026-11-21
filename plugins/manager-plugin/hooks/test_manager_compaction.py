@@ -108,7 +108,11 @@ class ManagerRunCompactHookTest(unittest.TestCase):
         self.assertTrue(out.startswith("manager-plugin: "))
         self.assertIn("re-read the manager skill", out)
         self.assertIn("every file in its references/ whose trigger applies", out)
-        self.assertIn("remove ~/.claude/manager-runs/active/%s.)" % SESSION, out)
+        # A condition, never a statement: read as one, it ended a live run's notes.
+        self.assertTrue(out.endswith(
+            "(If no manager run is in progress any more, ignore this line and remove "
+            "~/.claude/manager-runs/active/%s.)\n" % SESSION), out)
+        self.assertNotIn("has ended", out)
         pretty = json.dumps({"session_id": SESSION, "cwd": self.repo, "source": "compact"},
                             indent=2)
         self.assertEqual(self.hook("SessionStart", raw=pretty), (code, out, err))
@@ -326,6 +330,18 @@ class ReferencePointerTest(unittest.TestCase):
                       "`references/owner-decisions.md`, **Plan records**: the end-of-run "
                       "bookkeeping PR.", self.texts["final-report.md"])
 
+    def test_idle_compaction_is_recommended_and_the_compact_line_stays(self):
+        """Idle compaction covers only a local session whose context has reached its threshold:
+        the session check recommends the lowest threshold, and the line at a stop stays."""
+        check = self.texts["session-check.md"]
+        for words in ("(d) Idle compaction, in a local session only",
+                      "recommend `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=100000`",
+                      "the delay is not a setting",
+                      "It doesn't replace the final report's `/compact` line"):
+            self.assertIn(words, check, words)
+        self.assertIn("answering after more than about 50 minutes → run `/compact` now, or answer "
+                      "in a new session", self.texts["final-report.md"])
+
     def test_what_a_compaction_re_reads(self):
         """A reference whose rules the later steps still need says "again after a compaction", in
         the skill's pointer and in its own first lines; the in-flight phase's section is re-read
@@ -344,6 +360,23 @@ class ReferencePointerTest(unittest.TestCase):
         self.assertIn("that phase resumes at loop step 2", resumed)
         self.assertIn("read the phase's section as on that base SHA (the `plan.py` command in "
                       "the implementer brief's step 1, or its `awk`)", resumed)
+
+    def test_a_resumed_pr_reads_its_ledger_before_the_review(self):
+        """The brakes count ledger lines; a new session that resumes an open PR has none in its
+        context, so the resume path names the read (both backends) ahead of the fresh review."""
+        for count in ("counted from the ledger's CHANGES REQUIRED lines",
+                      "counted from the ledger's `INTEGRATE` lines"):
+            self.assertIn(count, self.skill)
+        resumed = self.texts["establish-state.md"].split(" - open PR → ")[1].split("; - ")[0]
+        read = ("first read the PR's review-ledger comments (`gh pr view <n> --json comments`; "
+                "MCP: `pull_request_read` `method: get_comments`): the fix-round and integration "
+                "counts (**Brakes**) and any `blocked` entry come from them, the rounds of earlier "
+                "sessions included")
+        self.assertIn(read, resumed)
+        self.assertLess(resumed.index(read), resumed.index("then a fresh review"))
+        backends = self.texts["github-backends.md"]
+        self.assertIn("| Read ledger | `gh pr view <n> --json comments` | `pull_request_read` "
+                      "`method: get_comments` |", backends)
 
     def test_the_invariants_stay_in_the_skill(self):
         for rule in (

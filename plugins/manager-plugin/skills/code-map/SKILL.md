@@ -196,17 +196,18 @@ time. Both are off until the owner turns them on; turn one on only after the own
 - on: set `"commit_check": true` in `.codemap.json`, run `build` and commit both; off: remove the
   key (or set it to `false`), run `build` and commit.
 - The plugin's `PreToolUse` hook on Bash acts only on a `git commit` command in a repository with
-  that key. It runs `check --quiet`; if the map is stale it blocks the commit with one line telling
-  Claude to run `build`, stage the map pages and commit again. When this clone has the git hook,
-  it leaves the refresh to that. No key, no `.codemap.json`, no Python or any error: it does
-  nothing. It checks the working tree before the command runs, so a `git add` in the same command
-  isn't seen yet; the git hook covers that case. It also does nothing, as known gaps, when it
-  can't be sure which repository commits: `cd` / `pushd`, `git -C <dir>`, `--git-dir` or
-  `--work-tree` before the commit, `GIT_DIR=... git commit`, `env git commit`,
-  `/usr/bin/git commit`, or a commit inside `sh -c "..."` or a script (`git` must stand in command
-  position, so `echo git commit` is no commit). Another known gap: it judges the working tree,
-  not the staged files, so unrelated unstaged edits to inputs can block a commit, and the `build`
-  it asks for then maps them too (stash them first, or use the git hook, which refuses instead).
+  that key. It runs `check --quiet` and blocks the commit while the map is stale, or rebuilt but
+  not staged, with one line: run `build`, then `git add` the pages it names, each as its own
+  command, then commit again. It runs before the command starts, so `build && git add && git
+  commit` in one command stays blocked. When this clone has the git hook, it leaves the refresh
+  to that. No key, no `.codemap.json`, no Python or any error: it does nothing. Known gaps,
+  where it also does nothing: it can't be sure which repository commits (`cd` / `pushd`,
+  `git -C <dir>`, `--git-dir` or `--work-tree` before the commit, `GIT_DIR=... git commit`,
+  `env git commit`, `/usr/bin/git commit`, a commit inside `sh -c "..."` or a script; `git` must
+  stand in command position, so `echo git commit` is no commit). Another: it judges the working
+  tree's inputs, not the staged ones, so unrelated unstaged edits can block a commit, and the
+  `build` it asks for maps them too (stash them first, or use the git hook, which refuses
+  instead).
 
 ## Map first: the search nudge (on by default)
 

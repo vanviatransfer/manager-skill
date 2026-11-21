@@ -158,8 +158,7 @@ No report at all (the agent ended on an error, crash or usage limit) → `refere
 `references/verify-candidate.md`. Either way, schedule the next ready phase.
 
 ### 3. Independent review
-Read `references/review-round.md` at this step (the checkout before dispatch and the values to
-note, the ledger's format, where notes go).
+Read `references/review-round.md` at this step (the values to note, the ledger).
 
 Dispatch a **new** reviewer with its brief's dispatch fields: it reads the phase's plan section and
 the project rules at the base SHA itself, so the candidate cannot redefine its own acceptance.
@@ -263,8 +262,9 @@ it needs the owner now. Never withhold what an owner decision or safe execution 
 
 ## Run record
 
-Every run keeps a run record for the `manager-retro` skill: read `references/run-record.md` before
-its first write (the first phase outcome) and follow it.
+Retro switch (step 0): `sh "${CLAUDE_SKILL_DIR}/scripts/retro.sh"` prints `on …` → the run keeps a
+run record: read `references/run-record.md` before its first write (the first phase outcome) and
+follow it. Otherwise (the default) no record and no `usage.py`.
 
 ## Stop conditions
 
@@ -275,6 +275,5 @@ question, the plan's location, a new plan's approval), or when no ready phase is
 - the environment is persistently broken after one repair attempt, or the shared checkout holds
   uncommitted or unpushed work after an agent ended with no report.
 
-Before the final report, read `references/final-report.md` (its contents, the end-of-run checkout
-switch); with it, the **Run marker** rule. Self-training skills: before the decision batch, follow
-`references/self-training-due.md`.
+Before the final report, read `references/final-report.md`; with it, the **Run marker** rule.
+Self-training skills: before the decision batch, follow `references/self-training-due.md`.
