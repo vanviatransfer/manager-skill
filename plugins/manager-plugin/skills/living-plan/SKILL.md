@@ -89,6 +89,16 @@ Use `references/plan-template.md`. Default path: `docs/LIVING_PLAN.md`, unless t
 has a plan location or the owner names one. If a plan already exists, update it in place: keep
 completed phases and decided items, re-plan only what remains, and say what changed.
 
+Then check it, before the owner review and before the plan's PR:
+`<python> "${CLAUDE_SKILL_DIR}/scripts/plan.py" check < <plan path>` (`<python>`: the first of
+`python3`, `python`, `py -3` that is 3.8 or later; no Python → say that the check was not run).
+- An `error:` line (a phase id used twice; a `Depends on` that names no phase; a dependency cycle;
+  a phase without its Status, Objective, Scope, Depends on, Risk, Acceptance or Validation line):
+  fix the plan and run the check again, until it prints `ok:`.
+- A `warning:` line names two phases, neither done and neither depending on the other, whose
+  Scope names the same path: make one depend on the other, make them one phase, or leave them
+  when they don't touch the same thing.
+
 ## 4. Review with the owner
 
 Show a short summary, not the whole file: goal, number of phases with their titles, the first two

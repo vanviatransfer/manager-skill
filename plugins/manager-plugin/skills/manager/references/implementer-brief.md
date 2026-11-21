@@ -42,6 +42,12 @@ while their trigger holds (again after compaction):
    decisions and the `## Phases` preamble (status values, fix-round limit) (base SHA missing:
    fetch as in step 3 first):
    ```
+   git show <base-sha>:<plan-path> | <python> "<plan.py>" phase <id>
+   ```
+   `<plan.py>`: `../../living-plan/scripts/plan.py` from this file's folder; `<python>`:
+   `python3`, else `python` or `py -3`. It also prints the open owner decisions and the
+   model-strategy record. No Python → the same read without those two:
+   ```
    git show <base-sha>:<plan-path> | awk -v id=<id> '
      /^## /{p=/^## (Constraints|Binding decisions)/; h=/^## Phases/; q=0}
      /^### /{h=0; q=index($0,"### " id ".")==1} p||h||q'

@@ -35,6 +35,7 @@ Out (deliberately not doing now):
   `python3 -m unittest discover -s plugins/manager-plugin/skills/code-map/scripts`,
   `python3 -m unittest discover -s plugins/manager-plugin/skills/self-training-skills/scripts`,
   `python3 -m unittest discover -s plugins/manager-plugin/skills/manager/scripts`,
+  `python3 -m unittest discover -s plugins/manager-plugin/skills/living-plan/scripts`,
   `claude plugin validate plugins/manager-plugin` (run Python with `PYTHONDONTWRITEBYTECODE=1`); a
   phase that adds a script folder with tests appends its `unittest discover` command to this
   Validation line in the same PR, so later phases run it too.
@@ -239,6 +240,16 @@ Validation: standard.
   environment variable `MANAGER_CONTEXT_BUDGET` sets the budget; usage.py's `--since` takes the
   run marker file (its modification time) or an ISO 8601 time; a subagent's resume counts leave
   out the requests a tool result started, the orchestrator's keep them
+- 2026-11-21: P5 also carries one P4 review note (manager SKILL.md's Run marker is written only
+  once, so step 0 after a compaction leaves the file and its time as they are), by the
+  orchestrator's scope ruling: "P5's scope also covers that one Run-marker sentence in manager
+  SKILL.md (this phase already edits SKILL.md for the step-0 phase read)"
+- 2026-11-21: P5's script is plugins/manager-plugin/skills/living-plan/scripts/plan.py and its
+  folder's `unittest discover` joins the Validation line; both commands read the plan from
+  standard input and take no path (`plan.py check < <plan path>`); `phase` exits 1 when the plan
+  has no section for the id (a plan-only PR's `plan`), still printing the rest; the scope warning
+  leaves out phases that are done; the brief ceilings rise by the 43 words the `plan.py` read adds
+  to each brief (implementer 1327, reviewer 1334)
 
 ## How to keep this plan alive
 - A phase PR updates its own status line and links itself; other status lines only to correct facts.
