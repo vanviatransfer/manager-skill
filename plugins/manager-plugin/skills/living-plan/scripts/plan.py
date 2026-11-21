@@ -30,7 +30,8 @@ check reports as errors:
 - a phase id used twice;
 - a phase without a `Status:`, `Objective:`, `Scope:`, `Depends on:`, `Risk:`, `Acceptance:` or
   `Validation:` line, or with nothing after one. A value starts after its label, which starts a
-  line, and runs over the lines below it up to an empty line or the next label;
+  line, and runs over the lines below it up to an empty line or a line that starts with one of
+  these labels, `Notes:` or `Out of scope:` (any other `Word:` line is part of the value);
 - a `Depends on` that names anything but phase ids (with commas, spaces or `and` between them;
   a remark in parentheses is skipped) or `none`;
 - a dependency cycle.
@@ -50,7 +51,7 @@ PRINTED = ("## Constraints", "## Model strategy", "## Binding decisions",
            "## Open owner decisions")
 REQUIRED = ("Status", "Objective", "Scope", "Depends on", "Risk", "Acceptance", "Validation")
 HEADING = re.compile(r"### ([^\s.]+)\.(?:\s|$)")
-LABEL = re.compile(r"([A-Z][A-Za-z]*(?: [a-z]+)*):(?:\s|$)")
+LABEL = re.compile(r"(%s):(?:\s|$)" % "|".join(REQUIRED + ("Notes", "Out of scope")))
 WORD = re.compile(r"[\w.~*/-]+")
 EXTENSION = re.compile(r"\.[A-Za-z]\w+$")
 

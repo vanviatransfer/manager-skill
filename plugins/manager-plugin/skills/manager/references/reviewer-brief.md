@@ -68,7 +68,8 @@ gives them; an entry it cites (`D<n>`)
 `:!<map>` and `:!<map dir>/`, where `<map>` is the `map` in `.codemap.json` at the candidate and
 `<map dir>` is that path without `.md`); the surrounding code its correctness depends on. Not PR
 comments or reviews, the PR description or commit messages. With a `Code map` command, run
-`<code map> query <term>` (and read the vault index) before any broad search of code or vault.
+`<code map> changed --base <base> --head <candidate>` (pointers only, never a filter) and, before
+any broad search of code or vault, `<code map> query <term>` (and read the vault index).
 
 **Review for.** Phase PR: acceptance criteria; bugs,
 edge cases, broken invariants in touched code and its callers; security and data safety; project

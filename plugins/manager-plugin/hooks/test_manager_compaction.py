@@ -238,7 +238,7 @@ class SizeCeilingTest(unittest.TestCase):
         self.assertLessEqual(len(read(os.path.join(SKILLS, "code-map", "SKILL.md"))), 20000)
 
     def test_briefs(self):
-        for name, words in (("implementer-brief.md", 1327), ("reviewer-brief.md", 1334)):
+        for name, words in (("implementer-brief.md", 1327), ("reviewer-brief.md", 1347)):
             self.assertLessEqual(len(read(os.path.join(REFS, name)).split()), words, name)
 
 

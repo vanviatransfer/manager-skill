@@ -99,6 +99,12 @@ need it; write the block by hand).
   tree, so run it at the candidate), or a directory holding one. These are the pages to check
   after a change; also `grep` the vault for symbol names and plain-text paths the change renames
   or removes, since `mentions` sees only code spans and links.
+- `<cmd> changed --base <base> --head <head>`: pointers for reviewing `git diff <base>...<head>`,
+  at most 60 lines, then a count of what was cut. Per changed file (map pages left out): the
+  top-level definitions whose text differs (approximate: one runs up to the next), the files
+  importing it, its tests (importing it, or named after it) and the vault lines mentioning it.
+  Definitions come from the two commits, the rest from the working tree, so run it at `<head>`.
+  It writes nothing. Pointers only, never a filter: it can miss what a change affects.
 
 - `<cmd> rules-hint` (`--remove` to take it out): writes the rules block below into `AGENTS.md`
   and `CLAUDE.md` at the repository root (each created if missing, with a one-line title).
@@ -265,6 +271,7 @@ question. With the map set up, it gives implementers and reviewers `Code map: <c
 - the implementer runs `build` before its final validation and commits the result (not in a
   plan-only PR), and again after any integration;
 - the reviewer runs `check` as required validation (stale means CHANGES REQUIRED; not for a
-  plan-only PR), reads the diff without the map pages, and uses `mentions` plus a grep for
-  renamed or removed names and paths to find the vault pages to check;
+  plan-only PR), reads the diff without the map pages, runs `changed` for pointers (never a
+  filter), and uses `mentions` plus a grep for renamed or removed names and paths to find the
+  vault pages to check;
 - a merge conflict in map pages is resolved by running `build` again, never by hand.
