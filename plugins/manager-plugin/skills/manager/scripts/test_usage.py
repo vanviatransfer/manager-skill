@@ -32,17 +32,37 @@ UNTIMED = "usage | c3 | unknown | model-a | 1 | 5 | 0 | 800 | 0 | 20 | 825 | unk
           "unknown"
 
 
+# The bounded lines (`--since`) of the same fixture, from the fixture's second 400 and 1700.
+RUN = "usage | orchestrator | main | model-c | 3 | 6 | 47000 | 400 | 15500 | 350 | 21352 | 0 | " \
+      "1 | 4620"
+ROUND = "usage | a1 | manager-plugin:implementer | model-a | 4 | 10 | 10950 | 15100 | 0 | 5130 | " \
+        "3092 | 0 | 0 | 200"
+NOTHING = " | unknown | 0 | 0 | 0 | 0 | 0 | 0 | unknown | unknown | unknown | unknown"
+
+
 def stamp(seconds):
     moment = datetime.datetime(2026, 1, 1, 9, 0, 0) + datetime.timedelta(seconds=seconds)
     return moment.strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 
+def epoch(seconds):
+    """The time `stamp(seconds)` names, as a file's modification time has it."""
+    zero = datetime.datetime(2026, 1, 1, 9, 0, 0, tzinfo=datetime.timezone.utc)
+    return zero.timestamp() + seconds
+
+
 def other(at, kind="user", **fields):
-    """A record that is not a request: a prompt, a tool result, a system line."""
+    """A record that is not a request: a prompt, a system line."""
     record = dict({"type": kind, "message": {"role": "user", "content": "text"}}, **fields)
     if at is not None:
         record["timestamp"] = stamp(at)
     return [record]
+
+
+def result(at, **fields):
+    """A tool result: a `user` record too, but no prompt."""
+    return other(at, message={"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": "toolu_1", "content": "text"}]}, **fields)
 
 
 def request(at, key, fresh, cached, written, output, hour=0, blocks=1, model="model-a",
@@ -100,7 +120,7 @@ class Fixture(unittest.TestCase):
         self.write(self.old, SESSION + ".jsonl", (
             other(0),
             request(10, "o1", 4, 0, 20000, 300, hour=20000, blocks=3),
-            other(400),  # a subagent returns 388 s after o1: the 1-hour cache is still there
+            result(400),  # a subagent returns 388 s after o1: the 1-hour cache is still there
             waited))
         self.write(self.new, SESSION + ".jsonl", (
             waited,  # the same request, in both files
@@ -111,17 +131,17 @@ class Fixture(unittest.TestCase):
         self.agent(self.old, "b2", "manager-plugin:reviewer", (
             other(500),
             request(510, "r1", 3, 0, 7000, 200, model="model-b"),
-            other(520),  # a tool result 10 s after r1: r2 is sent at once
+            result(520),  # a tool result 10 s after r1: r2 is sent at once
             # ... and thinks for 70 s before its first block ends: its own time, not a resume
             request(590, "r2", 2, 7000, 500, 900, blocks=3, model="model-b")))
         self.agent(self.new, "a1", "manager-plugin:implementer", (
             other(1000),
             request(1005, "m1", 3, 0, 9000, 100, blocks=2),
-            other(1020),  # 14 s after m1: not a resume
+            result(1020),  # 14 s after m1: not a resume
             request(1025, "m2", 2, 9000, 300, 50),
-            other(1220),  # 195 s after m2, and m3 reads the context: warm
+            other(1220),  # a message 195 s after m2, and m3 reads the context: warm
             request(1225, "m3", 2, 9300, 200, 400),
-            other(1700),  # 475 s after m3, and m4 writes it again: cold
+            other(1700),  # a message 475 s after m3, and m4 writes it again: cold
             request(1705, "m4", 4, 0, 9950, 60, blocks=2),
             request(1710, "m5", 2, 9950, 100, 5000),
             other(1800, kind="system", subtype="compact_boundary"),
@@ -177,8 +197,10 @@ class UsageTest(Fixture):
         with open(os.path.join(HERE, "..", "references", "run-record.md"), encoding="utf-8") as fh:
             record = fh.read()
         self.assertIn("\n%s\n" % row, record)  # the run record's column line
+        record_text = " ".join(record.split())
         self.assertIn('`<python> "${CLAUDE_SKILL_DIR}/scripts/usage.py" <session id> <agent>... '
-                      '>> <file>`', " ".join(record.split()))
+                      '>> <file>`', record_text)
+        self.assertIn("`orchestrator --since <the **Run marker** file>`", record_text)
         for column in usage.COLUMNS:  # each one is defined there
             self.assertIn("`%s`" % column, record.split("\n## Usage lines\n")[1])
 
@@ -256,15 +278,180 @@ class UsageTest(Fixture):
         self.assertEqual((tree(self.tmp), sorted(os.listdir(HERE))), before)
 
 
+class SinceTest(Fixture):
+    """`--since WHEN`: only the records stamped at or after a file's modification time (the run
+    marker's: the run, not the whole session) or an ISO 8601 time."""
+
+    def marker(self, seconds, name="marker"):
+        path = os.path.join(self.tmp, name)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("R2026-01-01-0906\n")
+        os.utime(path, (epoch(seconds), epoch(seconds)))
+        return path
+
+    def test_the_orchestrator_line_counts_the_run_from_its_marker(self):
+        marker = self.marker(400)
+        self.assertEqual(lines(SESSION, "orchestrator", "--since", marker), [RUN])
+        self.assertEqual(lines(SESSION, "orchestrator"), [ORCHESTRATOR])  # the whole session
+        # A request counts whole with one record at or after the bound: o1's last, at second 12.
+        for seconds, expected in ((12, ORCHESTRATOR.replace("5020", "5008")), (13, RUN)):
+            self.assertEqual(lines(SESSION, "orchestrator", "--since", self.marker(seconds)),
+                             [expected], seconds)
+
+    def test_a_time_bounds_as_a_file_does(self):
+        for text in (stamp(400), "2026-01-01T09:06:40+00:00", "2026-01-01T11:06:40.000+02:00"):
+            self.assertEqual(lines(SESSION, "orchestrator", "--since", text), [RUN], text)
+        local = datetime.datetime.fromtimestamp(epoch(400)).isoformat()  # no zone: local time
+        self.assertEqual(lines(SESSION, "orchestrator", "--since", local), [RUN])
+        self.assertEqual(usage.moment(stamp(400)), epoch(400))
+        self.assertEqual(usage.moment(self.marker(400)), epoch(400))
+
+    def test_the_option_stands_anywhere_and_bounds_every_line(self):
+        marker = self.marker(1700)
+        for args in ((SESSION, "a1", "--since", marker), (SESSION, "--since", marker, "a1"),
+                     ("--since", marker, SESSION, "a1"), ("--since=" + marker, SESSION, "a1")):
+            self.assertEqual(lines(*args), [ROUND], args)
+        self.assertEqual(lines(SESSION, "--since", marker), [
+            "usage | orchestrator | main | model-c | 2 | 4 | 27000 | 300 | 15000 | 250 | 21352 | "
+            "0 | 0 | 20", ROUND, "usage | b2 | manager-plugin:reviewer" + NOTHING,
+            "usage | c3 | unknown" + NOTHING])
+
+    def test_a_record_without_a_time_is_not_counted(self):
+        self.assertEqual(lines(SESSION, "c3"), [UNTIMED])
+        self.assertEqual(lines(SESSION, "c3", "--since", stamp(0)), ["usage | c3 | unknown"
+                                                                    + NOTHING])
+        self.assertEqual(lines(SESSION, "orchestrator", "--since", stamp(9000)),
+                         ["usage | orchestrator | main" + NOTHING])
+        self.assertEqual(lines(SESSION, "zz", "--since", stamp(0)),
+                         ["usage | zz | unknown" + UNKNOWN])
+
+    def test_the_first_request_counted_is_no_resume(self):
+        path = self.write(self.tmp, "one.jsonl", (
+            other(0), request(5, "p1", 0, 0, 10000, 10),
+            other(600), request(605, "p2", 0, 0, 10010, 10),
+            other(1200), request(1205, "p3", 0, 10010, 10, 10)))
+        for since, expected in ((None, (3, 1, 1, 1205)), (epoch(600), (2, 1, 0, 605)),
+                                (epoch(601), (2, 1, 0, 600)), (epoch(1205), (1, 0, 0, 0))):
+            totals = usage.read([path], since)
+            self.assertEqual(tuple(totals[key] for key in ("requests", "warm", "cold", "seconds")),
+                             expected, since)
+
+    def test_a_bound_that_cannot_be_read_prints_no_line(self):
+        env = dict(os.environ, CLAUDE_CONFIG_DIR=self.config)
+        for value in (os.path.join(self.tmp, "no-marker"), "yesterday", ""):
+            p = subprocess.run([sys.executable, "-I", "-B", SCRIPT, SESSION, "orchestrator",
+                                "--since", value], capture_output=True, env=env, cwd=self.tmp)
+            self.assertEqual((p.returncode, p.stdout), (2, b""), value)
+            self.assertIn("neither a file nor an ISO 8601 time", p.stderr.decode())
+        p = subprocess.run([sys.executable, "-I", "-B", SCRIPT, SESSION, "orchestrator",
+                            "--since", self.marker(400)], capture_output=True, env=env,
+                           cwd=self.tmp)
+        self.assertEqual((p.returncode, p.stdout.decode().splitlines(), p.stderr), (0, [RUN], b""))
+
+
+class LastRequestTest(Fixture):
+    """`last`: the context size at a transcript's last request, read from the file's end only."""
+
+    def path(self, *groups, **kw):
+        return self.write(self.tmp, "one.jsonl", groups, **kw)
+
+    def test_it_is_the_context_at_return(self):
+        for path in (os.path.join(self.new, SESSION + ".jsonl"),
+                     os.path.join(self.old, SESSION, "subagents", "agent-b2.jsonl"),
+                     os.path.join(self.new, SESSION, "subagents", "agent-a1.jsonl"),
+                     os.path.join(self.new, SESSION, "subagents", "agent-c3.jsonl")):
+            self.assertEqual(usage.last(path), usage.read([path])["context"], path)
+        self.assertEqual(usage.last(os.path.join(self.new, SESSION + ".jsonl")), 21352)
+
+    def test_the_last_request_counts_not_the_largest(self):
+        big, small = request(5, "p1", 5, 300000, 2000, 400), request(905, "p2", 3, 0, 9000, 20)
+        self.assertEqual(usage.last(self.path(other(0), big)), 302405)
+        self.assertEqual(usage.last(self.path(other(0), big, other(900), small)), 9023)
+        # Its last record is the complete one; what follows it is no request.
+        blocks = request(5, "p3", 4, 100, 200, 3000, blocks=3)
+        self.assertEqual(usage.last(self.path(other(0), blocks)), 3304)
+        self.assertEqual(usage.last(self.path(other(0), blocks[:2])), 305)
+        after = (result(9, toolUseResult={"usage": {"input_tokens": 999999}}),
+                 other(10, kind="attachment"), request(11, "e1", 0, 0, 0, 0, model="<synthetic>"),
+                 other(12, kind="system", subtype="stop_hook_summary"))
+        self.assertEqual(usage.last(self.path(other(0), blocks, *after)), 3304)
+        self.assertEqual(usage.last(self.path(other(0), blocks, *after, junk=(
+            "not json\n", "\n", '"usage"\n', '[{"usage": 1}]\n', '{"type": "assistant"\n',
+            '{"type": "assistant", "message": {"usage": {"output_tokens": 7}}}\n',
+            '{"type": "user", "message": {"id": "u2", "usage": {"output_tokens": 7}}}\n'))), 3304)
+
+    def test_only_the_end_of_the_file_is_read(self):
+        early, late = request(5, "p1", 1, 2, 3, 4), request(9, "p2", 10, 20, 30, 40)
+        padding = other(6, text="x" * 5000)
+        path = self.path(early, padding, late)
+        size, cut = os.path.getsize(path), len(json.dumps(late[0])) + 1
+        self.assertEqual(usage.last(path), 100)
+        self.assertEqual(usage.last(path, cut), 100)  # the whole record, from its first byte
+        self.assertEqual(usage.last(path, cut + 1), 100)  # after the cut: a part of a line
+        self.assertEqual(usage.last(path, cut - 1), None)  # a record cut short is not read
+        path = self.path(early, padding)
+        self.assertEqual(usage.last(path), 10)
+        self.assertEqual(usage.last(path, 5000), None)  # the request lies before the end read
+        self.assertEqual(usage.last(path, size), 10)
+
+    def test_nothing_to_read_is_none(self):
+        self.assertIsNone(usage.last(os.path.join(self.tmp, "no-such-file.jsonl")))
+        self.assertIsNone(usage.last(self.tmp))  # a folder
+        self.assertIsNone(usage.last("bad\0name"))
+        self.assertIsNone(usage.last(self.path()))  # an empty file
+        self.assertIsNone(usage.last(self.path(other(0), result(5))))
+        self.assertIsNone(usage.last(self.path(junk=("not json\n", b"\xff\xfe".decode("latin-1")))))
+        path = self.path(request(5, "p1", 1, 2, 3, 4))
+        with open(path, "ab") as fh:
+            fh.write(b'\xff\xfe "usage" not utf-8 \x00\n')
+        self.assertEqual(usage.last(path), 10)
+        before = tree(self.tmp), sorted(os.listdir(HERE))
+        usage.last(path)
+        self.assertEqual((tree(self.tmp), sorted(os.listdir(HERE))), before)
+
+
 class ResumeTest(Fixture):
     """A resume: a request sent 60 s or more after the agent's previous one ended, by the prompt
-    or tool result that started it. Cold: under half of the previous prompt read from the cache.
-    The first request after a compaction is not counted."""
+    or tool result that started it (for a subagent: by a prompt only). Cold: under half of the
+    previous prompt read from the cache. The first request after a compaction is not counted."""
 
-    def resumes(self, *groups):
+    def resumes(self, *groups, **kw):
         path = self.write(self.tmp, "one.jsonl", groups)
-        totals = usage.read([path])
+        totals = usage.read([path], **kw)
         return totals["warm"], totals["cold"]
+
+    def test_a_subagents_long_tool_call_is_no_resume(self):
+        first = other(0) + request(5, "p1", 0, 0, 10000, 10)
+        warm, cold = request(400, "p2", 0, 10000, 10, 10), request(400, "p2", 0, 0, 10010, 10)
+        for started, expected in ((result(395), (0, 0)), (other(395), (1, 0)),
+                                  (other(395, message={"role": "user", "content": [
+                                      {"type": "text", "text": "a message"}]}), (1, 0)),
+                                  (other(395, isMeta=True, origin={"kind": "coordinator"}), (1, 0)),
+                                  (other(100) + result(395), (0, 0)),
+                                  (result(100) + other(395), (1, 0)),
+                                  (other(395) + result(396), (0, 0))):
+            self.assertEqual(self.resumes(first, started, warm, waits=False), expected, started)
+            self.assertEqual(self.resumes(first, started, cold, waits=False), expected[::-1])
+            self.assertEqual(self.resumes(first, started, warm), (1, 0))  # the orchestrator's
+        # A record that is not understood is no tool result.
+        for content in (None, 7, [], ["tool_result"], [{"type": "text"}], {"type": "tool_result"}):
+            odd = other(395, message={"role": "user", "content": content})
+            self.assertEqual(self.resumes(first, odd, warm, waits=False), (1, 0), content)
+        self.assertEqual(self.resumes(first, other(395, message="text"), warm, waits=False),
+                         (1, 0))
+
+    def test_the_lines_count_a_tool_wait_for_the_orchestrator_only(self):
+        groups = (other(0), request(5, "t1", 0, 0, 10000, 10),
+                  result(300), request(305, "t2", 0, 10000, 10, 10),  # a 295 s tool call
+                  other(900), request(905, "t3", 0, 10010, 10, 10),  # a message 595 s later
+                  result(2000), request(2005, "t4", 0, 0, 10030, 10))  # a 1,095 s tool call
+        self.agent(self.new, "g7", "manager-plugin:implementer", groups)
+        self.write(self.new, "tool-waits.jsonl", groups)
+        counted = " | model-a | 4 | 0 | 20010 | 20050 | 0 | 40 | 10040 | "
+        self.assertEqual(lines(SESSION, "g7"), [
+            "usage | g7 | manager-plugin:implementer" + counted + "1 | 0 | 2005"])
+        self.assertEqual(lines("tool-waits", "orchestrator"), [
+            "usage | orchestrator | main" + counted + "2 | 1 | 2005"])
 
     def test_the_gap_runs_from_the_previous_requests_last_record_to_what_started_this_one(self):
         first = other(0) + request(5, "p1", 0, 0, 10000, 10, blocks=3)  # its last record: at 7 s

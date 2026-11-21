@@ -64,11 +64,14 @@ candidate to revert.
 From the `usage` lines (plugin 0.9.0 on; the record's `usage` column line names the fields, the
 manager's `references/run-record.md` defines them; an agent's last line counts): what the
 orchestrator and each role really spent, per run and per landed phase, with `input`, cache
-reads, cache writes and `output` kept apart (their prices differ). For the manager's rotation
-thresholds: implementers' `warm resumes` and `cold resumes` against their `context at return`,
-and reviewers' `seconds`, since a review longer than the subagent cache's 5 minutes makes the
-next fix round's resume cold. Re-tune those thresholds from these figures, not from context
-sizes alone.
+reads, cache writes and `output` kept apart (their prices differ). The `orchestrator` line
+counts its run only (from the run marker's time), not the rest of the session. For the
+manager's rotation thresholds: implementers' `warm resumes` and `cold resumes` against their
+`context at return`, and reviewers' `seconds`, since a review longer than the subagent cache's
+5 minutes makes the next fix round's resume cold. A subagent's resume counts hold only the
+requests a message to it started, never a wait on a long tool call; the orchestrator's hold
+its waits for subagents and long commands too, so don't compare the two. Re-tune those
+thresholds from these figures, not from context sizes alone.
 
 ## 3. Propose (at most three)
 

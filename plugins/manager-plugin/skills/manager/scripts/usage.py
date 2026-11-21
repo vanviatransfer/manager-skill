@@ -2,11 +2,14 @@
 """usage: what a Claude Code session's orchestrator and its subagents spent, from the transcripts.
 
 Usage:
-  usage.py SESSION_ID [AGENT ...]
+  usage.py SESSION_ID [AGENT ...] [--since WHEN]
 
 Prints one line for the session's main conversation (`orchestrator`) and one per subagent, oldest
 first; with AGENT names (`orchestrator`, or a subagent's id as the Agent tool returns it) only
-those, in that order. Each line, with ` | ` between its fields:
+those, in that order. With `--since WHEN` a line counts only the records stamped at or after
+WHEN, a file's modification time (the manager's run marker: the run, not the whole session) or
+an ISO 8601 time; the first request counted is then no resume. Each line, with ` | ` between its
+fields:
 
   usage | agent | role | model | requests | input | cache read | cache write 5m | cache write 1h |
   output | context at return | warm resumes | cold resumes | seconds
@@ -21,12 +24,15 @@ those, in that order. Each line, with ` | ` between its fields:
 - context at return: the last request's input + cache write + cache read + output, the figure the
   Agent tool reports as `subagent_tokens`.
 - warm resumes, cold resumes: requests sent 60 seconds or more after the agent's previous one
-  ended (a resume, a wait for a subagent or the owner, a long tool call). A record is stamped
-  when its content block ends, so a request counts as sent at the prompt or tool result that
-  started it (the last `user` record before its first record), and its own time, thinking
-  included, is no gap. Cold: it read less than half of the previous request's prompt from the
-  cache, so the cache had expired and the context was written again; warm otherwise. The first
-  request after a compaction (a `compact_boundary` record between the two) is not counted.
+  ended. For a subagent, only those a prompt started (a message that resumed it): a request
+  that a tool result started (a `user` record whose content holds a `tool_result`) is no
+  resume, however long the tool call took. For the orchestrator those count too (a wait for a
+  subagent, a long tool call), beside the owner's prompts. A record is stamped when its content
+  block ends, so a request counts as sent at the prompt or tool result that started it (the
+  last `user` record before its first record), and its own time, thinking included, is no gap.
+  Cold: it read less than half of the previous request's prompt from the cache, so the cache
+  had expired and the context was written again; warm otherwise. The first request after a
+  compaction (a `compact_boundary` record between the two) is not counted.
 - seconds: from the transcript's first record to its last (a reviewer's: how long the review
   took; a resumed agent's includes the waits between its rounds).
 
@@ -41,7 +47,7 @@ skipped, and only the requests a transcript records are counted.
 
 Only the Python standard library is used (Python 3.8+). The files are only read; nothing is
 written but the lines on standard output, and nothing is sent anywhere. Exit status 0, whatever
-is missing (2 for a command line without a session id).
+is missing (2 for a command line without a session id, or with a `--since` that is neither).
 """
 import argparse
 import bisect
@@ -58,6 +64,8 @@ COLUMNS = ("agent", "role", "model", "requests", "input", "cache read", "cache w
 FIELDS = ("model", "requests", "input", "read", "write_5m", "write_1h", "output", "context",
           "warm", "cold", "seconds")
 GAP = 60  # seconds after the previous request's end from which the next one counts as a resume
+PROMPT = ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
+TAIL = 1 << 20  # the bytes of a transcript's end that `last` reads
 NAME = re.compile(r"[A-Za-z0-9_-]+")  # a session id, an agent id: never a path or a pattern
 
 
@@ -75,11 +83,34 @@ def count(usage, key):
     return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0
 
 
-def read(paths):
+def request(record):
+    """(message id, usage, model) of a record that belongs to an API request, else None."""
+    message = record.get("message") if record.get("type") == "assistant" else None
+    if not isinstance(message, dict):
+        return None
+    key, usage, model = (message.get(k) for k in ("id", "usage", "model"))
+    if not isinstance(key, str) or not isinstance(usage, dict) \
+            or model == "<synthetic>":  # an error message, not a request
+        return None
+    return key, usage, model
+
+
+def answer(record):
+    """True for a `user` record that carries a tool result, not a prompt."""
+    message = record.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    return isinstance(content, list) and any(
+        isinstance(part, dict) and part.get("type") == "tool_result" for part in content)
+
+
+def read(paths, since=None, waits=True):
     """The totals of one conversation's transcript files: a dict with the keys of FIELDS and
-    `start`, the time of the first record (None: unknown), or None when no file can be read."""
+    `start`, the time of the first record (None: unknown), or None when no file can be read.
+    With `since`, a time in seconds, only the records stamped at or after it count. Without
+    `waits`, a request that a tool result started is no resume."""
     requests = {}  # message id -> [time of its first record, of its last, model, usage]
-    sent, compacted = [], []  # the times of the prompts and tool results, of the compactions
+    sent = []  # (time, whether a tool result) of the prompts and tool results
+    compacted = []  # the times of the compactions
     start = end = None
     opened = False
     for path in paths:
@@ -94,26 +125,26 @@ def read(paths):
                     if not isinstance(record, dict):
                         continue
                     at = when(record)
+                    if since is not None and (at is None or at < since):
+                        continue
                     if at is not None:
                         start = at if start is None else min(start, at)
                         end = at if end is None else max(end, at)
-                    kind, message = record.get("type"), record.get("message")
+                    kind = record.get("type")
                     if at is not None and kind == "user":
-                        sent.append(at)
+                        sent.append((at, answer(record)))
                     elif at is not None and kind == "system" \
                             and record.get("subtype") == "compact_boundary":
                         compacted.append(at)
-                    if kind != "assistant" or not isinstance(message, dict):
+                    found = request(record)
+                    if not found:
                         continue
-                    key, usage, model = (message.get(k) for k in ("id", "usage", "model"))
-                    if not isinstance(key, str) or not isinstance(usage, dict) \
-                            or model == "<synthetic>":  # an error message, not a request
-                        continue
-                    request = requests.setdefault(key, [at, at, None, None])
+                    key, usage, model = found
+                    entry = requests.setdefault(key, [at, at, None, None])
                     if at is not None:
-                        request[0] = at if request[0] is None else min(request[0], at)
-                        request[1] = at if request[1] is None else max(request[1], at)
-                    request[2:] = model, usage  # the last record's: the complete one
+                        entry[0] = at if entry[0] is None else min(entry[0], at)
+                        entry[1] = at if entry[1] is None else max(entry[1], at)
+                    entry[2:] = model, usage  # the last record's: the complete one
         except OSError:
             continue
     if not opened:
@@ -125,10 +156,9 @@ def read(paths):
                  warm=0 if timed else None, cold=0 if timed else None)
     sent.sort()
     before = None  # the previous request: (time of its last record, its prompt's size)
-    for first, last, model, usage in sorted(requests.values(),
-                                            key=lambda r: (r[0] is None, r[0] or 0)):
-        fresh, cached, written = (count(usage, key) for key in (
-            "input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
+    for first, ended, model, usage in sorted(requests.values(),
+                                             key=lambda r: (r[0] is None, r[0] or 0)):
+        fresh, cached, written = (count(usage, key) for key in PROMPT)
         hour = min(written, count(usage.get("cache_creation"), "ephemeral_1h_input_tokens"))
         output = count(usage, "output_tokens")
         prompt = fresh + cached + written
@@ -141,12 +171,38 @@ def read(paths):
         total["context"] = prompt + output
         total["model"] = model
         if before and None not in (first, before[0]):
-            asked = bisect.bisect_right(sent, first)  # what started it: the last one before it
-            if asked and sent[asked - 1] - before[0] >= GAP \
+            asked = bisect.bisect_right(sent, (first, True))  # what started it: the last before
+            if asked and sent[asked - 1][0] - before[0] >= GAP \
+                    and (waits or not sent[asked - 1][1]) \
                     and not any(before[0] < at <= first for at in compacted):
                 total["cold" if cached * 2 < before[1] else "warm"] += 1
-        before = (last, prompt)
+        before = (ended, prompt)
     return total
+
+
+def last(path, tail=TAIL):
+    """The context size at the last request in a transcript's last `tail` bytes (the figure
+    `context at return` gives), or None: no request there, or no file that can be read. Only
+    that end of the file is read, and parsed from its last line back, so a long transcript
+    costs no more than a short one."""
+    try:
+        with open(path, "rb") as fh:
+            cut = max(0, fh.seek(0, os.SEEK_END) - tail - 1)  # with the byte before them
+            fh.seek(cut)
+            lines = fh.read().split(b"\n")
+    except (OSError, ValueError):
+        return None
+    for line in reversed(lines[1:] if cut else lines):  # after a cut, the first is a part
+        if b'"usage"' not in line:
+            continue
+        try:
+            record = json.loads(line.decode("utf-8", "replace"))
+        except (ValueError, RecursionError):
+            continue
+        found = request(record) if isinstance(record, dict) else None
+        if found:
+            return sum(count(found[1], key) for key in PROMPT + ("output_tokens",))
+    return None
 
 
 def tag(value):
@@ -176,9 +232,9 @@ def find(session):
     return sorted(glob.glob(base + ".jsonl")), sorted(glob.glob(os.path.join(base, "subagents")))
 
 
-def rows(session, agents=()):
+def rows(session, agents=(), since=None):
     """[(agent, role, totals or None)]: the named agents in that order, else the orchestrator and
-    then every subagent of the session, oldest first."""
+    then every subagent of the session, oldest first; `since` as in `read`."""
     transcripts, folders = find(session)
     names = list(dict.fromkeys(agents))
     if not names:
@@ -188,10 +244,11 @@ def rows(session, agents=()):
     found = []
     for name in names:
         if name == "orchestrator":
-            found.append((name, "main", read(transcripts)))
+            found.append((name, "main", read(transcripts, since)))
         elif NAME.fullmatch(name):
             found.append((name, role(folders, name), read(
-                os.path.join(folder, "agent-%s.jsonl" % name) for folder in folders)))
+                (os.path.join(folder, "agent-%s.jsonl" % name) for folder in folders), since,
+                waits=False)))
         else:
             found.append((name, None, None))
     if not agents:
@@ -210,6 +267,17 @@ def render(agent, kind, totals):
                       + ["unknown" if value is None else str(value) for value in values[1:]])
 
 
+def moment(text):
+    """`--since`: a file's modification time, else an ISO 8601 time, in seconds."""
+    try:
+        return os.path.getmtime(text)
+    except (OSError, ValueError):
+        at = when({"timestamp": text})
+    if at is None:
+        raise argparse.ArgumentTypeError("%r is neither a file nor an ISO 8601 time" % text)
+    return at
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(
         prog="usage.py", description="What a session's orchestrator and subagents spent: one "
@@ -217,8 +285,11 @@ def main(argv=None):
     ap.add_argument("session", metavar="SESSION_ID")
     ap.add_argument("agents", metavar="AGENT", nargs="*",
                     help="`orchestrator` or a subagent's id; none: all of them")
-    args = ap.parse_args(argv)
-    for row in rows(args.session, args.agents):
+    ap.add_argument("--since", metavar="WHEN", type=moment,
+                    help="count only the records stamped at or after WHEN: a file's "
+                         "modification time (the run marker's: the run) or an ISO 8601 time")
+    args = ap.parse_intermixed_args(argv)
+    for row in rows(args.session, args.agents, args.since):
         print(render(*row))
     return 0
 

@@ -145,13 +145,15 @@ Validation: standard; plus the new script folder's `unittest discover`.
 Notes: measured facts in docs/TODO.md items 4 and 11.
 
 ### P4. Watch the orchestrator's context
-Status: todo
+Status: done (PR #47)
 Objective: the orchestrator learns when its own context is large before it pays for it.
 Scope: a PostToolUse hook on `Agent` (plugins/manager-plugin/hooks) that reads the last request's
 usage from the hook input's `transcript_path` (reuse P3's reader) and, above a budget (default
 200,000 tokens; `.codemap.json`-independent; documented), prints one `additionalContext` line: write
 the working-notes lines, then suggest `/compact` to the owner at the next stop; only during a
-manager run (P2's marker); fail open; fast.
+manager run (P2's marker); fail open; fast. Also: usage.py bounds the orchestrator line to the run
+(e.g. `--since`) and resume counts leave out (or document) requests started by a long tool call;
+run-record.md and the manager-retro skill follow.
 Depends on: P2, P3
 Risk: standard — advisory hook.
 Acceptance: tested below/above budget, outside a run, missing transcript; under 50 ms on the common
@@ -230,6 +232,13 @@ Validation: standard.
   expired cache still reads a shared prefix
 - 2026-11-21: P4 reads only the transcript's tail, with a last-request helper beside P3's `read`,
   which parses the whole transcript (~48–77 ms on 10–15 MB files)
+- 2026-11-21: P4 also carries two P3 review notes (per-run orchestrator usage; tool waits in resume
+  counts)
+- 2026-11-21: P4's hook is plugins/manager-plugin/hooks/manager-context-watch.sh (PostToolUse on
+  `Agent|Task`; its logic is skills/manager/scripts/context_watch.py, with usage.py's `last`); the
+  environment variable `MANAGER_CONTEXT_BUDGET` sets the budget; usage.py's `--since` takes the
+  run marker file (its modification time) or an ISO 8601 time; a subagent's resume counts leave
+  out the requests a tool result started, the orchestrator's keep them
 
 ## How to keep this plan alive
 - A phase PR updates its own status line and links itself; other status lines only to correct facts.
