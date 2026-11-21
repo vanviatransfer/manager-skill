@@ -35,8 +35,11 @@ Out (deliberately not doing now):
   `python3 -m unittest discover -s plugins/manager-plugin/skills/code-map/scripts`,
   `python3 -m unittest discover -s plugins/manager-plugin/skills/self-training-skills/scripts`,
   `claude plugin validate plugins/manager-plugin` (run Python with `PYTHONDONTWRITEBYTECODE=1`); a
-  phase that adds a script folder with tests adds its `unittest discover` command to its own
-  validation.
+  phase that adds a script folder with tests appends its `unittest discover` command to this
+  Validation line in the same PR, so later phases run it too.
+- Size ceilings (the test P2 adds for manager SKILL.md, implementer-brief.md, reviewer-brief.md and
+  code-map SKILL.md): a later phase whose scope adds a rule to one of these files may raise that
+  file's ceiling by what it adds, stated in its PR, or move detail to a trigger file instead.
 - Merge: squash via PR, pinned to the reviewed SHA.
 - Version: only P8 bumps `plugins/manager-plugin/.claude-plugin/plugin.json` (to 0.9.0).
 
@@ -64,8 +67,8 @@ Status: todo
 Objective: close the review notes and audit findings on 0.8.3's own changes.
 Scope: plugins/manager-plugin/skills/manager (SKILL.md, references), skills/code-map
 (codemap.py session-hook text and rules-hint versioning, SKILL.md, scripts/test_codemap.py),
-hooks (codemap-rules-version.sh header, test_prefer_plugin_agents.py plan-read tests),
-skills/self-training-skills SKILL.md, agents, docs/TODO.md:
+hooks (codemap-rules-version.sh header, test_prefer_plugin_agents.py plan-read and rules-version
+hook tests), skills/self-training-skills SKILL.md, agents, docs/TODO.md:
 - the SessionStart rules-version line is information, not an order ("… is older; `<cmd>` updates
   it; a manager run does this in its setup PR");
 - an unversioned rules block whose text equals the current template counts as current (the marker
@@ -111,9 +114,7 @@ skill's own `hooks` frontmatter if the installed CLI supports it for plugin skil
   is in progress (detect it cheaply, e.g. a marker the skill writes outside the repository; fail
   open);
 - a test with size ceilings: manager SKILL.md ≤18,000 characters, implementer-brief.md and
-  reviewer-brief.md ≤ their word counts after this phase, code-map SKILL.md ≤20,000 characters. A
-  later phase whose scope adds a rule to one of these files may raise that file's ceiling by what
-  it adds, stated in its PR, or move detail to a trigger file instead.
+  reviewer-brief.md ≤ their word counts after this phase, code-map SKILL.md ≤20,000 characters.
 Depends on: P1
 Risk: critical — moves the loop's rules; a lost rule weakens an invariant.
 Acceptance: SKILL.md ≤18,000 characters; every moved rule exists exactly once with a pointer from
@@ -166,7 +167,7 @@ decisions and model-strategy record). `phase` reads the plan from stdin
 plan-at-base read stays. The briefs and the orchestrator's step-0 phase read use it instead of the
 awk command (keep the awk as the no-Python fallback); living-plan SKILL.md runs `check` before a
 plan PR.
-Depends on: P1
+Depends on: P1, P2
 Risk: standard — new script; briefs change one line each.
 Acceptance: tests on the template shape, this plan and a malformed plan; the briefs' fallback kept;
 `phase` has no path argument.
@@ -181,7 +182,7 @@ Scope: codemap.py `changed --base <sha> --head <sha>` (changed files, top-level 
 files importing them, matching tests, vault pages mentioning them; output capped, e.g. 60 lines,
 with a count of what was cut); reviewer-brief.md: run it when a Code map command is set, as
 pointers only, never a filter; code-map SKILL.md documents it.
-Depends on: P1
+Depends on: P1, P2
 Risk: standard — read-only command.
 Acceptance: tests on a temp repo; output cap respected; works from a subfolder with `--root`.
 Validation: standard.
@@ -192,8 +193,8 @@ Objective: regressions in the plugin's invariants are caught by eval cases.
 Scope: plugin eval cases (verify the installed CLI's `claude plugin eval` format and the plugin
 manifest key first) for: no general-purpose spawn when a plugin agent fits; a reviewer after every
 implementer round; merge pinned to the reviewed SHA; brake at the fix-round limit; no Edit/Write by
-the orchestrator in a manager run. Authoring and a format check only; running them is a paid session
-and is out of this phase (document the command).
+the orchestrator in a manager run. Also README.md and the folder of its schema test. Authoring and
+a format check only; running them is a paid session and is out of this phase (document the command).
 Depends on: P2, P3, P4, P5, P6
 Risk: standard — new files; no behaviour change.
 Acceptance: the cases pass the CLI's validation (or, if the CLI has no offline check, a test parses
@@ -214,6 +215,8 @@ Validation: standard.
 - 2026-11-20: plan created from two independent audits and a research report on 0.8.x.
 - 2026-11-21: plan review notes folded in (P1 test scope, size ceilings vs later phases, P5 reads
   the plan from stdin at base).
+- 2026-11-21: plan review notes folded in (P5/P6 depend on P2; ceiling rule in Constraints; P1 and
+  P7 scopes; script test folders join standard validation)
 
 ## How to keep this plan alive
 - A phase PR updates its own status line and links itself; other status lines only to correct facts.

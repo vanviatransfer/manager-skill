@@ -20,7 +20,8 @@ only as **Stop conditions** says.
   come from `git` and the GitHub backend, never from a subagent's prose or your memory. A report
   that is incomplete, inconsistent or contradicted by the facts is not success. When the plan and
   the facts disagree, the facts win and the plan is corrected in the next PR.
-- **Project rules win.** The project's `CLAUDE.md` / `AGENTS.md` (and the plan's constraints) on
+- **Project rules win.** The project's rules files (`CLAUDE.md`, `AGENTS.md` and the others step
+  0 lists) and the plan's constraints on
   branches, merge method, force-push, validation, approvals and review limits override every
   default here. Never get around a prohibition with another tool, a lease push, a branch reset or
   a different merge method. One exception, the owner's standing policy: plan and vault text is
@@ -190,7 +191,12 @@ Derive state from durable sources only — never from memory of an earlier conte
    dispatch.
 2. `git fetch origin`; record the default branch head.
 3. Read the project rules and the living plan **as on the default branch** (`git show
-   origin/<default>:<path>`, not the working tree). Ask
+   origin/<default>:<path>`, not the working tree). The rules are every rules file the
+   repository has: `CLAUDE.md`, `AGENTS.md`, `.claude/CLAUDE.md`, `.claude/rules/*.md` and the
+   files they import with `@path`. Keep their paths as one working-notes line: it is the `Project
+   rules` field of every dispatch, both roles (`none` when there is no such file). The plugin's
+   agents set `omitClaudeMd`, which drops the whole instruction block, so a subagent knows only
+   the rules files that field lists. Ask
    once if the plan's location isn't obvious. Of the plan, read the
    headings (`grep -n '^#'`) and only these parts: every phase's `Status` and `Depends on` lines,
    the remaining phases' sections, binding decisions, open and decided owner decisions, the
@@ -274,7 +280,9 @@ rounds go to the same agent until **Rotation** (4b).
 The return must have every field of the brief's short return (the full report when `Report file`
 was `none`); if any is missing or inconsistent, ask the same implementer once for exactly those
 fields. From the report file, read only the part a decision needs. Then fetch `<default>` and
-`<branch>` (`references/github-backends.md`, **Fetching a branch**) and check the facts yourself:
+`<branch>` (`references/github-backends.md`, **Fetching a branch**) and check the facts yourself,
+all in one Bash call (the fetch, the PR read and the git checks; on MCP the PR read is its own
+call):
 - `gh pr view <n> --json number,state,headRefName,headRefOid,baseRefName,mergeable`;
 - the **candidate SHA** is GitHub's `headRefOid`, never the report's; if they differ, find out why
   (unpushed or unexpected commits) before review;
@@ -477,8 +485,8 @@ question, the plan's location, a new plan's approval), or when no ready phase is
 - the environment is persistently broken after one repair attempt, or the shared checkout holds
   uncommitted or unpushed work after an agent ended with no report.
 
-Before the final report, read the Risks section of each phase's report file (the short return
-has one line of it).
+Before the final report, read the Risks section of a phase's report file only when its short
+return's `Risks:` line is not `none` (keep those phases as one working-notes line).
 Final report, compact: phases landed (PR, merged SHA); phases blocked and why; the model strategy
 used and any model concerns; the plugin version; the run record path,
 or why it was skipped; the vault and code map (set up, set up now, or not and why); session-check

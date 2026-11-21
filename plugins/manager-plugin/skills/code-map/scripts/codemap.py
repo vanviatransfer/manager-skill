@@ -1251,8 +1251,9 @@ def claude_hook(stdin_text, python):
 # The rules-file block: tells every session to use the map and the plugin's agents.
 # RULES_VERSION is the template's version, carried in the begin marker; raise it whenever the
 # block's text changes (and the marker in the skill's template and in the manager skill's
-# code-map-check.md with it). A block whose marker has no version (plugin 0.8.2 and earlier) is 1;
-# one with a higher version comes from a newer plugin and is left alone.
+# code-map-check.md with it). A block whose marker has no version (plugin 0.8.2 and earlier) is 1,
+# unless its lines equal this template's: then it counts as current. One with a higher version
+# comes from a newer plugin and is left alone.
 RULES_VERSION = 2
 RULES_BEGIN_PREFIX = "<!-- manager-plugin:code-map:begin"
 RULES_BEGIN = "%s v%d (managed by the code-map skill) -->" % (RULES_BEGIN_PREFIX, RULES_VERSION)
@@ -1278,12 +1279,17 @@ IMPORTS_AGENTS = re.compile(r"^\s*@(?:\./)?AGENTS\.md\s*$")
 
 
 def rules_block_version(text):
-    """The template version in a rules file's begin marker: 1 for a marker without one, None
-    when the file has no block."""
-    for line in text.splitlines():
+    """The template version in a rules file's begin marker, None when the file has no block. A
+    marker without a version is 1, unless the block's lines equal this template's: that block
+    is current (RULES_VERSION), and the next rules-hint run writes the versioned marker."""
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
         if line.startswith(RULES_BEGIN_PREFIX):
             m = re.match(re.escape(RULES_BEGIN_PREFIX) + r" v(\d+)[ >]", line)
-            return int(m.group(1)) if m else 1
+            if m:
+                return int(m.group(1))
+            body = RULES_BLOCK[1:]
+            return RULES_VERSION if lines[i + 1:i + 1 + len(body)] == body else 1
     return None
 
 
@@ -1376,9 +1382,9 @@ def rules_hint(root, remove=False):
 def session_hook(python, stdin_text=None):
     """The SessionStart hook. When the block in AGENTS.md or CLAUDE.md at the top of the
     session's repository is older than RULES_VERSION, print one line (stdout goes into the
-    session's context) with the command that updates it. Reads those two files only, writes
-    nothing, always returns 0: no repository, no block, a current block or any error prints
-    nothing."""
+    session's context) naming the command that updates it: information, not an order. Reads
+    those two files only, writes nothing, always returns 0: no repository, no block, a current
+    block or any error prints nothing."""
     try:
         from search_nudge import find_top, quote_path
         if stdin_text is None:
@@ -1405,7 +1411,7 @@ def session_hook(python, stdin_text=None):
         qtop = quote_path(top, os.name == "nt")
         cmd = "%s %s rules-hint%s" % (python, script, " --root %s" % qtop if qtop else "")
         print("manager-plugin: the code-map rules block in %s is older than this plugin's "
-              "template; run `%s`%s and commit the change."
+              "template; `%s`%s updates it; a manager run does this in its setup PR."
               % (" and ".join(old), cmd, "" if qtop else " in the repository's top folder"))
     except Exception:  # fail open: a session never fails or gets noise from a hook error
         pass

@@ -8,7 +8,10 @@ the check or a setup PR is still open. It covers the vault, the code map and the
   `map` (`git show origin/<default>:.codemap.json`), and the current rules block (`git show
   origin/<default>:AGENTS.md` holds `manager-plugin:code-map:begin v2`, or a higher version;
   `CLAUDE.md` holds it or the `manager-plugin:code-map:` import line). A block whose marker has a
-  lower version, or none, is outdated and counts as missing. Those committed files are the guard:
+  lower version is outdated and counts as missing. So does one whose marker has no version (plugin
+  0.8.2 and earlier), unless the lines between its markers equal the template's (the `code-map`
+  skill's **The rules block**): that block is current, needs no setup PR, and gets the versioned
+  marker when `rules-hint` next runs. Those committed files are the guard:
   once they land, later runs only resolve the command and never ask again. The command is
   `<python> "<script>"`: the script is `${CLAUDE_SKILL_DIR}/../code-map/scripts/codemap.py` (quote
   the path: it may hold spaces); the Python is the first of `python3`, `python` and `py -3` whose

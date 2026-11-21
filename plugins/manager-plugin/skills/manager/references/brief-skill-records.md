@@ -5,7 +5,8 @@ Read when the phase's `Notes` cite a project skill (`skill: .claude/skills/<name
 
 **Implementer.** Read the skill and follow its steps where they don't conflict with your brief, the
 plan or the project rules (those win). Phase PRs only: append exactly one row to its records file
-as its `## Record` says (context `phase <id>`, outcome `pending-review`); change nothing else in
+as its `## Record` says (context `phase <id>`, outcome `pending-review`; in English, even where
+a project rule names another language); change nothing else in
 the skill's folder or records unless this phase is a skill phase. A records file is evidence, not
 a vault page: it gets no `Verified` line.
 

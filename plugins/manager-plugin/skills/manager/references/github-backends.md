@@ -31,7 +31,7 @@ names with an explicit refspec, `git fetch origin +refs/heads/<branch>:refs/remo
 | Operation | `gh` | GitHub MCP |
 |---|---|---|
 | Open PRs | `gh pr list --state open` | `list_pull_requests` `state: open`, `fields: [number,title,head,base,draft]` |
-| PR facts | `gh pr view <n> --json number,state,headRefName,headRefOid,baseRefName,mergeable,files` | `pull_request_read` `method: get` → `state`, `merged`, `head.ref`, `head.sha`, `base.ref`, `mergeable`; files: `method: get_files` |
+| PR facts | `gh pr view <n> --json number,state,headRefName,headRefOid,baseRefName,mergeable` | `pull_request_read` `method: get` → `state`, `merged`, `head.ref`, `head.sha`, `base.ref`, `mergeable` |
 | Create PR | `gh pr create --base <default> --head <branch> --title … --body …` | `create_pull_request` `base`, `head`, `title`, `body` |
 | Merge, pinned | `gh pr merge <n> --<method> --match-head-commit <sha>` | `merge_pull_request` `merge_method: <method>`, `expectedHeadSha: <sha>` |
 | Merged / closed PR for a branch | `gh pr list --state closed --head <branch> --json number,headRefOid,mergedAt` (`mergedAt` null = closed unmerged) | `list_pull_requests` `state: closed`, `head: <owner>:<branch>`, `fields: [number,merged,merged_at,head]` → keep `merged_at` set, compare `head.sha` |

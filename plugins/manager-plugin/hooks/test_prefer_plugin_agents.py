@@ -248,14 +248,34 @@ class RulesVersionHookTest(unittest.TestCase):
             self.assertEqual(len(out.splitlines()), 1, out)
             script = os.path.normpath(CODEMAP)
             self.assertEqual(out, "manager-plugin: the code-map rules block in AGENTS.md is older "
-                             "than this plugin's template; run `python3 \"%s\" rules-hint --root "
-                             "\"%s\"` and commit the change.\n" % (script, self.root))
+                             "than this plugin's template; `python3 \"%s\" rules-hint --root "
+                             "\"%s\"` updates it; a manager run does this in its setup PR.\n"
+                             % (script, self.root))
+            told = out.replace(script, "").replace(self.root, "")  # information, not an order
+            self.assertNotRegex(told, r"(?i)\bcommit|\brun `|\bmust\b|\bshould\b")
         command = re.search(r"`(.+)`", out).group(1)  # the printed command does the update
         p = subprocess.run(["sh", "-c", command], capture_output=True, env=self.env, cwd=self.tmp)
         self.assertEqual(p.returncode, 0, p.stderr.decode())
         self.assertNotIn(OLD_BEGIN, self.read("AGENTS.md"))
         self.assertTrue(self.read("AGENTS.md").startswith("# Rules\n\nKeep this.\n\n<!-- "))
         self.assert_silent()
+
+    def test_unversioned_block_is_current_only_with_the_template_text(self):
+        self.rules_hint()
+        for name in ("AGENTS.md", "CLAUDE.md"):  # as plugin 0.8.2 wrote it: no version
+            text = self.read(name)
+            unversioned = re.sub(r"(code-map:begin) v\d+ \(", r"\1 (", text)
+            self.assertNotEqual(unversioned, text, name)
+            self.write(name, unversioned)
+        self.assert_silent()
+        self.assert_silent(cwd=os.path.join(self.root, "src", "pkg"), source="resume")
+        changed = self.read("AGENTS.md").replace("- Before searching", "- Before you search")
+        self.assertNotEqual(changed, self.read("AGENTS.md"))
+        self.write("AGENTS.md", changed)  # a real text change still counts as older
+        out = self.hook()[1]
+        self.assertEqual(len(out.splitlines()), 1, out)
+        self.assertIn("rules block in AGENTS.md is older", out)
+        self.assertNotIn("CLAUDE.md", out)
 
     def test_lower_version_prints_and_a_newer_one_is_silent(self):
         v1 = OLD_BEGIN.replace("begin (", "begin v1 (")
@@ -359,7 +379,8 @@ def command_in(path, marker):
 
 @unittest.skipUnless(shutil.which("awk") and shutil.which("git"), "needs awk and git")
 class PlanSectionCommandTest(unittest.TestCase):
-    """The briefs' section-only plan read: `git show <base-sha>:<plan-path> | awk ...`."""
+    """The briefs' section-only plan read: `git show <base-sha>:<plan-path> | awk ...`
+    (the constraints, the binding decisions, the `## Phases` preamble and one phase's section)."""
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
@@ -406,24 +427,50 @@ class PlanSectionCommandTest(unittest.TestCase):
         for kept in ("## Constraints and project rules\n", "- Validation: ", "- Merge: ",
                      "## Binding decisions\n", "- B1. <decision>", "### P1. <title>\n",
                      "Status: todo\n", "Depends on: ", "Risk: ", "Acceptance: ", "Validation: ",
-                     "Notes: "):
+                     "Notes: ", "## Phases\n\nStatus values: `todo` ",
+                     "Fix-round limit per phase: 5\n\n### P1. "):
             self.assertIn(kept, out)
         for dropped in ("# <Project>", "## Goal", "## Done means", "## Scope", "## Model strategy",
-                        "## Phases", "Fix-round limit", "### P2.", "### P10.", "tenth thing",
+                        "### P2.", "### P10.", "tenth thing",
                         "## Open owner decisions", "### D1.", "## Decided", "## Notes carried",
                         "## Change log", "## How to keep"):
             self.assertNotIn(dropped, out)
         self.assertEqual(out.count("\n### "), 1)
+        self.assertEqual(out.count("Fix-round limit"), 1)
         ten = self.extract(plan, "P10")
         self.assertIn("### P10. Tenth\nStatus: todo\nObjective: the tenth thing\n", ten)
         self.assertNotIn("### P1. ", ten)
         self.assertNotIn("second thing", ten)
         self.assertIn("## Binding decisions\n", ten)
+        self.assertIn("Fix-round limit per phase: 5\n\n### P10. ", ten)
         none = self.extract(plan, "plan")  # a plan-only PR's phase id: no phase section
         self.assertNotIn("### ", none)
         self.assertIn("## Constraints and project rules\n", none)
         self.assertIn("- B1. <decision>", none)
+        self.assertTrue(none.endswith("Fix-round limit per phase: 5\n\n"), none[-80:])
         self.assertLess(len(out.split()), len(plan.split()) * 0.6)
+
+    def test_sections_under_other_names_are_missing_and_the_briefs_say_what_to_do(self):
+        # Only `## Constraints…`, `## Binding decisions` and `## Phases` are known by name; a
+        # `###` heading inside a printed section doesn't end it.
+        plan = ("# Plan\n\n## Project constraints\n- Validation: `make test`\n\n"
+                "## Rules we decided\n- B1. Keep it small.\n\n"
+                "## Constraints and project rules\n- Merge: squash\n### Details\n- more\n\n"
+                "## Phases\n\nFix-round limit per phase: 3\n\n"
+                "### P1. First\nStatus: todo\n\n## Change log\n- created\n")
+        out = self.extract(plan, "P1")
+        self.assertEqual(out, "## Constraints and project rules\n- Merge: squash\n### Details\n"
+                         "- more\n\n## Phases\n\nFix-round limit per phase: 3\n\n"
+                         "### P1. First\nStatus: todo\n\n")
+        renamed = plan.replace("## Constraints and project rules\n", "## Working agreements\n")
+        out = self.extract(renamed, "P1")
+        self.assertEqual(out, "## Phases\n\nFix-round limit per phase: 3\n\n"
+                         "### P1. First\nStatus: todo\n\n")
+        for brief in ("implementer-brief.md", "reviewer-brief.md"):  # the fallback, in prose
+            with open(os.path.join(MANAGER, "references", brief), encoding="utf-8") as fh:
+                text = " ".join(fh.read().split())
+            self.assertRegex(text, r"(?i)no `## Constraints…` or `## Binding decisions` section "
+                             r"printed → `grep -n '\^## '` and read them", brief)
 
     def test_this_repository_plan(self):
         path = os.path.join(HERE, "..", "..", "..", "docs", "LIVING_PLAN.md")
@@ -437,11 +484,15 @@ class PlanSectionCommandTest(unittest.TestCase):
             out = self.extract(plan, phase)
             self.assertEqual(re.findall(r"(?m)^### .+$", out), ["### %s. %s" % (phase, title)])
             self.assertEqual(re.findall(r"(?m)^## .+$", out),
-                             re.findall(r"(?m)^## (?:Constraints|Binding decisions).*$", plan))
-            self.assertEqual(len(re.findall(r"(?m)^## .+$", out)), 2)
+                             re.findall(r"(?m)^## (?:Constraints|Binding decisions|Phases).*$",
+                                        plan))
+            self.assertEqual(len(re.findall(r"(?m)^## .+$", out)), 3)
             body = plan.split("### %s. %s\n" % (phase, title))[1]
             body = re.split(r"(?m)^##", body)[0]
             self.assertIn(body.strip(), out)
+            preamble = re.split(r"(?m)^### ", plan.split("\n## Phases\n")[1])[0]
+            self.assertIn("Fix-round limit per phase:", preamble)
+            self.assertIn("## Phases\n" + preamble, out)
             self.assertLess(len(out.split()), len(plan.split()) * 0.5, phase)
 
 

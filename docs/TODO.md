@@ -280,16 +280,24 @@ from those. The session was still running, so each count is as of its measuremen
   reviewer reads the project rules at the base SHA too. [measured] On this repository's plan
   the command prints under half of the file's words for every phase (a test asserts it); the
   audit measured about 1,061 of 13,687 words for the largest phase of a large plan [claimed, not
-  re-measured here].
+  re-measured here]. (0.9.0: it also prints the `## Phases` preamble, with the status values and
+  the fix-round limit, and the briefs say to `grep -n '^## '` when a plan names the constraints
+  or binding-decisions section differently.)
 - **Rules block version.** The block's begin marker carries a template version (`v2`; an
   unversioned block is version 1). A `SessionStart` hook prints one context line with the
   `rules-hint` command when a repository's block is older; `rules-hint` replaces it and leaves
   a higher version alone; the manager's setup PR updates an outdated block without asking.
   [measured] The hook takes 49–55 ms (4 CPUs, 20 runs, median) whether it prints or not.
+  (0.9.0: an unversioned block whose text equals the template counts as current, so a
+  repository set up by 0.8.2 pays no setup PR for the marker alone; the next `rules-hint` run
+  writes the versioned marker. The hook's line is information, not an order: it names the
+  command and says a manager run does this in its setup PR.)
 - **Also.** Plan and vault text is English even where a project rule names another language
   (the owner's standing policy; reviewers don't flag it). All five agents set `omitClaudeMd`
   and read the working repository's rules themselves ([measured] the installed CLI's
-  plugin-agent loader accepts the key); the fallback agent's window is 300000. A reviewer's
+  plugin-agent loader accepts the key; 0.9.0: both briefs get a `Project rules` dispatch field
+  listing every rules file the repository has, `.claude/CLAUDE.md`, `.claude/rules/*.md` and
+  `@path` imports included); the fallback agent's window is 300000. A reviewer's
   blocker cites its ground, and a review carries at most 3 notes, each with a consequence and an
   action. Effort: `medium`, a critical phase's reviewer `high`. The same-blockers brake offers
   the approach retries only with rounds left; an owner decision that unblocks a braked phase

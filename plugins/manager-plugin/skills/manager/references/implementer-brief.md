@@ -6,6 +6,7 @@
 Read and follow <this file's path>.
 Project: <repo path>, default branch <default>
 Living plan: <path>, phase <id>
+Project rules: <the path of every rules file | none>
 Run: <run-id>
 Base SHA: <default head at dispatch; replacement implementer: the phase's current base>
 Branch: <phase/<id>-<slug> | setup/code-map[-<run-id>] | designated branch>
@@ -36,15 +37,18 @@ while their trigger holds (again after compaction):
 - an `Integrate` message, or step 3's branch lacks the base SHA → `brief-integration.md`;
 - you create, work in or remove a git worktree → `brief-worktrees.md`.
 
-1. **Read** only the project rules (`CLAUDE.md`, `AGENTS.md`), any `Handoff` note and, of the
-   plan, only this phase's section, the constraints and the binding decisions (base SHA missing:
+1. **Read** only the `Project rules` files (no such field: `CLAUDE.md`, `AGENTS.md`), any
+   `Handoff` note and, of the plan, only this phase's section, the constraints, the binding
+   decisions and the `## Phases` preamble (status values, fix-round limit) (base SHA missing:
    fetch as in step 3 first):
    ```
    git show <base-sha>:<plan-path> | awk -v id=<id> '
-     /^## /{p=/^## (Constraints|Binding decisions)/; q=0}
-     /^### /{q=index($0,"### " id ".")==1} p||q'
+     /^## /{p=/^## (Constraints|Binding decisions)/; h=/^## Phases/; q=0}
+     /^### /{h=0; q=index($0,"### " id ".")==1} p||h||q'
    ```
-   No phase section printed → `grep -n` its heading and read from there. Read its knowledge
+   No phase section printed → `grep -n` its heading and read from there. No `## Constraints…`
+   or `## Binding decisions` section printed → `grep -n '^## '` and read them under the names
+   the plan gives them. Read the phase's knowledge
    paths, and by `grep -n` any entry it cites (`D<n>`). With a `Code map` command, run `<code
    map> query <term>` (and read the vault index) before any broad search of code or vault.
 2. **Scope.** Don't expand it or guess. An owner-only choice (open design, scope, spend,
