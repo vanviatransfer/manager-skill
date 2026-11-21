@@ -506,3 +506,67 @@ machine for the hooks, and the three eval cases run once each (`--model sonnet`)
   retro switch's script or reached for a run record, so the switch is tested through its script and
   texts only, and its `on` path has not run live. The commit check's new block is tested through the
   script and the hook's shell wrapper, not inside a live session.
+
+### 14. Retro switch read at step 0, git-lfs exception stated (plugin 0.9.2)
+
+The two notes the review of 0.9.1 left, and one eval run on 2026-11-21 (Claude Code 2.1.330,
+Linux, `--model sonnet`, one case, once).
+
+- **The retro switch is read at step 0.** In 0.9.1 only the manager skill's **Run record**
+  section named the switch's script, with "(step 0)"; step 0's own list did not, and
+  `run-record.md`, which states the rule, is read only while the switch is on. No manager
+  session of the 0.9.1 eval runs called the script: with the switch on, such a run would have
+  kept no record and said nothing about it. Now item 1 of step 0 in the skill starts with the
+  command, `sh "${CLAUDE_SKILL_DIR}/scripts/retro.sh"`. Item 1 of
+  `references/establish-state.md`, read at every run start and again after a compaction, gives
+  it as the first line of one Bash call whose other two lines are the reads that item already
+  asked for (the plugin version, the reference files), and says what the line means: `on` → the
+  run keeps a record, anything else → none. The **Run record** section no longer repeats the
+  command, and its "(the default)" went: the skill is at 17,995 of its 18,000 characters, the
+  ceiling unchanged.
+- **The final report tells the cases apart.** It was "the run record path, or why it was skipped
+  (retro switch off: neither)". Now, by the switch's line: `on` → the record's path, or that no
+  record was written and why; `off` → nothing about a record; a switch never read in the run →
+  the report says so.
+- **An eval grader for the call.** `review-before-pinned-merge` gains `retro-switch-read`, a
+  `regex` grader on the trace: a Bash call of the orchestrator itself (an `assistant` event with
+  `"parent_tool_use_id":null`) whose command names `retro.sh`. Inside the call's input it passes
+  over whole strings, so the script named in a description, a Read of it, a subagent's call and a
+  quoted call do not count. A test holds the pattern to synthetic events with Python's `re`; on
+  such events the pattern gave the same answers as a JavaScript regular expression (Node 22).
+- **The eval run, and the one fix it led to.** `review-before-pinned-merge` ran once (56
+  seconds, 0.34 USD, 17 turns) on this change's first text: the call in item 1 of
+  `establish-state.md`, and in the skill's step 0 only the words "check the retro switch". 8 of
+  its 9 graders passed (the pinned merge, the review before it, no `Edit` or `Write` by the
+  orchestrator, the outcome); `retro-switch-read` failed. The orchestrator never ran the
+  script, and its final report said so: "I didn't read the plugin version or the retro switch,
+  so there is no run record". That is the new final-report rule at work, and it shows that item
+  1 of `establish-state.md` was not acted on at all (the version read stands there too), while
+  the commands the skill itself gives inline (the fetch, the run marker) were run. The one fix
+  made after that run: the command moved out of the **Run record** section into step 0's item
+  1.
+  [not measured] The text after the fix has not been run, so whether an orchestrator now makes
+  the call is not known; the trace of the run was not kept, so what it read at step 0 is known
+  only from its final report. `fix-round-brake` and `plugin-agent-spawn` were not run on 0.9.2.
+- **A run with the switch on.** [not measured] No run-record line was seen to land. A case file
+  can set only `EVAL_*` variables (read in the 2.1.330 binary: the runner refuses any other `env`
+  key, which "must come from the operator's shell"), no run was started with `MANAGER_RETRO=on` in
+  that shell, and in an eval run the shell can't write the record anyway (in this run too, the
+  fetch and the run-marker write ended on a read-only file system). So the `on` path is tested
+  through the script, the texts and the step-0 call only. That call is run by a test with the
+  skill's folder filled in, in a temporary home: `off` by default, `on` with the flag file, either
+  one by the variable, the version line, the reference files, nothing written.
+- **Commit check: the git-lfs exception.** Entry 13 says the check "still writes nothing" and
+  that git "writes no object" when it runs a page's clean filter. That holds for git's own
+  objects, not for a filter that stores what it cleans. Measured (git 2.43.0, git-lfs 3.4.1)
+  with the map page LFS-tracked: the check on a rebuilt, unstaged page left one more object
+  under `.git/lfs/objects` (1, then 2; a second check added none), the object that the `git add`
+  it asks for stores anyway; the index and the working tree stayed as they were. Stated, not
+  changed in code: the README's hook section has the exception, and so have the two source
+  comments that claimed "writes nothing" for this check (the hook script's header, the
+  docstring of `unstaged_map_pages`). The code-map skill makes that claim only for `changed`
+  and for the session-start hook, where it holds, so its text stays as it was (19,999 of
+  20,000 characters). Left out: skipping the filtered hash for LFS-tracked pages, which would
+  drop the staged-map check for exactly those pages.
+- **Not verified.** As in entry 13: no compaction of a real manager run has been observed, and
+  no run of this version is recorded.

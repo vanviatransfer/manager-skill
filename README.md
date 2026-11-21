@@ -269,7 +269,11 @@ writes nothing, touches none of your settings files and goes away with the plugi
 `sh` script; on Windows it runs in Git Bash, and where Git Bash (or `grep`/`sed`) is missing it
 fails open (`onFailure: continue`), so spawns are allowed and nothing is blocked. A second
 `PreToolUse` hook, on Bash, is the code-map commit check above: it does nothing unless a
-repository's `.codemap.json` opts in, and fails open the same way. A third, on Grep, Glob and
+repository's `.codemap.json` opts in, and fails open the same way. It writes nothing either, with
+one exception that comes from git: to see what `git add` would store for a rebuilt map page, the
+check has git run that page's clean filter, and a filter that stores what it cleans (git-lfs,
+when the map pages are LFS-tracked) then adds the page's object under `.git/lfs/objects`, the
+one that `git add` stores anyway; nothing else is written. A third, on Grep, Glob and
 Bash, is the code-map "map first" nudge above: it does nothing in a repository without a code map,
 and fails open the same way. A `SessionStart` hook (startup, resume, clear) reads the repository's
 `AGENTS.md` and `CLAUDE.md` and, when their code-map rules block is older than the plugin's
@@ -475,9 +479,11 @@ subagent's too, and an implementer edits; so their `no-edit` and `no-write` grad
 run's trace instead, where the orchestrator's own turns are the `assistant` events with
 `"parent_tool_use_id":null`. A third grader, `trace-shows-the-orchestrator`, holds the same
 pattern to the reviewer dispatch: on a trace of another shape it fails, where those two would
-pass for nothing. The cases' `scaffold.sh` builds a small repository with a living plan in the
-run's folder, and `mocks/github/` answers the GitHub MCP tools from a recording, so no real
-repository or pull request is involved.
+pass for nothing. `review-before-pinned-merge` has one more grader of that kind,
+`retro-switch-read`: the orchestrator's own Bash call whose command names `retro.sh`, the read of
+the retro switch that step 0 of every run starts with. The cases' `scaffold.sh` builds a small
+repository with a living plan in the run's folder, and `mocks/github/` answers the GitHub MCP
+tools from a recording, so no real repository or pull request is involved.
 
 Prerequisite: Claude Code's shell sandbox. The command below grants `Bash`, and the eval runner
 (2.1.329, 2.1.330) refuses a run whose shell tool it can't confine, so where the platform has no
@@ -524,8 +530,13 @@ a sixth fix round as the first of five (0.9.1 names that read where a new sessio
 open pull request), and the `tool_used` graders on `Edit` and `Write` of that version counted
 the implementer's calls. With 0.9.1 all three cases passed every grader, in two runs (the second
 on its final text). Two runs of a case say nothing about how often it passes, and neither
-manager case reaches the run record or its switch. That CLI has no offline check for cases
-(`claude plugin validate` does not read them), so the test above parses them against the
+manager case reached the run record or its switch: no orchestrator ran the switch's script.
+0.9.2 holds `review-before-pinned-merge` to that call. Its one run with the call named in
+`establish-state.md` and only pointed to from the skill passed the other eight graders and
+failed this one: the orchestrator never made the call, and its final report said that it had
+not read the switch. The command then moved into step 0's own list in the skill; that text has
+not been run, and no run with the switch on has been observed. That CLI has no offline check for
+cases (`claude plugin validate` does not read them), so the test above parses them against the
 format, builds both fixture repositories and checks every commit SHA that the recordings and
 graders name. Start with one case (`--case plugin-agent-spawn`). Two limits of the GitHub
 stand-in: its answers are fixed, so a manager case starts from an open pull request instead of

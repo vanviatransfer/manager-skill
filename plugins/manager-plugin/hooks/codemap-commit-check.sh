@@ -5,7 +5,9 @@
 # map and `git add` its pages, each as a command of its own: the hook runs before the command
 # starts, so it does not see what is chained in front of the commit). Off unless a repository
 # opts in. Plain POSIX sh; it finds Python as the code-map skill does (python3, python, py -3)
-# and fails open (exit 0) when there is no Python, no opt-in, or any error. It writes nothing.
+# and fails open (exit 0) when there is no Python, no opt-in, or any error. It writes nothing
+# (one exception, from git: a map page's clean filter that stores what it cleans, git-lfs, may
+# add that page's object under .git/lfs/objects when the check has git hash the page).
 
 input=$(cat) || exit 0
 case "$input" in

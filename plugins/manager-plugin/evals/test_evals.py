@@ -103,6 +103,12 @@ SHA = re.compile(r"\b[0-9a-f]{40}\b")
 ORCHESTRATOR_CALL = (r'^\{"type":\s*"assistant",(?=.*"parent_tool_use_id":\s*null).*'
                      r'\{(?=[^{}]*"type":\s*"tool_use")[^{}]*"name":\s*"%s"')
 ORCHESTRATOR_NEVER = {"no-edit": "Edit", "no-write": "Write"}
+# The orchestrator's own Bash call whose command names the retro switch's script: the pattern of
+# the `retro-switch-read` grader. Inside the call's input it passes over whole strings, so only
+# the `command` field is read, whichever field comes first.
+RETRO_CALL = (ORCHESTRATOR_CALL % "Bash" + r'[^{}]*"input":\s*\{(?:[^{}"\\]|"(?:[^"\\]|\\.)*")*?'
+              r'"command":\s*"(?:[^"\\]|\\.)*retro\.sh')
+RETRO_CASES = ["manager-run/review-before-pinned-merge"]
 
 
 class FormatError(ValueError):
@@ -742,6 +748,56 @@ class CasesTest(unittest.TestCase):
                 for place in range(len(others) + 1):
                     self.assertIsNotNone(found(trace_text(others[:place] + [own]
                                                           + others[place:])), place)
+
+    def test_the_retro_switch_grader_reads_the_orchestrator_s_own_bash_call(self):
+        """`retro-switch-read` of a manager case: step 0 has the orchestrator run the retro
+        switch's script in a Bash call of its own. The pattern finds that call whatever else the
+        command and the call hold, and nothing else: not a subagent's call, a Read of the
+        script, the script named in another field of a Bash call, or a quoted call."""
+        found = []
+        for folder, case in self.cases.items():
+            for grader in case["graders"]:
+                if grader["name"] == "retro-switch-read":
+                    found.append(folder)
+                    self.assertEqual(grader, {"name": "retro-switch-read", "type": "regex",
+                                              "target": "trace", "flags": "m",
+                                              "match": "contains", "pattern": RETRO_CALL})
+                    self.assertIn("Bash", case["execution"].get("allowed_tools", []))
+        self.assertEqual(found, RETRO_CASES)
+        script = "/plugins/manager-plugin/skills/manager/scripts/retro.sh"
+        step_0 = ('sh "%s"\ngrep \'"version"\' "/plugins/manager-plugin/.claude-plugin/'
+                  'plugin.json"\nls "/plugins/manager-plugin/skills/manager/references"' % script)
+        quoted = ('{"type":"tool_use","id":"toolu_2","name":"Bash","input":{"command":"sh %s"}}'
+                  % script)
+        own = [tool_use("Bash", {"command": step_0, "description": "Read the retro switch"}),
+               tool_use("Bash", {"description": 'Step 0 {item 1}: the "switch"',
+                                 "command": "sh %s; git fetch origin" % script}),
+               tool_use("Bash", {"timeout": 5000, "run_in_background": False,
+                                 "command": 'd="/a b/manager"; sh "$d/scripts/retro.sh"'})]
+        others = [
+            trace_event("system", None, "the subagent ran the switch: %s" % quoted),
+            trace_event("assistant", "toolu_1", [own[0]]),
+            trace_event("user", "toolu_1", [{"type": "tool_result", "tool_use_id": "toolu_1",
+                                             "content": "off (no flag file)"}]),
+            trace_event("user", None, [{"type": "tool_result", "tool_use_id": "toolu_1",
+                                        "content": quoted}]),
+            trace_event("assistant", None, [{"type": "text", "text": quoted},
+                                            tool_use("Read", {"file_path": script}),
+                                            tool_use("Bash", {"command": "git fetch origin",
+                                                              "description": "before retro.sh"}),
+                                            tool_use("Grep", {"pattern": "retro.sh"})]),
+            trace_event("assistant", None, [tool_use("Agent", {
+                "subagent_type": "manager-plugin:reviewer",
+                "prompt": "Do not run retro.sh: %s" % quoted})]),
+        ]
+        search = re.compile(RETRO_CALL, re.M).search
+        self.assertIsNone(search(trace_text(others)))
+        for call in own:
+            event = trace_event("assistant", None, [{"type": "text", "text": "Step 0."}, call])
+            for place in range(len(others) + 1):
+                with self.subTest(command=call["input"]["command"], place=place):
+                    self.assertIsNotNone(search(trace_text(others[:place] + [event]
+                                                           + others[place:])))
 
     def test_a_file_grader_has_a_tool_that_can_write(self):
         for folder, case in self.cases.items():
