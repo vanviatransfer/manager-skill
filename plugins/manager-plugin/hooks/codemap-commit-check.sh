@@ -1,9 +1,11 @@
 #!/bin/sh
 # manager-plugin PreToolUse hook for Bash: before a `git commit`, in a repository whose
-# .codemap.json has "commit_check": true, block the commit while the code map is stale (exit 2,
-# one line on stderr telling the model to rebuild and stage the map). Off unless a repository opts
-# in. Plain POSIX sh; it finds Python as the code-map skill does (python3, python, py -3) and
-# fails open (exit 0) when there is no Python, no opt-in, or any error.
+# .codemap.json has "commit_check": true, block the commit while the code map is stale, or while
+# its rebuilt pages are not staged (exit 2, one line on stderr telling the model to rebuild the
+# map and `git add` its pages, each as a command of its own: the hook runs before the command
+# starts, so it does not see what is chained in front of the commit). Off unless a repository
+# opts in. Plain POSIX sh; it finds Python as the code-map skill does (python3, python, py -3)
+# and fails open (exit 0) when there is no Python, no opt-in, or any error. It writes nothing.
 
 input=$(cat) || exit 0
 case "$input" in

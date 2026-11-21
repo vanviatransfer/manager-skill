@@ -1,6 +1,7 @@
 """Tests for codemap.py: python3 -m unittest discover -s <this folder>"""
 import contextlib
 import io
+import json
 import os
 import shutil
 import subprocess
@@ -719,6 +720,121 @@ class HookTest(unittest.TestCase):
         for name in os.listdir(os.path.join(self.root, "vault", "map")):
             os.remove(os.path.join(self.root, "vault", "map", name))
         self.assertEqual((self.check(), self.check("--quiet")), (1, 1))
+
+    def claude(self, command="git commit -m x"):
+        """(exit code, stderr) of the Claude Code commit check before this Bash command."""
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code = codemap.claude_hook(json.dumps({
+                "tool_name": "Bash", "cwd": self.root, "tool_input": {"command": command}}),
+                "python3")
+        return code, err.getvalue()
+
+    def split(self):
+        old = codemap.SPLIT_ABOVE
+        codemap.SPLIT_ABOVE = 0  # group pages too
+        self.addCleanup(setattr, codemap, "SPLIT_ABOVE", old)
+        return old
+
+    def test_claude_hook_names_the_page_folder_only_when_it_can_be_added(self):
+        self.opt_in()
+        self.assertEqual(self.claude(), (0, ""))
+        self.write("src/new.py", "def fresh():\n    pass\n")
+        self.git("add", "src/new.py")
+        both = "`git add -- vault/map.md vault/map/`"
+        code, err = self.claude()
+        self.assertEqual(code, 2)
+        self.assertTrue(err.startswith("codemap: the code map is stale; in "), err)
+        self.assertIn("build`, then `git add -- vault/map.md`, each as a command of its own "
+                      "(this check runs before a command starts", err)
+        self.assertNotIn("vault/map/", err)  # a one-page map: git add would fail on the folder
+        self.assertEqual(len(err.strip().splitlines()), 1)
+        large = self.split()
+        self.assertNotIn("vault/map/", self.claude()[1])  # still no folder before the build
+        run("build", "--root", self.root)
+        code, err = self.claude()  # the build made the folder: its pages are named now
+        self.assertEqual(code, 2)
+        self.assertTrue(err.startswith("codemap: the code map is rebuilt but not staged (3 pages "
+                                       "the index does not hold as built)"), err)
+        self.assertIn("run %s as a command of its own" % both, err)
+        self.git("add", "--", "vault/map.md", "vault/map/")
+        self.assertEqual(self.claude(), (0, ""))
+        self.git("commit", "-qm", "split", "--no-verify")
+        self.write("src/more.py", "def more():\n    pass\n")
+        self.git("add", "src/more.py")
+        code, err = self.claude()  # stale, with a page folder: both are named
+        self.assertEqual(code, 2)
+        self.assertIn("build`, then %s, each as a command of its own" % both, err)
+        run("build", "--root", self.root)
+        self.assertEqual(codemap.unstaged_map_pages(self.root, "vault/map.md"),
+                         ["vault/map.md", "vault/map/src.md"])
+        self.git("add", "--", "vault/map.md")  # the page alone is not the map
+        code, err = self.claude()
+        self.assertEqual(code, 2)
+        self.assertIn("(1 page the index does not hold as built)", err)
+        self.assertIn("run `git add -- vault/map/` as a command of its own", err)
+        self.git("add", "--", "vault/map/")
+        self.assertEqual(self.claude(), (0, ""))
+        self.git("commit", "-qm", "more", "--no-verify")
+
+    def test_claude_hook_takes_a_removed_page_the_index_still_holds(self):
+        """A map that goes back to one page: the build removes the group pages and their
+        folder, and `git add` still takes the folder's name, for the index holds its pages."""
+        self.write(".codemap.json", '{"vault": "vault", "map": "docs/map.md", '
+                   '"commit_check": true}\n')
+        self.git("rm", "-q", "vault/map.md")
+        large = self.split()
+        run("build", "--root", self.root)
+        self.git("add", "-A")
+        self.git("commit", "-qm", "split map", "--no-verify")
+        self.assertEqual(self.claude(), (0, ""))
+        both = "`git add -- docs/map.md docs/map/`"
+        codemap.SPLIT_ABOVE = large
+        code, err = self.claude()
+        self.assertEqual(code, 2)
+        self.assertIn("build`, then %s, each as a command of its own" % both, err)
+        run("build", "--root", self.root)
+        folder = os.path.join(self.root, "docs", "map")
+        if os.path.isdir(folder):
+            os.rmdir(folder)
+        self.assertEqual(self.check(), 0)
+        self.assertEqual(codemap.unstaged_map_pages(self.root, "docs/map.md"),
+                         ["docs/map.md", "docs/map/_vault-pages.md", "docs/map/src.md"])
+        code, err = self.claude()
+        self.assertEqual(code, 2)
+        self.assertIn("(3 pages the index does not hold as built)", err)
+        self.assertIn("run %s as a command of its own" % both, err)
+        self.git("add", "--", "docs/map.md", "docs/map/")
+        self.assertEqual(self.claude(), (0, ""))
+        self.assertEqual(self.git("ls-files", "docs/map").stdout, b"")
+
+    def test_claude_hook_leaves_out_a_page_git_ignores(self):
+        self.opt_in()
+        self.split()
+        self.write(".git/info/exclude", "vault/map/src.md\n")
+        run("build", "--root", self.root)
+        self.assertEqual(self.check(), 0)
+        self.assertEqual(codemap.unstaged_map_pages(self.root, "vault/map.md"),
+                         ["vault/map.md", "vault/map/_vault-pages.md"])
+        self.git("add", "--", "vault/map.md", "vault/map/")
+        self.assertEqual(self.claude(), (0, ""))  # git add can't take it: never asked for
+
+    def test_claude_hook_writes_nothing(self):
+        def files():
+            found = {}
+            for base, _, names in os.walk(self.root):  # the index and the rest of .git too
+                for name in names:
+                    with open(os.path.join(base, name), "rb") as fh:
+                        found[os.path.join(base, name)] = fh.read()
+            return found
+        self.opt_in()
+        self.write("src/new.py", "def fresh():\n    pass\n")
+        self.git("add", "src/new.py")
+        for state in ("stale", "rebuilt, not staged"):
+            before = files()
+            self.assertEqual(self.claude()[0], 2, state)
+            self.assertEqual(files(), before, state)
+            run("build", "--root", self.root)
 
     def test_redetect_keeps_the_opt_in(self):
         self.opt_in()

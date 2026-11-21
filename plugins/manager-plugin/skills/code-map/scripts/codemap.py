@@ -1301,7 +1301,11 @@ def pre_commit(root):
 
 
 # The Claude Code hook: before a `git commit` Bash call, in a repository whose .codemap.json has
-# "commit_check": true, block the commit while the map is stale. Fails open on anything else.
+# "commit_check": true, block the commit while the map is stale, or while the index does not hold
+# the map pages as the working tree has them (a map built but not staged would leave the stale
+# pages in the commit). Fails open on anything else. It runs before the Bash command starts, so
+# a `build` or a `git add` chained in front of the commit is not seen: its line says to run them
+# as commands of their own.
 # `git` must stand in command position (line start, or after ; & | ( or a newline), outside quotes.
 # Known gaps, where the hook does nothing: a commit after `cd`/`pushd` or with `git -C <dir>`,
 # `--git-dir` or `--work-tree` (another repository than the session's), `GIT_DIR=... git commit`,
@@ -1342,6 +1346,27 @@ def in_quotes(prefix):
     return quote is not None
 
 
+def unstaged_map_pages(root, out_rel):
+    """The map pages the index does not hold as the working tree has them: a page that changed
+    or was never added (one git ignores is left out), and a removed page the index still has.
+    Reads the index and the files; writes nothing."""
+    blobs = {path: blob for mode, blob, stage, path in git_index(root) or []
+             if stage == "0" and not mode.startswith(("120000", "160000"))}
+    here = [p for p in [out_rel] + generated_pages(root, out_rel) if readable_file(root, p)]
+    others = set(git_lines(root, ["--literal-pathspecs", "ls-files", "-z", "--others",
+                                  "--exclude-standard", "--", out_rel,
+                                  posixpath.splitext(out_rel)[0] + "/"]))
+    new = [p for p in here if p not in blobs and p in others]
+    gone = [p for p in blobs if is_map_page(p, out_rel) and p not in here]
+    return sorted(set(new + worktree_differs(root, here, blobs) + gone))
+
+
+def git_add_command(paths):
+    """`git add` for these paths, as a model can run it: quoted only where sh needs it."""
+    return "git add -- " + " ".join(p if re.match(r"[\w./@+-]+$", p) else sh_quote(p)
+                                    for p in paths)
+
+
 def claude_hook(stdin_text, python):
     try:
         data = json.loads(stdin_text)
@@ -1356,13 +1381,35 @@ def claude_hook(stdin_text, python):
             return 0
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             code = main(["check", "--quiet", "--root", top])
-        if code != 1:
+        if code not in (0, 1):
             return 0
         out_rel = safe_rel(cfg.get("map"), "map")
         sub = posixpath.splitext(out_rel)[0]
-        script = os.path.abspath(__file__).replace("\\", "/")
-        print("codemap: the code map is stale; run `%s \"%s\" build` in %s, stage %s and %s/, "
-              "then commit again" % (python, script, top.replace("\\", "/"), out_rel, sub),
+        where = top.replace("\\", "/")
+        own = ("of its own (this check runs before a command starts, so one chained with the "
+               "commit is not seen and the commit is blocked again)")
+        if code == 1:
+            # The page folder is named only when there is one to add: it exists, or the index
+            # still holds pages of it (a `git add` naming a path that matches nothing fails).
+            paths = [out_rel]
+            if os.path.isdir(os.path.join(top, *sub.split("/"))) or git_lines(
+                    top, ["--literal-pathspecs", "ls-files", "-z", "--", sub + "/"]):
+                paths.append(sub + "/")
+            script = os.path.abspath(__file__).replace("\\", "/")
+            print("codemap: the code map is stale; in %s run `%s \"%s\" build`, then `%s`, each "
+                  "as a command %s, then commit again"
+                  % (where, python, script, git_add_command(paths), own), file=sys.stderr)
+            return 2
+        pages = unstaged_map_pages(top, out_rel)
+        if not pages:
+            return 0
+        paths = [p for p in (out_rel,) if p in pages]
+        if any(p != out_rel for p in pages):
+            paths.append(sub + "/")
+        print("codemap: the code map is rebuilt but not staged (%d page%s the index does not "
+              "hold as built), so the commit would keep the stale map; in %s run `%s` as a "
+              "command %s, then commit again"
+              % (len(pages), "" if len(pages) == 1 else "s", where, git_add_command(paths), own),
               file=sys.stderr)
         return 2
     except Exception:  # fail open: never block a commit on a hook error

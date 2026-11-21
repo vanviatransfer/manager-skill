@@ -45,11 +45,12 @@ its references/ whose trigger applies; never work from a summary of a file."
 EOF
     ;;
   SessionStart)
-    printf '%s %s %s %s%s\n' \
+    printf '%s %s %s %s %s\n' \
       'manager-plugin: this session was compacted during a manager run: before the next action,' \
       're-read the manager skill (invoke it again if its text is missing or cut short) and every' \
       'file in its references/ whose trigger applies now; never work from a summary of a file.' \
-      '(That run has ended: ignore this line and remove ~/.claude/manager-runs/active/' "$id.)"
+      '(If no manager run is in progress any more, ignore this line and remove' \
+      "~/.claude/manager-runs/active/$id.)"
     ;;
 esac
 exit 0

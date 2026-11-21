@@ -10,7 +10,8 @@ Before the final report, read the Risks section of a phase's report file only wh
 return's `Risks:` line is not `none` (the working-notes line step 2 keeps).
 Final report, compact: phases landed (PR, merged SHA); phases blocked and why; the model strategy
 used and any model concerns; the plugin version; the run record path,
-or why it was skipped; the vault and code map (set up, set up now, or not and why); session-check
+or why it was skipped (retro switch off: neither);
+the vault and code map (set up, set up now, or not and why); session-check
 recommendations not already given at the gate; one line on repo-enabled plugins, MCP servers or
 skills found in step 0 (names, "disable for this repo if unneeded") and any fallback dispatch
 (`manager-plugin:fallback` or `general-purpose`); unresolved risks (including validation the

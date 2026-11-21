@@ -122,8 +122,11 @@ class ContextWatchHookTest(unittest.TestCase):
             "budget of 200,000: write every working-notes line of the run out now, "), text)
         self.assertIn("when you next stop for the owner, suggest that they run `/compact` before "
                       "they answer.", text)
-        self.assertTrue(text.endswith("(That run has ended: ignore this line and remove "
-                                      "~/.claude/manager-runs/active/%s.)" % SESSION), text)
+        # A condition, never a statement: read as one, it ended a live run's notes.
+        self.assertTrue(text.endswith(
+            "(If no manager run is in progress any more, ignore this line and remove "
+            "~/.claude/manager-runs/active/%s.)" % SESSION), text)
+        self.assertNotIn("has ended", text)
         self.assertIn("working-notes line", " ".join(manager_texts().values()))
         self.assertLess(len(text), 500)
         pretty = json.dumps({"session_id": SESSION, "transcript_path": self.path}, indent=2)

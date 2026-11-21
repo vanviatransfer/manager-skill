@@ -1,7 +1,18 @@
 # Run record
 
 Read by the manager skill before the run record's first write in a run, and again after a
-compaction.
+compaction, only while the retro switch is on.
+
+**Retro switch.** The run record is opt-in: the owner turns it on once with
+`/manager-plugin:manager-retro on` (and off with `off`), which writes a flag file,
+`manager-plugin/retro` in the Claude config folder (`$CLAUDE_CONFIG_DIR`, else `~/.claude`),
+user-level and outside every repository; `MANAGER_RETRO=on` or `off` in the environment overrides
+the file (a cloud environment, where the file doesn't persist). The default is off.
+`sh "${CLAUDE_SKILL_DIR}/scripts/retro.sh"` (step 0, so after a compaction too; it only reads)
+prints `on` or `off` and what decided it. Only `on` starts or continues a record. Anything else,
+an error or no output included → write no run record and run no `usage.py` in this run. Never turn
+the switch on or off yourself, and never delete or change a record an earlier run wrote, whatever
+the switch says.
 
 So that runs can be compared and the skill improved from evidence (`manager-retro` skill), keep a
 compact record of each run in the owner's home directory, shared by all projects on this machine and
