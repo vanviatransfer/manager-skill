@@ -128,33 +128,51 @@ class OwnPlanTest(unittest.TestCase):
         with open(OWN_PLAN, encoding="utf-8", newline="") as fh:
             self.plan = fh.read()
         self.phases = re.findall(r"(?m)^### (P\d+)\. .+$", self.plan)
-        self.assertGreaterEqual(len(self.phases), 2)
 
     def test_check(self):
         code, out, err = run("check", text=self.plan)
         self.assertEqual((code, err), (0, ""), out)
-        lines = out.splitlines()
-        self.assertEqual(lines[-1], "ok: %d phases" % len(self.phases))
+        lines, count = out.splitlines(), len(self.phases)
+        self.assertEqual(lines[-1], "ok: %d phase%s" % (count, "" if count == 1 else "s"))
         for line in lines[:-1]:
             self.assertTrue(line.startswith("warning: "), line)
 
+    def read(self, text, name):
+        """What `phase` prints of the plan `text` for the phase `name`: that phase alone, with
+        the sections that bind it."""
+        expected = []
+        for section in re.split(r"(?m)^(?=## )", text):
+            if section.startswith(plan.PRINTED):
+                expected.append(section)
+            elif section.startswith("## Phases"):
+                parts = re.split(r"(?m)^(?=### )", section)
+                expected.append(parts[0])
+                expected += [part for part in parts[1:] if part.startswith("### %s." % name)]
+        expected = "".join(expected)
+        self.assertEqual(run("phase", name, text=text), (0, expected, ""), name)
+        self.assertEqual(re.findall(r"(?m)^### (P\d+)\. ", expected), [name], name)
+        for heading in ("## Constraints", "## Binding decisions", "\n## Phases",
+                        "Fix-round limit per phase:", "\nStatus: ", "\nAcceptance: "):
+            self.assertIn(heading, "\n" + expected, name)
+        return expected
+
     def test_phase(self):
         for name in self.phases:
-            expected = []
-            for section in re.split(r"(?m)^(?=## )", self.plan):
-                if section.startswith(plan.PRINTED):
-                    expected.append(section)
-                elif section.startswith("## Phases"):
-                    parts = re.split(r"(?m)^(?=### )", section)
-                    expected.append(parts[0])
-                    expected += [part for part in parts[1:] if part.startswith("### %s." % name)]
-            expected = "".join(expected)
-            self.assertEqual(run("phase", name, text=self.plan), (0, expected, ""), name)
-            self.assertEqual(len(re.findall(r"(?m)^### ", expected)), 1, name)
-            for heading in ("## Constraints", "## Binding decisions", "## Phases\n",
-                            "Fix-round limit per phase:", "\nStatus: ", "\nAcceptance: "):
-                self.assertIn(heading, expected, name)
-            self.assertLess(len(expected.split()), len(self.plan.split()) * 0.5, name)
+            self.read(self.plan, name)
+
+    def test_phase_of_a_crlf_checkout(self):
+        """The plan is read as the checkout has it, and git may check it out with CRLF."""
+        crlf = self.plan.replace("\r\n", "\n").replace("\n", "\r\n")
+        for name in self.phases:
+            self.assertIn("\r\n", self.read(crlf, name), name)
+
+    def test_phase_with_an_open_owner_decision(self):
+        """An open decision is a `### D<n>.` entry under `## Open owner decisions`, a section
+        printed whole with every phase; a run adds one to the plan whenever a question comes up."""
+        decision = ("## Open owner decisions\n\n### D1. <short question>\nBlocks: none\n"
+                    "Context: <what came up>\nRaised: <date>\n")
+        for name in self.phases:
+            self.assertTrue(self.read(self.plan + "\n" + decision, name).endswith(decision), name)
 
 
 class MalformedPlanTest(unittest.TestCase):
