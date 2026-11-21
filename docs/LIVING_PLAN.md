@@ -184,7 +184,7 @@ Validation: standard; plus
 `python3 -m unittest discover -s plugins/manager-plugin/skills/living-plan/scripts`.
 
 ### P6. Code-map "changed" command for reviewers
-Status: todo
+Status: done (PR #49)
 Objective: reviewers get a capped pointer list of what a diff touches.
 Scope: codemap.py `changed --base <sha> --head <sha>` (changed files, top-level definitions touched,
 files importing them, matching tests, vault pages mentioning them; output capped, e.g. 60 lines,
@@ -250,6 +250,18 @@ Validation: standard.
   has no section for the id (a plan-only PR's `plan`), still printing the rest; the scope warning
   leaves out phases that are done; the brief ceilings rise by the 43 words the `plan.py` read adds
   to each brief (implementer 1327, reviewer 1334)
+- 2026-11-21: P6 also carries two P5 review notes (test_plan.py takes the phase ids as plan.py
+  does, from the headings under `## Phases`, and no longer asserts `## Binding decisions`; plan.py
+  ends a field value only at an empty line or at one of the template's labels, the seven required
+  ones, `Notes` and `Out of scope`, so another `Word:` line stays part of a Scope), by the
+  orchestrator's scope ruling: "P6's scope also covers
+  plugins/manager-plugin/skills/living-plan/scripts/plan.py and test_plan.py for those two notes"
+- 2026-11-21: P6's command is `codemap.py changed --base <sha> --head <sha>`: the files of
+  `git diff <base>...<head>` without the map pages, each with the top-level definitions whose text
+  differs between the two commits, the files that import it, its tests and the vault lines that
+  mention it (those three from the working tree, so it is run at the head); at most 60 lines, the
+  last one counting what was cut; the reviewer brief's ceiling rises by the 13 words its `changed`
+  rule adds (1347), and code-map SKILL.md stays under its own
 
 ## How to keep this plan alive
 - A phase PR updates its own status line and links itself; other status lines only to correct facts.

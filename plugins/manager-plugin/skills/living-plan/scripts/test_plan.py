@@ -54,6 +54,12 @@ def check(*phases):
     return code, out
 
 
+def ids(text):
+    """The phase ids of a plan as plan.py takes them: from the headings under `## Phases`."""
+    return [plan.HEADING.match(heading).group(1)
+            for heading, _, _ in plan.sections(text.split("\n"))]
+
+
 class TemplateShapeTest(unittest.TestCase):
     """A plan in the shape of `references/plan-template.md`."""
 
@@ -127,7 +133,7 @@ class OwnPlanTest(unittest.TestCase):
             self.skipTest("no docs/LIVING_PLAN.md beside this plugin copy")
         with open(OWN_PLAN, encoding="utf-8", newline="") as fh:
             self.plan = fh.read()
-        self.phases = re.findall(r"(?m)^### (P\d+)\. .+$", self.plan)
+        self.phases = ids(self.plan)
 
     def test_check(self):
         code, out, err = run("check", text=self.plan)
@@ -150,9 +156,9 @@ class OwnPlanTest(unittest.TestCase):
                 expected += [part for part in parts[1:] if part.startswith("### %s." % name)]
         expected = "".join(expected)
         self.assertEqual(run("phase", name, text=text), (0, expected, ""), name)
-        self.assertEqual(re.findall(r"(?m)^### (P\d+)\. ", expected), [name], name)
-        for heading in ("## Constraints", "## Binding decisions", "\n## Phases",
-                        "Fix-round limit per phase:", "\nStatus: ", "\nAcceptance: "):
+        self.assertEqual(ids(expected), [name], name)
+        for heading in ("## Constraints", "\n## Phases", "Fix-round limit per phase:",
+                        "\nStatus: ", "\nAcceptance: "):
             self.assertIn(heading, "\n" + expected, name)
         return expected
 
@@ -266,6 +272,20 @@ class MalformedPlanTest(unittest.TestCase):
                              (0, warning + "ok: 2 phases\n"), scope)
         twice = phase("P2", scope="src/p2.py") + "Status: done (PR #3)\nScope: src/reader.py\n\n"
         self.assertEqual(check(listed, twice), (0, "ok: 2 phases\n"))  # a label's first line
+
+    def test_a_value_ends_only_at_a_label_of_the_template(self):
+        """Any other `Word:` line is part of the value, so a path it names is still seen."""
+        more = phase("P1", scope="the reader\nAlso: src/a.py\nSee also: lib/\nTODO: docs/b.md")
+        for scope, same in (("src/a.py", "src/a.py"), ("lib/tools.py", "lib"),
+                            ("docs/b.md", "docs/b.md")):
+            self.assertEqual(check(more, phase("P2", scope=scope)),
+                             (0, SAME % ("P1", "P2", same) + "ok: 2 phases\n"), scope)
+        for label in ("Notes", "Out of scope"):  # the template's two labels beside the required
+            ended = phase("P1", scope="the reader\n%s: src/a.py" % label)
+            self.assertEqual(check(ended, phase("P2", scope="src/a.py")), (0, "ok: 2 phases\n"),
+                             label)
+        self.assertEqual(check(phase("P1"), phase("P2", "P1\nLater: P7")),
+                         (1, "error: P2: no such phase in `Depends on`: Later:, P7\n"))
 
 
 class ScopeOverlapTest(unittest.TestCase):

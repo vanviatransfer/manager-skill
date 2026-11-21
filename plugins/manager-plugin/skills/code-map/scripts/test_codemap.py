@@ -1188,5 +1188,245 @@ class HookTest(unittest.TestCase):
             self.assertEqual(codemap.commit_dir(cmd, cwd), want, cmd)
 
 
+UTIL_BASE = """import os
+
+LIMIT = 3
+
+
+class Helper:
+    pass
+
+
+def _private():
+    return 1
+
+
+def parse(text):
+    return text.strip()
+
+
+def old_api():
+    pass
+"""
+UTIL_HEAD = """import os
+
+LIMIT = 4
+
+
+class Helper:
+    pass
+
+
+def _private():
+    return 2
+
+
+def parse(text):
+    return text.strip()
+
+
+# the replacement
+@staticmethod
+def new_api():
+    pass
+"""
+MAIN = "from app import util\n\n\ndef run():\n    return %d\n"
+TEST_UTIL = "from app import util\n\n\ndef test_parse():\n    assert util.parse(%r)\n"
+TS_LIB = "export const x = %d;\nexport function keep() {\n  return 2;\n}\n"
+VAULT_PAGE = "# Util\n\nSee `app/util.py`, `app/gone.py`, `web/`.\n"
+CHANGED = """changed: 9 files
+M README.md
+A app/fresh.py
+  definitions: made
+D app/gone.py
+  definitions: legacy
+  vault: docs/vault/util.md:3
+M app/main.py
+  definitions: run
+  tests: tests/test_main.py
+M app/secrets.py
+M app/util.py
+  definitions: _private, new_api (new), old_api (removed)
+  imported by: app/main.py
+  tests: tests/test_util.py
+  vault: docs/vault/util.md:3
+M docs/vault/util.md
+M tests/test_util.py
+  definitions: test_parse
+M web/lib.ts
+  definitions: x
+  imported by: web/index.ts
+  tests: web/lib.test.ts
+  vault: docs/vault/util.md:3
+"""
+
+
+class ChangedTest(unittest.TestCase):
+    """`changed --base <sha> --head <sha>`: the pointers for a review, in a temporary repository
+    with a base and a head commit."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = os.path.join(self.tmp.name, "repo")
+        self.write("README.md", "readme\n")
+        self.write("app/main.py", MAIN % 1)
+        self.write("app/util.py", UTIL_BASE)
+        self.write("app/gone.py", "def legacy():\n    pass\n")
+        self.write("app/secrets.py", "def leak():\n    return 1\n")
+        self.write("tests/test_util.py", TEST_UTIL % "a")
+        self.write("tests/test_main.py", "def test_run():\n    pass\n")
+        self.write("web/index.ts", "import { x } from './lib';\nexport function start() {}\n")
+        self.write("web/lib.ts", TS_LIB % 1)
+        self.write("web/lib.test.ts", "import { x } from './lib';\n")
+        self.write("docs/vault/index.md", "- [[util]]\n- [[map]]\n")
+        self.write("docs/vault/util.md", VAULT_PAGE)
+        self.git("init", "-q")
+        self.base = self.commit("base")
+        self.write("README.md", "readme, edited\n")
+        self.write("app/main.py", MAIN % 2)
+        self.write("app/util.py", UTIL_HEAD)
+        self.write("app/fresh.py", "def made():\n    pass\n")
+        os.remove(os.path.join(self.root, "app", "gone.py"))
+        self.write("app/secrets.py", "def leak():\n    return 2\n")
+        self.write("tests/test_util.py", TEST_UTIL % "b")
+        self.write("web/lib.ts", TS_LIB % 2)
+        self.write("docs/vault/util.md", VAULT_PAGE + "\nMore.\n")
+        self.head = self.commit("head")
+
+    def write(self, rel, text):
+        path = os.path.join(self.root, *rel.split("/"))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(text)
+
+    def git(self, *args):
+        os.makedirs(self.root, exist_ok=True)
+        p = subprocess.run(["git", "-C", self.root] + list(args), capture_output=True, env=GIT_ENV)
+        if p.returncode:
+            raise AssertionError("git %s: %s" % (args, p.stderr.decode()))
+        return p.stdout.decode()
+
+    def commit(self, message):
+        """Commit the working tree with its rebuilt map; the new commit's id."""
+        self.git("add", "-A")
+        self.assertEqual(run("build", "--root", self.root)[0], 0)
+        self.git("add", "-A")
+        self.git("commit", "-qm", message)
+        return self.git("rev-parse", "HEAD").strip()
+
+    def changed(self, base=None, head=None, root=None):
+        code, out = run("changed", "--base", base or self.base, "--head", head or self.head,
+                        "--root", root or self.root)
+        self.assertEqual(code, 0)
+        return out
+
+    def refused(self, *argv):
+        """The message `changed` stops with (exit code 2)."""
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), self.assertRaises(SystemExit) as stop:
+            run("changed", *argv, "--root", self.root)
+        self.assertEqual(stop.exception.code, 2)
+        return err.getvalue()
+
+    def test_files_definitions_importers_tests_and_vault_pages(self):
+        self.assertIn("docs/vault/map.md", self.git("diff", "--name-only", self.base, self.head))
+        self.assertEqual(self.changed(), CHANGED)  # the map page is left out
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        self.assertEqual(self.changed(self.head, self.head), "changed: 0 files\n")
+
+    def test_private_python_definitions_only_on_request(self):
+        text = "def _hidden():\n    pass\n\n\nclass Shown:\n    pass\n"
+        self.assertEqual(codemap.python_info(text)[0], [("Shown", 5)])
+        self.assertEqual(codemap.python_info(text, private=True)[0],
+                         [("_hidden", 1), ("Shown", 5)])
+
+    def test_output_cap(self):
+        full = CHANGED.splitlines()
+        old = codemap.MAX_CHANGED_LINES
+        self.addCleanup(setattr, codemap, "MAX_CHANGED_LINES", old)
+        for cap, cut in ((len(full) + 1, None), (len(full), None),
+                         (len(full) - 1, "(cut: 2 more lines, with 0 more files)"),
+                         (10, "(cut: 15 more lines, with 5 more files)"),
+                         (2, "(cut: 23 more lines, with 9 more files)")):
+            codemap.MAX_CHANGED_LINES = cap
+            lines = self.changed().splitlines()
+            self.assertEqual(lines, full if cut is None else full[:cap - 1] + [cut], cap)
+            self.assertLessEqual(len(lines), cap)
+
+    def test_default_cap_and_long_lists(self):
+        self.assertEqual(codemap.MAX_CHANGED_LINES, 60)
+        self.write("bulk/core.py", "def shared():\n    pass\n")
+        for n in range(70):
+            self.write("bulk/f%02d.py" % n, "from bulk import core\n\n\ndef f():\n    pass\n")
+        bulk = self.commit("bulk")
+        lines = self.changed(self.head, bulk).splitlines()
+        self.assertEqual(len(lines), 60)  # of 1 + 3 + 70 * 2
+        self.assertEqual(lines[:4], ["changed: 71 files", "A bulk/core.py", "  definitions: shared",
+                                     "  imported by: " + ", ".join("bulk/f%02d.py" % n
+                                                                    for n in range(6))
+                                     + " (+64 more)"])
+        self.assertEqual(lines[-2:], ["A bulk/f27.py", "(cut: 85 more lines, with 42 more files)"])
+
+    def test_from_a_subfolder_with_root(self):
+        """Run from a subfolder, `--root` names the repository: the same answer."""
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "codemap.py")
+        for cwd, root in (("app", ".."), ("docs/vault", "../.."), ("web", self.root)):
+            p = subprocess.run([sys.executable, script, "changed", "--base", self.base, "--head",
+                                self.head, "--root", root], capture_output=True, env=GIT_ENV,
+                               cwd=os.path.join(self.root, *cwd.split("/")))
+            self.assertEqual((p.returncode, p.stdout.decode("utf-8").replace("\r\n", "\n"),
+                              p.stderr.decode()), (0, CHANGED, ""), cwd)
+
+    def test_root_that_is_a_subfolder(self):
+        """`--root` names a subfolder: its files only, paths relative to it, nothing written."""
+        out = self.changed(root=os.path.join(self.root, "app"))
+        self.assertEqual(out, "changed: 5 files\nA fresh.py\n  definitions: made\nD gone.py\n"
+                              "  definitions: legacy\nM main.py\n  definitions: run\n"
+                              "M secrets.py\nM util.py\n"
+                              "  definitions: _private, new_api (new), old_api (removed)\n")
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_another_checkout_is_named(self):
+        """Definitions come from the two commits; the rest from the working tree, which the
+        output says when HEAD is not the head asked for."""
+        self.git("checkout", "-q", self.base)
+        lines = self.changed().splitlines()
+        self.assertEqual(lines[0], "changed: 9 files")
+        self.assertEqual(lines[1], "note: HEAD is not %s; importers, tests and vault pages are "
+                                   "the working tree's" % self.head)
+        self.assertEqual(lines[2:], CHANGED.splitlines()[1:])  # app/fresh.py is not checked out
+        self.assertNotIn("note:", self.changed(self.base, self.base))
+
+    def test_the_diff_is_the_head_side_of_the_fork(self):
+        """As `git diff <base>...<head>`: what the base's branch got meanwhile is no change."""
+        self.git("checkout", "-q", "-b", "moved", self.base)
+        self.write("moved.txt", "the default branch moved on\n")
+        moved = self.commit("moved")
+        self.git("checkout", "-q", self.head)
+        self.assertEqual(self.changed(moved), CHANGED)
+
+    def test_base_and_head_are_commits(self):
+        self.assertIn("changed needs --base SHA and --head SHA", self.refused("--base", self.base))
+        self.assertIn("changed needs --base SHA and --head SHA", self.refused("--head", self.head))
+        target = os.path.join(self.tmp.name, "written")
+        for argv in (("--base=--output=" + target, "--head", self.head),
+                     ("--base", self.base, "--head=--output=" + target)):
+            self.assertIn("changed needs --base SHA and --head SHA", self.refused(*argv))
+        self.assertEqual(os.listdir(self.tmp.name), ["repo"])
+        self.assertIn("cannot diff nope...%s" % self.head,
+                      self.refused("--base", "nope", "--head", self.head))
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_a_path_with_a_newline_stays_on_one_line(self):
+        try:
+            self.write("app/two\nlines.py", "def f():\n    pass\n")
+        except OSError:
+            self.skipTest("no newline in file names on this file system")
+        odd = self.commit("odd")
+        self.assertEqual(self.changed(self.head, odd),
+                         "changed: 1 file\nA app/two?lines.py\n  definitions: f\n")
+
+
 if __name__ == "__main__":
     unittest.main()
