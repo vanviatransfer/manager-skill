@@ -265,9 +265,10 @@ Validation: standard.
   rule adds (1347), and code-map SKILL.md stays under its own
 - 2026-11-21: P7 also carries three P6 review notes on `codemap.py changed` (a deleted file names
   the files that still import it; a file's changed definitions are listed up to 20, its other
-  lists up to 6 as before; `(module level)` is printed when the text outside every definition
-  differs, a definition ending at the first line below it that is not part of it), by the
-  orchestrator's scope ruling: "P7's scope also covers
+  lists up to 6 as before; `(module level)` is printed when the text above a file's first
+  definition differs, or the text of a file without one; a definition still runs up to the next
+  one, so a change between two names the one above, an approximation code-map SKILL.md states),
+  by the orchestrator's scope ruling: "P7's scope also covers
   plugins/manager-plugin/skills/code-map/scripts/codemap.py, test_codemap.py and code-map SKILL.md
   for those three notes"
 - 2026-11-21: P7's cases are in plugins/manager-plugin/evals/, the CLI's default eval folder, so

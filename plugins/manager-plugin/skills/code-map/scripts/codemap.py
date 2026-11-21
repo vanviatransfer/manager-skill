@@ -10,7 +10,7 @@ Usage:
                                                files changed since SHA)
   codemap.py changed --base SHA --head SHA     pointers for a review of `git diff SHA...SHA`: the
                                                changed files, the top-level definitions whose text
-                                               differs (`(module level)`: the text outside them),
+                                               differs (`(module level)`: the text above them),
                                                who imports them, their tests and the vault pages
                                                that mention them (60 lines at most)
   codemap.py detect [--root DIR]               where the vault and the map are, and why
@@ -935,35 +935,25 @@ def diff_entries(root, base, head):
 
 def definitions(path, data):
     """{name: text} of the top-level definitions in a source file's bytes (None: none), to compare
-    two versions of it, and under MODULE_LEVEL the text outside all of them, without its empty
-    lines. One runs from the comment and decorator lines right above it to the first line below
-    that is not part of it: not indented, not empty, no closing bracket or `end` and, in Python,
-    not inside a string. The next one's start ends it too. Python's private ones are included.
+    two versions of it. One runs from the comment and decorator lines right above it up to the
+    next one's, so a change between two counts for the first; Python's private ones are included.
+    Under MODULE_LEVEL: the text above the first one (all of it when there is none), without its
+    empty lines.
     """
     if data is None or len(data) > MAX_BYTES or b"\0" in data[:8192]:
         return {}
     text = data.replace(b"\r\n", b"\n").decode("utf-8", "replace")
     key = PATTERN_KEY.get(posixpath.splitext(path)[1].lower())
     symbols = pattern_info(text, key)[0] if key else python_info(text, private=True)[0]
-    lines, starts, in_string, state = text.split("\n"), [], set(), None
-    for number, line in enumerate([] if key else lines, 1):
-        if state is not None:
-            in_string.add(number)
-        state = code_part(line.lstrip("\x0c"), state)[1]
+    lines, starts = text.split("\n"), []
     for _, start in symbols:
         while start > 1 and lines[start - 2].lstrip()[:1] in ("@", "#", "/", "*"):
             start -= 1
         starts.append(start)
-    found, outside, at = {}, [], 1
-    for (name, line), start, limit in zip(symbols, starts, starts[1:] + [len(lines) + 1]):
-        end = line + 1
-        while end < limit and (end in in_string or not lines[end - 1].strip()
-                               or lines[end - 1][0] in " \t)]}" or lines[end - 1].strip() == "end"):
-            end += 1
-        outside += lines[at - 1:start - 1]
+    starts.append(len(lines) + 1)
+    found = {MODULE_LEVEL: "\n".join(line for line in lines[:starts[0] - 1] if line.strip())}
+    for (name, _), start, end in zip(symbols, starts, starts[1:]):
         found[name] = found.get(name, "") + "\n".join(lines[start - 1:end - 1]).rstrip() + "\n"
-        at = end
-    found[MODULE_LEVEL] = "\n".join(line for line in outside + lines[at - 1:] if line.strip())
     return found
 
 
@@ -971,7 +961,7 @@ def changed_lines(root, diff, head, info, importers, mentions, out_rel):
     """The lines `changed` prints, before the cap: per file of `diff`, the `diff_entries` of
     `git diff base...head` (map pages left out), its status and path, then what there is of: the
     top-level definitions whose text differs between the two commits (first MODULE_LEVEL, when
-    the text outside them differs), the files that import it (a deleted file: `scan` was given
+    the text above them differs), the files that import it (a deleted file: `scan` was given
     its path), its tests (they import it, or a source file gives them its name) and the vault
     lines that mention it. Files that may hold secrets are never read."""
     def parsed(path):
@@ -995,9 +985,9 @@ def changed_lines(root, diff, head, info, importers, mentions, out_rel):
         lines.append("%s %s" % (status, path))
         before = definitions(path, data.get(old) if parsed(path) else None)
         after = definitions(path, data.get(new) if parsed(path) else None)
-        outside = (before.pop(MODULE_LEVEL, None), after.pop(MODULE_LEVEL, None))
+        above = (before.pop(MODULE_LEVEL, None), after.pop(MODULE_LEVEL, None))
         new_mark, gone_mark = (" (new)", " (removed)") if status == "M" else ("", "")
-        names = [MODULE_LEVEL] if None not in outside and outside[0] != outside[1] else []
+        names = [MODULE_LEVEL] if None not in above and above[0] != above[1] else []
         names += [name + ("" if name in before else new_mark) for name in after
                   if after[name] != before.get(name)]
         names += [name + gone_mark for name in before if name not in after]

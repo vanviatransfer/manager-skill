@@ -1383,45 +1383,72 @@ class ChangedTest(unittest.TestCase):
         self.assertEqual(self.changed(two, three), "changed: 1 file\nM bulk/many.py\n"
                          "  definitions: %s\n" % ", ".join(names[1:]))
 
-    def test_a_definition_ends_where_text_outside_it_starts(self):
-        """`definitions`: one runs from the comment and decorator lines above it to the first
-        line below that is not indented, empty, a closing bracket, `end` or (Python) inside a
-        string; the rest of the file, without its empty lines, is the module-level text."""
+    def test_a_definition_runs_up_to_the_next_one(self):
+        """`definitions`: one runs from the comment and decorator lines above it up to the next
+        one's, so the text between two is the upper one's; the module-level text is what stands
+        above the first (all of a file that has none), without its empty lines."""
         python = (b'import os\n\nLIMIT = 3\n\n\ndef first(\n    a,\n):\n    return """\n'
                   b'at column 0\n"""\n\n\nSETTING = first(1)\n\n# about second\n@decorated\n'
                   b'def second():\n    pass\n')
         self.assertEqual(codemap.definitions("a.py", python), {
-            "first": 'def first(\n    a,\n):\n    return """\nat column 0\n"""\n',
+            "first": 'def first(\n    a,\n):\n    return """\nat column 0\n"""\n\n\n'
+                     'SETTING = first(1)\n',
             "second": "# about second\n@decorated\ndef second():\n    pass\n",
-            codemap.MODULE_LEVEL: "import os\nLIMIT = 3\nSETTING = first(1)"})
-        script = (b"import { a } from './a';\n\nexport function first() {\n  return 1;\n}\n\n"
-                  b"const between = 2;\n\nexport const second = [\n  1,\n];\n")
-        self.assertEqual(codemap.definitions("a.ts", script), {
-            "first": "export function first() {\n  return 1;\n}\n",
-            "second": "export const second = [\n  1,\n];\n",
-            codemap.MODULE_LEVEL: "import { a } from './a';\nconst between = 2;"})
+            codemap.MODULE_LEVEL: "import os\nLIMIT = 3"})
         self.assertEqual(codemap.definitions("a.rb", b"def first\n  1\nend\n\nX = 1\n"),
-                         {"first": "def first\n  1\nend\n", codemap.MODULE_LEVEL: "X = 1"})
-        self.assertEqual(codemap.definitions("a.py", b"print(1)\n"),
-                         {codemap.MODULE_LEVEL: "print(1)"})
+                         {"first": "def first\n  1\nend\n\nX = 1\n", codemap.MODULE_LEVEL: ""})
+        self.assertEqual(codemap.definitions("a.py", b"print(1)\n\nprint(2)\n"),
+                         {codemap.MODULE_LEVEL: "print(1)\nprint(2)"})
         self.assertEqual(codemap.definitions("a.py", None), {})
 
-    def test_a_change_outside_every_definition_is_module_level(self):
-        """Above the first definition or between two, it is named `(module level)` and not
-        credited to the definition above; empty lines alone are no change; a file that is new
-        or gone has its definitions only."""
-        two = "import os\n\nLIMIT = %d\n\n\ndef f():\n    return %d\n%s\n\nSETTING = %d\n\n\n" \
+    def test_a_change_inside_a_definition_names_it_in_any_layout(self):
+        """A line at column 0 inside a definition does not end it: an opening brace on its own
+        line, `where`, `rescue`, a label, a comment, the text of a template literal."""
+        layouts = (
+            ("brace.cs", "namespace App;\n\npublic class First\n{\n    int One() { return 1; }\n"
+                         "}\n\npublic class Other\n{\n    int Two() { return %d; }\n}\n", "Other"),
+            ("brace.php", "<?php\n\nfunction first_helper($a)\n{\n    return $a + 1;\n}\n\n"
+                          "function second_helper($a)\n{\n    return $a + %d;\n}\n\n"
+                          "class Greeter\n{\n    public function greet()\n    {\n"
+                          "        return %d;\n    }\n}\n", "second_helper, Greeter"),
+            ("comment.py", "def first():\n    a = 1\n# a note at column 0\n    return a + %d\n"
+                           "\n\ndef second():\n    return 2\n", "first"),
+            ("label.go", "package lay\n\nfunc Run() int {\n\tn := 0\nouter:\n\tfor {\n"
+                         "\t\tn += %d\n\t\tbreak outer\n\t}\n\treturn n\n}\n\n"
+                         "func Other() int {\n\treturn 2\n}\n", "Run"),
+            ("literal.ts", "export function page() {\n  return `\n<p>%d</p>\n`;\n}\n\n"
+                           "export function other() {\n  return 2;\n}\n", "page"),
+            ("rescue.rb", "def first\n  risky\nrescue StandardError\n  %d\nend\n\n"
+                          "def second\n  2\nend\n", "first"),
+            ("where.rs", "pub fn first<T>(a: T) -> T\nwhere\n    T: Clone,\n{\n"
+                         "    let _ = %d;\n    a.clone()\n}\n\n"
+                         "pub fn second() -> i32 {\n    2\n}\n", "first"),
+        )
+        for name, text, _ in layouts:
+            self.write("lay/" + name, text % ((1,) * text.count("%d")))
+        one = self.commit("layouts, before")
+        for name, text, _ in layouts:
+            self.write("lay/" + name, text % ((2,) * text.count("%d")))
+        two = self.commit("layouts, after")
+        self.assertEqual(self.changed(one, two), "changed: %d files\n" % len(layouts) + "".join(
+            "M lay/%s\n  definitions: %s\n" % (name, names) for name, _, names in layouts))
+
+    def test_a_change_above_the_first_definition_is_module_level(self):
+        """Above the first definition, or in a file without one, a change is named
+        `(module level)`; between two definitions it counts for the upper one; empty lines
+        alone above the first are no change; a file that is new or gone has its definitions
+        only."""
+        two = "import os\n%s\nLIMIT = %d\n\n\ndef f():\n    return %d\n\n\nSETTING = %d\n\n\n" \
               "def g():\n    return 2\n"
-        script = "export function f() {\n  return %d;\n}\nconst s = %d;\n"
-        for name, values in (("above", (1, 1, "", 1)), ("between", (1, 1, "", 1)),
-                             ("inside", (1, 1, "", 1)), ("blank", (1, 1, "", 1))):
-            self.write("lvl/%s.py" % name, two % values)
+        script = "const s = %d;\n\nexport function f() {\n  return %d;\n}\n"
+        for name in ("above", "between", "inside", "blank"):
+            self.write("lvl/%s.py" % name, two % ("", 1, 1, 1))
         self.write("lvl/script.py", "print(1)\n")
         self.write("lvl/both.ts", script % (1, 1))
         self.write("lvl/old.py", "import os\n\n\ndef legacy():\n    pass\n")
         one = self.commit("module level, before")
-        for name, values in (("above", (2, 1, "", 1)), ("between", (1, 1, "", 2)),
-                             ("inside", (1, 2, "", 1)), ("blank", (1, 1, "\n\n", 1))):
+        for name, values in (("above", ("", 2, 1, 1)), ("between", ("", 1, 1, 2)),
+                             ("inside", ("", 1, 2, 1)), ("blank", ("\n\n", 1, 1, 1))):
             self.write("lvl/%s.py" % name, two % values)
         self.write("lvl/script.py", "print(2)\n")
         self.write("lvl/both.ts", script % (2, 2))
@@ -1431,7 +1458,7 @@ class ChangedTest(unittest.TestCase):
 M lvl/above.py
   definitions: (module level)
 M lvl/between.py
-  definitions: (module level)
+  definitions: f
 M lvl/blank.py
 M lvl/both.ts
   definitions: (module level), f
