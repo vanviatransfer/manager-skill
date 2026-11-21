@@ -157,6 +157,8 @@ Risk: standard — advisory hook.
 Acceptance: tested below/above budget, outside a run, missing transcript; under 50 ms on the common
 path.
 Validation: standard; plus P3's script folder `unittest discover`.
+Notes: P4's hook reads only the transcript's tail (a last-request helper beside usage.py's `read`),
+since `read` parses the whole transcript (~48–77 ms on 10–15 MB files).
 
 ### P5. Plan validation and phase extraction
 Status: todo
@@ -226,6 +228,8 @@ Validation: standard.
   is the reader P4 reuses) and its folder's `unittest discover` joins the Validation line; it
   counts a resume as cold when under half of the previous prompt was read from the cache, since an
   expired cache still reads a shared prefix
+- 2026-11-21: P4 reads only the transcript's tail, with a last-request helper beside P3's `read`,
+  which parses the whole transcript (~48–77 ms on 10–15 MB files)
 
 ## How to keep this plan alive
 - A phase PR updates its own status line and links itself; other status lines only to correct facts.
