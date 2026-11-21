@@ -14,9 +14,12 @@ JSON is printed, the hook output that adds one line to the session's context
 (`hookSpecificOutput.additionalContext`): make sure the run's notes file
 (`~/.claude/manager-runs/notes/<session id>.md`) is current, without printing the notes, and
 suggest `/compact` to the owner once, at the next stop. So the line comes once per crossing, not
-after every subagent return above the budget; a compaction brings the context under it again.
-No earlier such request in the transcript's end → the line comes, as for a first crossing.
-Stateless: nothing but the transcript records whether the line came before.
+after every subagent return above the budget. Only the requests after the transcript's last
+`compact_boundary` record count: no earlier such request since then, or in the end read at all
+→ the line comes, as for a first crossing. Several subagents spawned in one request: the line
+comes only at the hook whose input's `tool_use_id` is that request's first Agent or Task call
+(no id, or one not among them → it comes). Stateless: nothing but the transcript records
+whether the line came before.
 
 The budget is 200,000 tokens; the environment variable `MANAGER_CONTEXT_BUDGET` (a whole number
 above 0) sets another. It is no `.codemap.json` setting: an orchestrator has one context,
@@ -37,11 +40,10 @@ import usage  # noqa: E402
 
 BUDGET = 200000
 LINE = ("manager-plugin: this session's context is {size:,} tokens, over the manager run's "
-        "budget of {budget:,}: make sure your notes file, ~/.claude/manager-runs/notes/"
-        "{session}.md, is current (never print the notes), and when you next stop for the "
-        "owner, suggest once that they run `/compact` before they answer. (If no manager run is "
-        "in progress any more, ignore this line and remove ~/.claude/manager-runs/active/"
-        "{session}.)")
+        "budget of {budget:,}: make sure your notes file is current (never print the notes), "
+        "and when you next stop for the owner, suggest once that they run `/compact` before "
+        "they answer. (If no manager run is in progress any more, ignore this line and remove "
+        "~/.claude/manager-runs/active/{session} and ~/.claude/manager-runs/notes/{session}.md.)")
 SPAWN = ("Agent", "Task")  # the tools this hook follows (hooks.json: `Agent|Task`)
 
 
@@ -53,30 +55,34 @@ def budget():
     return value if value > 0 else BUDGET
 
 
-def spawns(record):
-    """True for a request record whose content calls the Agent or Task tool."""
+def calls(record):
+    """The ids of the Agent or Task tool calls in a request record's content, in its order."""
     content = record["message"].get("content")
-    return isinstance(content, list) and any(
-        isinstance(part, dict) and part.get("type") == "tool_use" and part.get("name") in SPAWN
-        for part in content)
+    return [part.get("id") for part in content if isinstance(part, dict)
+            and part.get("type") == "tool_use" and part.get("name") in SPAWN] \
+        if isinstance(content, list) else []
 
 
 def sizes(path):
     """(the last request's context size, the one of the last request before it that called the
-    Agent or Task tool, or None), or (None, None): no request in the transcript's end. A request
-    has a record per content block, all with its message id; the last one read is complete."""
+    Agent or Task tool or None, the ids of the last request's Agent and Task calls in order), or
+    (None, None, []): no request in the transcript's end since its last compaction. A request
+    has a record per content block, all with its message id; the last one read is complete.
+    Nothing from before a `compact_boundary` record counts: the context began again there."""
     current = key = None
+    ids = []
     seen = {}  # message id -> its size, from its last record
-    for record, size in usage.back(path):
+    for record, size in usage.back(path, compaction=True):
         name = record["message"]["id"]
         if current is None:
             current, key = size, name
         if name == key:
+            ids[:0] = calls(record)  # read from the end back: an earlier record goes first
             continue
         seen.setdefault(name, size)
-        if spawns(record):
-            return current, seen[name]
-    return current, None
+        if calls(record):
+            return current, seen[name], ids
+    return current, None, ids
 
 
 def line(data, markers):
@@ -88,8 +94,14 @@ def line(data, markers):
             or not isinstance(path, str) \
             or not os.path.isfile(os.path.join(markers, session)):
         return None
-    (size, before), limit = sizes(path), budget()
+    (size, before, ids), limit = sizes(path), budget()
     if size is None or size <= limit or (before is not None and before > limit):
+        return None
+    # Subagents spawned in one message: the line comes once, at the hook of that message's first
+    # Agent or Task call. An id not among that request's calls (or no id) can't be placed: it
+    # comes, as before.
+    call = data.get("tool_use_id")
+    if isinstance(call, str) and call in ids and call != ids[0]:
         return None
     return LINE.format(size=size, budget=limit, session=session)
 

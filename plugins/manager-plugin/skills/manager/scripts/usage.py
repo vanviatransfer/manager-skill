@@ -180,11 +180,12 @@ def read(paths, since=None, waits=True):
     return total
 
 
-def back(path, tail=TAIL):
+def back(path, tail=TAIL, compaction=False):
     """The request records in a transcript's last `tail` bytes, from the last back: (record,
-    context size) for each, the size counted as `context at return` counts it. Only that end of
-    the file is read, so a long transcript costs no more than a short one; no file that can be
-    read → nothing."""
+    context size) for each, the size counted as `context at return` counts it. With
+    `compaction`, none from before the last `compact_boundary` record. Only that end of the file
+    is read, so a long transcript costs no more than a short one; no file that can be read →
+    nothing."""
     try:
         with open(path, "rb") as fh:
             cut = max(0, fh.seek(0, os.SEEK_END) - tail - 1)  # with the byte before them
@@ -193,12 +194,16 @@ def back(path, tail=TAIL):
     except (OSError, ValueError):
         return
     for line in reversed(lines[1:] if cut else lines):  # after a cut, the first is a part
-        if b'"usage"' not in line:
+        bound = compaction and b"compact_boundary" in line
+        if b'"usage"' not in line and not bound:
             continue
         try:
             record = json.loads(line.decode("utf-8", "replace"))
         except (ValueError, RecursionError):
             continue
+        if bound and isinstance(record, dict) and record.get("type") == "system" \
+                and record.get("subtype") == "compact_boundary":
+            return
         found = request(record) if isinstance(record, dict) else None
         if found:
             yield record, sum(count(found[1], key) for key in PROMPT + ("output_tokens",))

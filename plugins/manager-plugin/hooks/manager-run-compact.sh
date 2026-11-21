@@ -67,7 +67,7 @@ EOF
       're-read the manager skill (invoke it again if its text is missing or cut short) and every' \
       'file in its references/ whose trigger applies now; never work from a summary of a file.' \
       '(If no manager run is in progress any more, ignore this line and remove' \
-      "~/.claude/manager-runs/active/$id.)"
+      "~/.claude/manager-runs/active/$id and ~/.claude/manager-runs/notes/$id.md.)"
     [ -n "$notes" ] || exit 0
     # Whole lines while they fit in 8,000 (`${#var}`: bytes or characters, as the shell counts;
     # 8,000 characters at most either way), so the whole output stays under Claude Code's 10,000

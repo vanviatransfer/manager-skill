@@ -119,8 +119,8 @@ class ContextWatchHookTest(unittest.TestCase):
         text = self.line()
         self.assertTrue(text.startswith(
             "manager-plugin: this session's context is 200,001 tokens, over the manager run's "
-            "budget of 200,000: make sure your notes file, ~/.claude/manager-runs/notes/%s.md, "
-            "is current (never print the notes), " % SESSION), text)
+            "budget of 200,000: make sure your notes file is current (never print the notes), "),
+            text)
         self.assertEqual(NOTES, "~/.claude/manager-runs/notes/${CLAUDE_SESSION_ID}.md")
         self.assertIn("when you next stop for the owner, suggest once that they run `/compact` "
                       "before they answer.", text)
@@ -128,7 +128,8 @@ class ContextWatchHookTest(unittest.TestCase):
         # A condition, never a statement: read as one, it ended a live run's notes.
         self.assertTrue(text.endswith(
             "(If no manager run is in progress any more, ignore this line and remove "
-            "~/.claude/manager-runs/active/%s.)" % SESSION), text)
+            "~/.claude/manager-runs/active/%s and ~/.claude/manager-runs/notes/%s.md.)"
+            % (SESSION, SESSION)), text)
         self.assertNotIn("has ended", text)
         self.assertIn("working-notes line", " ".join(manager_texts().values()))
         self.assertLess(len(text), 500)
@@ -197,6 +198,67 @@ class ContextWatchHookTest(unittest.TestCase):
         self.transcript(over, filler * 300, now)
         self.assertIn(" is 209,000 tokens, ", self.line())
 
+    def test_a_compaction_bounds_the_scan(self):
+        """Only the requests after the last `compact_boundary` record count: an Agent call from
+        before it, under or over the budget, is no earlier chance in this context."""
+        self.mark()
+        now = sized(BUDGET + 9000, "m9")
+        compacted = {"type": "system", "subtype": "compact_boundary",
+                     "timestamp": "2026-01-01T09:10:00.000Z"}
+        for before in (sized(BUDGET + 1, "m1"), sized(9000, "m1")):
+            self.transcript(before, RETURNED, compacted, now)
+            self.assertIn(" is 209,000 tokens, ", self.line())
+            self.transcript(before, RETURNED, compacted, sized(BUDGET + 1, "m2"), RETURNED, now)
+            self.assert_silent()  # over already at an Agent call after the compaction
+            self.transcript(before, compacted, sized(9000, "m2", tool="Bash"), now)
+            self.assertIn(" is 209,000 tokens, ", self.line())
+        # Only the record itself bounds it: not the word in a tool result or a text field.
+        quoted = dict(RETURNED, message={"role": "user", "content": [
+            {"type": "tool_result",
+             "content": '{"type": "system", "subtype": "compact_boundary"}'}]})
+        self.transcript(sized(BUDGET + 1, "m1"), quoted, now)
+        self.assert_silent()
+        self.transcript(sized(BUDGET + 1, "m1"), compacted)  # no request since: silent
+        self.assert_silent()
+
+    def test_spawns_in_one_message_bring_the_line_once(self):
+        """Several Agent calls in one request: one hook each; the line comes only at the hook of
+        the request's first call, by the input's `tool_use_id`."""
+        self.mark()
+        def batch(key, tokens, ids, split):
+            """One request's records: its calls in one record, or one record per call."""
+            parts = [{"type": "tool_use", "id": i, "name": "Agent" if n else "Task"}
+                     for n, i in enumerate(ids)]
+            records = []
+            for chunk in ([[p] for p in parts] if split else [parts]):
+                record = sized(tokens, key)
+                record["message"]["content"] = [{"type": "text", "text": "three phases"}] + chunk
+                records.append(record)
+            return records
+        ids = ["toolu_a", "toolu_b", "toolu_c"]
+        for split in (False, True):
+            self.transcript(sized(9000, "m1"), RETURNED, *batch("m2", BUDGET + 1, ids, split))
+            spoke = [i for i in ids if self.hook(tool_use_id=i)[1]]
+            self.assertEqual(spoke, ["toolu_a"], split)
+            # Ids that can't be placed: as before, the line comes.
+            for call in (None, 7, "", "toolu_other"):
+                self.assertIn(" is 200,001 tokens, ", self.line(tool_use_id=call))
+            payload = {"session_id": SESSION, "transcript_path": self.path}
+            self.assertIn(" is 200,001 tokens, ", self.line(raw=json.dumps(payload)))
+        # A request whose calls carry no id: nothing to place, the line comes.
+        record = sized(BUDGET + 1, "m2")
+        record["message"]["content"] = [{"type": "tool_use", "name": "Agent"}]
+        self.transcript(sized(9000, "m1"), record)
+        self.assertIn(" is 200,001 tokens, ", self.line(tool_use_id="toolu_b"))
+        # Another tool first in the message: the first Agent call is the one.
+        record = sized(BUDGET + 1, "m2")
+        record["message"]["content"] = [{"type": "tool_use", "id": "toolu_x", "name": "Bash"},
+                                        {"type": "tool_use", "id": "toolu_b", "name": "Agent"},
+                                        {"type": "tool_use", "id": "toolu_c", "name": "Agent"}]
+        self.transcript(sized(9000, "m1"), record)
+        self.assertIn(" is 200,001 tokens, ", self.line(tool_use_id="toolu_b"))
+        self.assert_silent(tool_use_id="toolu_c")
+
     def test_the_notes_folder_is_no_marker(self):
         self.transcript(sized(BUDGET + 1))
         notes = NOTES.replace("~", self.home).replace("${CLAUDE_SESSION_ID}", SESSION)
@@ -234,10 +296,11 @@ class ContextWatchHookTest(unittest.TestCase):
         other = self.mark("another-session")
         self.assert_silent()  # another session's run
         self.transcript(sized(BUDGET + 1), path=other + ".jsonl")
-        self.assertIn("/active/another-session.)",
+        self.assertIn("/active/another-session and "
+                      "~/.claude/manager-runs/notes/another-session.md.)",
                       self.line(session_id="another-session", transcript_path=other + ".jsonl"))
         path = self.mark()
-        self.assertIn("/active/%s.)" % SESSION, self.line())
+        self.assertIn("/notes/%s.md.)" % SESSION, self.line())
         os.remove(path)  # the run has ended
         self.assert_silent()
         os.makedirs(path)  # a folder is not a marker

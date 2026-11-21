@@ -627,42 +627,58 @@ printed whole. Each print cost some 1k tokens or more and brought the next compa
 
 - **The notes live in a file.** The manager skill's **Run marker** paragraph: the working-notes
   lines are kept in `~/.claude/manager-runs/notes/<session id>.md`, written when the marker is
-  (`mkdir -p`; kept if it exists; outside every repository), changed a line at a time (the Edit
-  tool), never printed as a block (**Talking to the owner** says the same); a file that can't be
-  written → each line stated once in the conversation, when it is set or changes. Both files are
-  removed (`rm -f`) when the run ends. The notes folder is its own, beside `active/`, so the
-  marker glob of the context hook and the compaction hook's marker test are unchanged; a test
-  holds that a notes file is no marker for either. Step 0's re-read after a compaction names the
-  notes file as the hook prints it; `references/model-strategy.md` reads the strategy line from
-  the notes file (or, without one, the summary). The other references that keep a
-  working-notes line stay as they were: their wording holds for a file too.
-- **The compaction hook.** `SessionStart` (`compact`) prints, after its re-read line, the notes
-  file verbatim, whole lines while they fit in 8,000 (as the shell counts `${#var}`: bytes in
-  dash, characters in bash; at most 8,000 characters either way), and a last line when it cut,
-  so the whole output stays under Claude Code's 10,000 characters (tested with ASCII, two-byte
-  and three-byte lines). `PreCompact` with a notes file: a short instruction, the notes are in
-  that file and come back after the compaction, keep only a line not yet in it; without one, the
-  old verbatim-lines instruction stands. Still plain sh with `cat`, `grep`, `sed` and the shell's
-  own `read`; it writes nothing, fails open, and is silent without the marker, in a subagent and
-  for a bad id.
+  (`mkdir -p`; a new run starts it fresh, a compaction of the same run keeps it; outside every
+  repository), changed a line at a time (the Edit tool), never printed as a block (**Talking to
+  the owner** says the same); a file that can't be written → each line stated once in the
+  conversation, when it is set or changes. Both files are removed (`rm -f`) when the run ends; the
+  hooks' "if no manager run is in progress any more" lines name both files, so a file left behind
+  is named for removal too. The notes folder is its own, beside `active/`, so the marker glob of
+  the context hook and the compaction hook's marker test are unchanged; a test holds that a notes
+  file is no marker for either. Step 0's re-read after a compaction names the notes file as the
+  hook prints it; `references/model-strategy.md` reads the strategy line from the notes file (or,
+  without one, the summary). The other references that keep a working-notes line stay as they
+  were: their wording holds for a file too.
+- **The compaction hook.** `SessionStart` (`compact`) prints, after its re-read line, the notes file
+  verbatim, whole lines while they fit in 8,000 (as the shell counts `${#var}`: bytes in dash,
+  characters in bash; at most 8,000 characters either way), and a last line when it cut, so the
+  whole output stays under Claude Code's 10,000 characters (tested with ASCII, two-byte and
+  three-byte lines). `PreCompact` with a notes file: a short instruction, the notes are in that
+  file and come back after the compaction, keep only a line not yet in it; without one, the old
+  verbatim-lines instruction stands. Still plain sh with `cat`, `grep`, `sed` and the shell's own
+  `read`; it writes nothing, fails open, and is silent without the marker, in a subagent and for a
+  bad id.
 - **The context hook speaks once per crossing.** Its line now says: make sure the notes file is
   current (never print the notes), and suggest `/compact` to the owner once, at the next stop. It
-  speaks when the last request is above the budget and the previous request that called the
-  Agent or Task tool was at or under it, both read from the transcript's end as before
-  (`usage.back`, which `usage.last` now uses too). That earlier request is the hook's previous
-  chance to speak: the orchestrator's requests between two subagent returns (git, `gh`, reads)
-  run no hook, so comparing with the request just before the last would miss most crossings.
-  Stateless: nothing is stored. No earlier Agent call in the end it reads (1 MiB) → it speaks, as
-  before. After a compaction the context is under the budget again, so the next crossing speaks
-  again. `MANAGER_CONTEXT_BUDGET` stays.
-- **Ceilings.** The manager skill went from 17,995 to 17,964 of its 18,000 characters: the new
-  text was paid for by shorter wording elsewhere (the GitHub backend and lean-context bullets,
-  a cross-reference in loop step 2, the parenthetical list in **Owner decisions** item 1 that
-  `owner-decisions.md` holds anyway, the no-report line). The code-map skill and the brief
-  ceilings are unchanged.
-- **Not verified.** [not measured] No live session has run this version: whether the
-  orchestrator keeps the file current and stops printing the block, whether a summary drops
-  lines when told they come back from a file, and how often the context line now comes in a real
-  run. [not measured] Subagents launched in one message return after the same request, so a
-  crossing there brings the line once per subagent of that message. No eval was run
-  (`claude plugin eval` not approved for this change).
+  speaks when the last request is above the budget and the previous request that called the Agent
+  or Task tool was at or under it, both read from the transcript's end as before (`usage.back`,
+  which `usage.last` now uses too). That earlier request is the hook's previous chance to speak:
+  the hook runs when an Agent call ends (a subagent's return; a background one,
+  `run_in_background`, is assumed to end at its launch, which is not verified), and the
+  orchestrator's requests between two such calls (git, `gh`, reads) run no hook, so comparing with
+  the request just before the last would miss most crossings. Stateless: nothing is stored. The
+  scan stops at the transcript's last `compact_boundary` record: no earlier Agent call since then,
+  or in the end it reads (1 MiB) at all → it speaks, as before. So after a compaction the next
+  crossing speaks again, whatever came before the boundary. Several subagents spawned in one
+  message (their hooks all follow that one request): the line comes only at the hook whose input's
+  `tool_use_id` is the message's first Agent or Task call, read from that request's records in
+  order; no id in the input, or one not among them → it comes, as before. `MANAGER_CONTEXT_BUDGET`
+  stays.
+- **Ceilings.** The manager skill went from 17,995 to 17,986 of its 18,000 characters: the new text
+  was paid for by shorter wording elsewhere (the GitHub backend and lean-context bullets, a
+  cross-reference in loop step 2, the parenthetical list in **Owner decisions** item 1 that
+  `owner-decisions.md` holds anyway, the no-report line, step 0 item 5). The code-map skill and
+  the brief ceilings are unchanged.
+- **Not verified.** [not measured] No live session has run this version: whether the orchestrator
+  keeps the file current and stops printing the block, whether a summary drops lines when told
+  they come back from a file, and how often the context line now comes in a real run. [not
+  measured] When a background Agent call runs its `PostToolUse` hook (assumed: at launch). [not
+  measured] Whether Claude Code writes a message's parallel tool calls as one record or one per
+  call: both shapes are tested. No eval was run (`claude plugin eval` not approved for this
+  change).
+- **Known limits, not fixed.** An Agent call that runs no `PostToolUse` hook (denied, or failed
+  before the hook) still counts as the previous chance in the transcript, so the next crossing
+  check can stay silent; the same holds when a batch's first call is the one without a hook. The
+  compaction hook's 8,000 cap counts bytes (dash) or code points (bash), not the UTF-16 units a
+  JavaScript string length counts: a notes file full of characters outside the Basic Multilingual
+  Plane could, under bash, come to more than 8,000 such units (still under 10,000 in total only
+  while those are few).

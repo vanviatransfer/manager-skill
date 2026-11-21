@@ -6,9 +6,13 @@
 # records it, held more tokens than the budget, and the request before it that called the Agent
 # or Task tool held no more), it adds one line to the context: make sure the run's notes file
 # (~/.claude/manager-runs/notes/<session id>.md) is current, without printing the notes, and
-# suggest `/compact` to the owner once, at the next stop. So it speaks once per crossing, not
-# after every return above the budget; no such earlier request in the transcript's end → it
-# speaks, as for a first crossing. Stateless. The budget is 200,000 tokens; the environment
+# suggest `/compact` to the owner once, at the next stop. It runs when an Agent call ends: a
+# subagent's return (a background one, run_in_background, is assumed to end at its launch; not
+# verified). So it speaks once per crossing, not after every return above the budget; only
+# requests after the transcript's last compact_boundary count, and no such earlier request in
+# the transcript's end → it speaks, as for a first crossing. Several subagents spawned in one
+# message: it speaks only for the message's first Agent/Task call (the input's tool_use_id; no
+# id or one not found → it speaks). Stateless. The budget is 200,000 tokens; the environment
 # variable MANAGER_CONTEXT_BUDGET sets another (no `.codemap.json` setting).
 # Silent everywhere else: no marker for this session, a subagent's own tool call, a context at or
 # under the budget or already over it at the previous Agent call, no transcript or no request in

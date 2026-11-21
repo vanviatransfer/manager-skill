@@ -121,7 +121,8 @@ class ManagerRunCompactHookTest(unittest.TestCase):
         # A condition, never a statement: read as one, it ended a live run's notes.
         self.assertTrue(out.endswith(
             "(If no manager run is in progress any more, ignore this line and remove "
-            "~/.claude/manager-runs/active/%s.)\n" % SESSION), out)
+            "~/.claude/manager-runs/active/%s and ~/.claude/manager-runs/notes/%s.md.)\n"
+            % (SESSION, SESSION)), out)
         self.assertNotIn("has ended", out)
         pretty = json.dumps({"session_id": SESSION, "cwd": self.repo, "source": "compact"},
                             indent=2)
@@ -227,8 +228,8 @@ class ManagerRunCompactHookTest(unittest.TestCase):
 
     def test_the_skill_keeps_the_notes_in_the_file_the_hook_reads(self):
         skill = " ".join(read(os.path.join(MANAGER, "SKILL.md")).split())
-        self.assertIn("Keep your working-notes lines in `%s`, written then (`mkdir -p`; kept if it "
-                      "exists); edit only the line that changed, never print the block. Can't be "
+        self.assertIn("Keep your working-notes lines in `%s`, written then (`mkdir -p`; a new run "
+                      "starts it fresh, a compaction keeps it); edit only the line that changed, never print the block. Can't be "
                       "written → state each line once, when set or changed." % NOTES, skill)
         self.assertIn('notes="$HOME/.claude/manager-runs/notes/$id.md"\n', read(HOOK))
         # Its own folder, beside the markers': a notes file is never a run marker.
@@ -262,7 +263,8 @@ class ManagerRunCompactHookTest(unittest.TestCase):
             self.notes("\n".join(lines) + "\n")
             code, out, err = self.hook("SessionStart")
             self.assertEqual((code, err), (0, ""))
-            self.assertLess(len(out), 10000, "Claude Code cuts a hook's output at 10,000 characters")
+            self.assertLess(len(out), 10000,
+                            "Claude Code cuts a hook's output at 10,000 characters")
             kept = out.split("\n")[2:-2]
             self.assertGreater(len(kept), 10)
             self.assertEqual(kept, lines[:len(kept)], "whole lines, from the first")
@@ -296,7 +298,8 @@ class ManagerRunCompactHookTest(unittest.TestCase):
         self.assertTrue(out.endswith('"Before the next action, re-read the manager skill and every '
                                      'file in its references/ whose trigger applies; never work '
                                      'from a summary of a file."\n'), out)
-        self.assertIn("keep every working-notes line of the run verbatim", " ".join(fallback.split()))
+        self.assertIn("keep every working-notes line of the run verbatim",
+                      " ".join(fallback.split()))
 
     def test_a_notes_file_without_a_marker_is_silent(self):
         self.notes("Run R1: model strategy fixed\n")

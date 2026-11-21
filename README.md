@@ -300,14 +300,18 @@ it is set or changes, and the hooks fall back to the summary.
   skill and the references whose triggers apply, and never to work from a summary of a file;
   then the notes file verbatim, whole lines up to 8,000 characters (a longer file is cut, and a
   last line says so), so the notes return without a summary's paraphrase.
-- `PostToolUse` on the Agent tool: after a subagent returns, it reads the orchestrator's last
-  requests from the end of the session's transcript and, when the context crosses 200,000 tokens
-  (the last request above the budget, the previous one that called the Agent tool at or under
-  it; the environment variable `MANAGER_CONTEXT_BUDGET` sets another budget), adds one line:
-  make sure the notes file is current, without printing the notes, and suggest `/compact` to
-  the owner once, at the next stop. It keeps no state: the transcript tells it whether it spoke
-  at the previous return; with no earlier Agent call in the end it reads, it speaks. This one
-  needs Python (`python3`, `python` or `py -3`): without it the hook says nothing.
+- `PostToolUse` on the Agent tool: after an Agent call ends (a subagent returns; a background
+  one, `run_in_background`, is assumed to end at its launch, which is not verified), it reads the
+  orchestrator's last requests from the end of the session's transcript since its last
+  compaction and, when the context crosses 200,000 tokens (the last request above the budget,
+  the previous one that called the Agent tool at or under it; the environment variable
+  `MANAGER_CONTEXT_BUDGET` sets another budget), adds one line: make sure the notes file is
+  current, without printing the notes, and suggest `/compact` to the owner once, at the next
+  stop. It keeps no state: the transcript tells it whether it spoke at the previous Agent call;
+  with no earlier one since the last compaction in the end it reads, it speaks. Several
+  subagents spawned in one message get the line once, at the hook of the message's first Agent
+  call (by the hook input's `tool_use_id`). This one needs Python (`python3`, `python` or
+  `py -3`): without it the hook says nothing.
 
 None of the three writes anything. Their limits: they are tested through their scripts with
 synthetic hook input. Inside a live session they have fired once (Claude Code 2.1.330, with a
@@ -316,8 +320,9 @@ spoke, and the summary took the note on a leftover marker for a fact and wrote t
 in progress, so 0.9.1 words that note as a condition. No real compaction of a manager run has
 been observed with them. A summary can still drop a line, which is why a resumed run is rebuilt
 from the plan, `git` and the review ledger and not from the notes alone; the notes file is only as
-current as the manager keeps it; subagents launched in one message return after the same request,
-so a crossing there gets the context line once per subagent; and a marker left behind
+current as the manager keeps it; an Agent call that runs no `PostToolUse` hook (denied, or
+failed before it ran) can leave the next crossing silent, the first call of a batch included;
+and a marker left behind
 by a run that ended without removing it keeps the hooks speaking in that session (the two
 context lines say how to remove it, if no run is in progress any more).
 

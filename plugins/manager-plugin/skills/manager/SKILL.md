@@ -81,9 +81,9 @@ strategy allows, read `references/model-strategy.md`: **Which strategy applies**
 `~/.claude/manager-runs/active/${CLAUDE_SESSION_ID}`, only once
 (`[ -e <file> ] || echo <id> > <file>`; `mkdir -p` its folder; outside every repository; can't be
 written → go on without it). Keep your working-notes lines in
-`~/.claude/manager-runs/notes/${CLAUDE_SESSION_ID}.md`, written then (`mkdir -p`; kept if it
-exists); edit only the line that changed, never print the block. Can't be written → state each
-line once, when set or changed. The plugin's hooks read both. Remove both (`rm -f`) with a final
+`~/.claude/manager-runs/notes/${CLAUDE_SESSION_ID}.md`, written then (`mkdir -p`; a new run
+starts it fresh, a compaction keeps it); edit only the line that changed, never print the block.
+Can't be written → state each line once, when set or changed. The hooks read both. Remove both (`rm -f`) with a final
 report that leaves no decision batch open, or when the owner ends the run.
 
 ## 0. Establish state (also how you resume after compaction or in a new session)
