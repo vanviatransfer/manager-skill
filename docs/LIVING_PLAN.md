@@ -145,7 +145,7 @@ Validation: standard; plus the new script folder's `unittest discover`.
 Notes: measured facts in docs/TODO.md items 4 and 11.
 
 ### P4. Watch the orchestrator's context
-Status: todo
+Status: done (PR #47)
 Objective: the orchestrator learns when its own context is large before it pays for it.
 Scope: a PostToolUse hook on `Agent` (plugins/manager-plugin/hooks) that reads the last request's
 usage from the hook input's `transcript_path` (reuse P3's reader) and, above a budget (default
