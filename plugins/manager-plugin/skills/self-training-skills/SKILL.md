@@ -19,8 +19,6 @@ policy; owner quotes stay verbatim, in the owner's words).
   verdict), `observed` (measured here), `sourced` (cited, not tested here) or `hypothesis`.
 - Its **changelog** (the skill's last section) lists versioned changes, each with its evidence and
   its expected effect.
-- Optionally, a **trainer skill** `<name>-trainer` turns the owner's reactions in conversation into
-  records (Create mode, step 3).
 
 ## Where files live
 
@@ -30,8 +28,8 @@ policy; owner quotes stay verbatim, in the owner's words).
   project rules name), otherwise at `.claude/skills/<name>/records.md`.
 - The worker skill states its records path explicitly, in its `## Record` section.
 
-Formats: `references/skill-template.md`, `references/trainer-template.md`,
-`references/records-format.md`, `references/lessons-format.md`, `references/evidence-rules.md`.
+Formats: `references/skill-template.md`, `references/records-format.md`,
+`references/lessons-format.md`, `references/evidence-rules.md`.
 
 ## Hard limits (no training changes these)
 
@@ -54,13 +52,13 @@ Formats: `references/skill-template.md`, `references/trainer-template.md`,
 skill's rule picks (the first of `python3`, `python`, `py -3` that is 3.8 or later; no Python →
 offer its install command, once). Standard library only; it runs no project code and reads nothing
 through a symlink.
-- `<cmd> check <skill dir>`: exit 0 if the skill (or trainer) is well formed, 1 with one line per
-  problem, 2 for a bad path. Unmarked skills are not checked.
+- `<cmd> check <skill dir>`: exit 0 if the skill is well formed, 1 with one line per problem, 2
+  for a bad path. Unmarked skills are not checked.
 - `<cmd> stats <skill dir>`: records, outcomes, tags and owner verdicts since the last training,
   the phases still `pending-review`, the expected effects, rows that don't parse, and `training
   due`. "Since the last training" means the rows after the `records: <n>` count of the last
   changelog entry (for an entry without one, the rows dated strictly after its date).
-- `<cmd> due <repo root>`: one line per marked skill, with its trainer if any.
+- `<cmd> due <repo root>`: one line per marked skill.
 
 ## Modes
 
@@ -79,35 +77,14 @@ through a symlink.
         (implementers read it as a file), so it costs no context. Use model-invoked only when the
         owner will use it in conversation, with a short description.
       - Add one line for the records to the vault index when there is a vault.
-   3. Trainer. For each worker, ask whether to also write `<name>-trainer`, with a recommendation:
-      - **yes** when the owner judges the output's quality in conversation (media, prompts, copy,
-        design): their reactions ("kaydet", "iyi/kötü oldu", "hangisi daha iyi") should trigger
-        recording and comparison;
-      - **no** when tests and reviews judge the outcome (code tasks): Train mode reads PR verdicts.
-
-      Ask with this template (it states the cost), the recommendation with a one-clause reason for
-      this skill:
-
-      ```
-      <skill> için ayrı bir trainer skill'i de yazılsın mı?
-      - Evet (önerim: <evet/hayır>): işin kalitesini siz sohbette değerlendiriyorsanız iyidir (ses,
-        görsel, prompt, metin). "kaydet", "iyi oldu", "hangisi daha iyi" gibi tepkileriniz kaydı ve
-        karşılaştırmayı başlatır; alana özel ölçümler ve "tek değişken" deney kuralı orada tutulur.
-        Bedeli: açıklaması bu repodaki her oturumda yüklenir (~100–150 token).
-      - Hayır: sonucu testler ve review belirliyorsa iyidir (kod işleri). Eğitim ortak
-        self-training-skills ile PR sonuçlarından yapılır; ek bağlam maliyeti yoktur.
-      ```
-
-      On yes, write it from `references/trainer-template.md` (thin, about 60 lines).
-   4. Run `<cmd> check` on each new folder (it must print `ok:`). With a code map, run its
+   3. Run `<cmd> check` on each new folder (it must print `ok:`). With a code map, run its
       `build` and commit the result too. Then land through a reviewed PR (as in Train, step 8), or
       as the living plan's skill phase when the manager runs it.
-3. **Adopt.** For an existing skill, or an existing worker+trainer pair made without this plugin,
-   keep its structure and files and leave it as it is. `check` applies only to marked skills, so
-   an unmarked one is never checked or trained by this skill. Adding the marker means bringing the
-   skill into the template's shape too: the six sections in order, a citation on every rule, a
-   `Records:` line, `lessons.md` and the changelog (for a trainer, its five sections and
-   `## Trains`). Do that only with the owner's agreement; otherwise it stays unmarked.
+3. **Adopt.** For an existing skill made without this plugin, keep its structure and files and
+   leave it as it is. `check` applies only to marked skills, so an unmarked one is never checked
+   or trained by this skill. Adding the marker means bringing the skill into the template's shape
+   too: the six sections in order, a citation on every rule, a `Records:` line, `lessons.md` and
+   the changelog. Do that only with the owner's agreement; otherwise it stays unmarked.
 4. **Record** (done by whoever uses a worker skill: the owner's session, or a manager implementer).
    Append exactly one row to the records table in the format of `references/records-format.md`,
    with the facts known then:
@@ -178,6 +155,6 @@ through a symlink.
 
 ## Report
 
-Short, in Turkish: the mode, the skills (and trainers) created or changed with their paths, the
+Short, in Turkish: the mode, the skills created or changed with their paths, the
 records and lessons used, the changes and their expected effects, the PR and the review verdict,
 and what the owner still has to decide.

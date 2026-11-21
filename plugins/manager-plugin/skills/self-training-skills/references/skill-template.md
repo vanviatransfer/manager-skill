@@ -50,6 +50,12 @@ secrets or personal data. Format (see the self-training-skills `records-format.m
 Outcome: `pending-review` in a manager phase, else the owner's verdict (`owner-good`, `owner-bad`),
 or `failed` / `n/a`. In a note, quote the owner's words verbatim.
 
+- When the owner reacts to the output in conversation ("kaydet", "iyi oldu", "kötü oldu",
+  "hangisi daha iyi"), append one row: `owner session`, `owner-good` / `owner-bad` (else `n/a`),
+  their words verbatim in the note; put domain measurements in the note as `key=value`.
+- Compare with the previous attempt; more than one thing changed → add the tag `confounded`.
+- Next experiment: change one variable at a time, with the same seed and inputs.
+
 ## Changelog
 
 - v1 <YYYY-MM-DD>: created — evidence: <seed lesson ids> — records: 0

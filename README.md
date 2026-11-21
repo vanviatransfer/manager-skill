@@ -71,9 +71,9 @@ A Claude Code plugin with six skills:
     reviewers run its `check` and, for pointers into the diff, its `changed`.
 - **`self-training-skills`** — writes skills for work that repeats in a project (offered when a
   living plan has recurring work): a worker skill in `.claude/skills/<name>/`, per-use records (in
-  the vault if there is one) and a labelled lessons table, plus an optional trainer skill for work
-  the owner judges in conversation. On request it trains a skill from that evidence: it measures
-  the records, proposes at most three changes, and lands the owner's choice through a reviewed PR.
+  the vault if there is one) and a labelled lessons table; the owner's reactions in conversation
+  become records too. On request it trains a skill from that evidence: it measures the records,
+  proposes at most three changes, and lands the owner's choice through a reviewed PR.
   A skill can never override the project rules, the plan or the manager's review and owner-authority
   rules. Its `skilltrain.py` (standard-library Python) checks the files and tells the manager which
   skills are due for training.
