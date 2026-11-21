@@ -95,7 +95,7 @@ blocker classes, skipped validation, fallbacks; `usage` lines, below; and a summ
 compactions and owner questions) to `~/.claude/manager-runs/` in your home directory. It is local to
 your machine, shared by all your projects, outside every repository, and holds no code or file
 contents; delete the folder to reset it (between runs: its `active/` subfolder holds the markers of
-runs in progress). It may not persist in cloud sessions.
+runs in progress, and `notes/` their working notes). It may not persist in cloud sessions.
 
 **What a run spent.** An agent's context size is not what it cost, so the record also holds
 `usage` lines. The manager skill's `usage.py` (standard-library Python; it only reads) takes them
@@ -188,13 +188,15 @@ against run records, not measurements):
   `code-map` skill.
 - **A run carried across a compaction:** the plan, `git` and the review ledger hold the durable
   state; what is in flight (the run's id and model strategy, owner answers not yet in the plan,
-  the current phase's PR and SHAs) is a few working-notes lines in the conversation. During a
-  run, one hook tells a compaction's summary to keep those lines verbatim, a second tells the
-  session afterwards to re-read the skill and the references whose triggers apply, and a third
-  watches the orchestrator's own context: above 200,000 tokens it has the manager write its
-  notes out and suggest `/compact` to you at its next stop. The three hooks and their limits
-  (no compaction of a real manager run has been observed with them yet) are described with the
-  other hooks, below.
+  the current phase's PR and SHAs) is a few working-notes lines, kept in one file per session
+  outside every repository (`~/.claude/manager-runs/notes/<session id>.md`) and changed a line at
+  a time, never printed whole in the conversation. During a run, one hook tells a compaction's
+  summary that the notes are in that file, a second prints the file after the compaction and
+  tells the session to re-read the skill and the references whose triggers apply, and a third
+  watches the orchestrator's own context: when it crosses 200,000 tokens it has the manager make
+  sure the notes file is current and suggest `/compact` to you once, at its next stop. The three
+  hooks and their limits (no compaction of a real manager run has been observed with them yet)
+  are described with the other hooks, below.
 - **Agent caps:** the plugin's agents set `autoCompactWindow` (implementer, worker and fallback
   300000; reviewer and researcher 200000) and `maxTurns` (implementer, worker and fallback 500;
   reviewer and researcher 300). The window is a ceiling: when the parent session's window is
@@ -282,21 +284,30 @@ updates the block, and that a manager run does this in its setup PR); otherwise 
 nothing. It writes nothing and fails open too.
 
 Three more hooks act only inside a manager run. Once a run's model strategy is settled, the
-manager writes a marker file, `~/.claude/manager-runs/active/<session id>` (outside every
-repository), and removes it when the run ends; the hooks test for that file and stay silent in
-every other session, in subagents and on any error.
+manager writes a marker file, `~/.claude/manager-runs/active/<session id>`, and keeps the run's
+working-notes lines in `~/.claude/manager-runs/notes/<session id>.md` (both outside every
+repository; the notes folder holds no marker), and removes both when the run ends; the hooks test
+for the marker and stay silent in every other session, in subagents and on any error. A notes
+file that can't be written leaves the manager stating each line once in the conversation, when
+it is set or changes, and the hooks fall back to the summary.
 
-- `PreCompact`: its output becomes extra instructions for the compaction's summary, to keep the
-  run's working-notes lines verbatim (the run id and model strategy, the rules files and rulings
-  sent with every dispatch, owner answers not yet in the plan, the phase in flight with its PR,
-  branch and SHAs).
+- `PreCompact`: its output becomes extra instructions for the compaction's summary. With a notes
+  file: the notes are in that file and come back after the compaction, so the summary keeps only
+  a line not yet in it. Without one: keep the run's working-notes lines verbatim (the run id and
+  model strategy, the rules files and rulings sent with every dispatch, owner answers not yet in
+  the plan, the phase in flight with its PR, branch and SHAs).
 - `SessionStart` with matcher `compact`: one line after the compaction, to re-read the manager
-  skill and the references whose triggers apply, and never to work from a summary of a file.
+  skill and the references whose triggers apply, and never to work from a summary of a file;
+  then the notes file verbatim, whole lines up to 8,000 characters (a longer file is cut, and a
+  last line says so), so the notes return without a summary's paraphrase.
 - `PostToolUse` on the Agent tool: after a subagent returns, it reads the orchestrator's last
-  request from the end of the session's transcript and, when that context is above 200,000
-  tokens (the environment variable `MANAGER_CONTEXT_BUDGET` sets another budget), adds one line:
-  write the working-notes lines out now, and suggest `/compact` to the owner at the next stop.
-  This one needs Python (`python3`, `python` or `py -3`): without it the hook says nothing.
+  requests from the end of the session's transcript and, when the context crosses 200,000 tokens
+  (the last request above the budget, the previous one that called the Agent tool at or under
+  it; the environment variable `MANAGER_CONTEXT_BUDGET` sets another budget), adds one line:
+  make sure the notes file is current, without printing the notes, and suggest `/compact` to
+  the owner once, at the next stop. It keeps no state: the transcript tells it whether it spoke
+  at the previous return; with no earlier Agent call in the end it reads, it speaks. This one
+  needs Python (`python3`, `python` or `py -3`): without it the hook says nothing.
 
 None of the three writes anything. Their limits: they are tested through their scripts with
 synthetic hook input. Inside a live session they have fired once (Claude Code 2.1.330, with a
@@ -304,8 +315,9 @@ marker written by hand, a lowered budget and a manual `/compact`, not a manager 
 spoke, and the summary took the note on a leftover marker for a fact and wrote that no run was
 in progress, so 0.9.1 words that note as a condition. No real compaction of a manager run has
 been observed with them. A summary can still drop a line, which is why a resumed run is rebuilt
-from the plan, `git` and the review ledger and not from the notes alone; the context line comes
-again after every subagent while the context stays above the budget; and a marker left behind
+from the plan, `git` and the review ledger and not from the notes alone; the notes file is only as
+current as the manager keeps it; subagents launched in one message return after the same request,
+so a crossing there gets the context line once per subagent; and a marker left behind
 by a run that ended without removing it keeps the hooks speaking in that session (the two
 context lines say how to remove it, if no run is in progress any more).
 
@@ -426,8 +438,8 @@ Three habits keep the main session's own cost down:
   only inferred here: `docs/TODO.md`, item 13.
 - During a run, once the orchestrator's context is above 200,000 tokens the manager suggests
   `/compact` at its next stop (the context hook, above). Run it before you answer: every later
-  turn then carries a smaller context, and the compaction hooks ask the summary to keep the
-  run's working notes.
+  turn then carries a smaller context, and the compaction hooks bring the run's working notes
+  back from their file.
 
 At the end of a run the manager leaves a clean shared checkout on `origin/<default>` (detached),
 when the project's rules allow switching it.

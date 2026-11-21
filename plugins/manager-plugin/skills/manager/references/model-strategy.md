@@ -11,10 +11,10 @@ strategy is never applied by inference.
 **Which strategy applies** (first match):
 1. A strategy the owner gave in this conversation for this run — including, on a resume, words
    that adopt the recorded one ("aynı modelle devam") — and, after compaction, the working-notes
-   line as carried in the summary.
+   line as the notes file (or, without one, the summary) carries it.
 2. After a compaction that lost that line: the plan's `run` record on the default branch, only if
-   its id equals this run's id as carried in the summary. Otherwise **ask** — never fall back to a
-   standing policy for a run already under way.
+   its id equals this run's id as the notes file or the summary carries it. Otherwise **ask** —
+   never fall back to a standing policy for a run already under way.
 3. A new run: a `standing` strategy recorded in the plan on the default branch.
 4. Otherwise ask — this gate is mandatory and separate from ordinary owner decisions. When the
    session resumes interrupted work and the plan holds a `run` record, recommend that recorded

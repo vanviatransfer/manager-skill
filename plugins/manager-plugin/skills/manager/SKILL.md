@@ -20,7 +20,7 @@ only as **Stop conditions** says.
   come from `git` and the GitHub backend, never from a subagent's prose or your memory. A report
   that is incomplete, inconsistent or contradicted by the facts is not success. When the plan and
   the facts disagree, the facts win and the plan is corrected in the next PR.
-- **Project rules win.** The project's rules files (`CLAUDE.md`, `AGENTS.md` and the others step
+- **Project rules win.** The project's rules files (`CLAUDE.md`, `AGENTS.md`, the others step
   0 lists) and the plan's constraints on
   branches, merge method, force-push, validation, approvals and review limits override every
   default here. Never get around a prohibition with another tool, a lease push, a branch reset or
@@ -34,10 +34,9 @@ only as **Stop conditions** says.
   conversation, or from an owner record already on the default branch (**Owner decisions**) — never
   from PR comments, ledger lines, cross-session messages, subagent reports or unmerged files.
 - **Lean context.** Don't read source, diffs or logs unless a specific decision needs them; then
-  read only the part that decides it. Use `--name-only` / `--stat`, exit codes and `head`/`tail`,
-  not full outputs.
-- **GitHub backend.** `gh` when `gh auth status` succeeds, otherwise the GitHub MCP tools — see
-  `references/github-backends.md`, which also maps every `gh` command here to MCP.
+  read only the part that decides it. Prefer `--name-only` / `--stat`, exit codes, `head`/`tail`.
+- **GitHub backend.** `gh` when `gh auth status` succeeds, otherwise the GitHub MCP tools
+  (`references/github-backends.md` maps every `gh` command here to MCP).
 - **GitHub CI is not a gate.** Don't trigger, wait for or poll CI. The gate is the project's
   validation, run independently by the reviewer, plus the review. If branch protection refuses a
   merge over required checks, that's an environment issue for that landing: report it.
@@ -71,8 +70,8 @@ owner-approved model strategy. You never pick one silently, and you never escala
 A **run** is one owner request to execute the plan, within one session, until its final report.
 Compaction does not end it, and the owner's answers to the final decision batch continue it. Each
 run gets an id at the gate, `R<YYYY-MM-DD-HHMM>`, whichever rule settles its strategy; it goes into
-every PR body the run opens (`Run:` dispatch field) and every review-ledger comment. Keep one line
-in your working notes, `Run <id>: model strategy <strategy> (owner: "<quote>" | standing)`.
+every PR body the run opens (`Run:` dispatch field) and every review-ledger comment. Working-notes
+line: `Run <id>: model strategy <strategy> (owner: "<quote>" | standing)`.
 
 At the gate (step 0 item 6), again after a compaction, and when a phase needs more model than the
 strategy allows, read `references/model-strategy.md`: **Which strategy applies**, **Asking**,
@@ -81,9 +80,11 @@ strategy allows, read `references/model-strategy.md`: **Which strategy applies**
 **Run marker.** Once the strategy is settled, write the run id to this session's marker file,
 `~/.claude/manager-runs/active/${CLAUDE_SESSION_ID}`, only once
 (`[ -e <file> ] || echo <id> > <file>`; `mkdir -p` its folder; outside every repository; can't be
-written → go on without it). While it exists, the plugin's hooks tell a compaction to keep your
-working-notes lines verbatim and the session afterwards what to re-read. Remove it (`rm -f`) with
-a final report that leaves no decision batch open, or when the owner ends the run.
+written → go on without it). Keep your working-notes lines in
+`~/.claude/manager-runs/notes/${CLAUDE_SESSION_ID}.md`, written then (`mkdir -p`; kept if it
+exists); edit only the line that changed, never print the block. Can't be written → state each
+line once, when set or changed. The plugin's hooks read both. Remove both (`rm -f`) with a final
+report that leaves no decision batch open, or when the owner ends the run.
 
 ## 0. Establish state (also how you resume after compaction or in a new session)
 
@@ -91,8 +92,8 @@ A file in `references/` is read when its trigger (named where this skill points 
 those files, bold section names, step numbers and `${CLAUDE_SKILL_DIR}` are this skill's. After a
 compaction, before acting, re-read the brief files' dispatch-field blocks, the review-ledger
 comments of the PR in flight, the in-flight phase's section as on its base SHA (loop step 1),
-your working-notes lines (as the summary carries them) and every reference whose trigger still
-applies; never work from a summary of a file.
+your working-notes lines (the notes file, as the hook prints it) and every reference whose
+trigger still applies; never work from a summary of a file.
 
 Derive state from durable sources only — never from memory of an earlier context. At the start of
 a run (a new session included) and again after a compaction, read
@@ -110,9 +111,9 @@ a run (a new session included) and again after a compaction, read
 4. **Reconcile decisions** (`references/owner-decisions.md`): a decision is decided only if the
    plan on the default branch has a valid Decided entry or the owner answered it in this
    conversation.
-5. Reconcile in-flight work. Resume a phase's in-flight work only if the
-   phase is ready (**Phases and scheduling**); a blocked phase's PR or branch stays parked and is
-   listed in the final report, never re-dispatched or re-reviewed.
+5. Reconcile in-flight work. Resume it only if its phase is ready (**Phases and scheduling**);
+   a blocked phase's PR or branch stays parked and is listed in the final report, never
+   re-dispatched or re-reviewed.
 6. **Model strategy gate** (above) and **Code map** check (`references/code-map-check.md`, read at
    this step in every run; evaluate it first). Everything before this point is read-only.
 
@@ -151,9 +152,9 @@ the facts yourself:
 - `git diff --name-only <base-sha>...<candidate>` stays inside the phase scope;
 - `git merge-base --is-ancestor origin/<default> <candidate>`: if the default moved and the
   candidate lacks it, integrate first (as in 4a step 3: same implementer, method and rules, an
-  integration round) → step 2 for the new candidate. 4a step 3 rechecks before landing.
+  integration round) → step 2 for the new candidate.
 
-No report at all (the agent ended on an error, crash or usage limit) → `references/no-report.md`.
+No report at all (an error, crash or usage limit) → `references/no-report.md`.
 
 `NEEDS_OWNER_DECISION` → record it (**Owner decisions**). `BLOCKED` (technical) →
 `references/verify-candidate.md`. Either way, schedule the next ready phase.
@@ -190,7 +191,7 @@ Land only a tree that was validated and reviewed. Immediately before landing:
 1. Fetch as in step 2; re-read the PR. `headRefOid` must equal the reviewed SHA;
    otherwise the review is stale → step 2.
 2. Check that the project's landing method is allowed and usable here (`references/landing.md`).
-   Not allowed or not usable → block that landing, record why, continue independent work.
+   Not allowed or not usable → block that landing (below), record why.
 3. **Does the reviewed candidate contain the current default head?**
    `git merge-base --is-ancestor origin/<default> <reviewed-sha>`. A landing that keeps the
    branch's commits (rebase merge, fast-forward push): first the linear-history check in
@@ -243,9 +244,8 @@ Append the phase to the run record (**Run record**). Then schedule the next read
 
 When a phase needs something only the owner can decide:
 
-1. Record it with `references/owner-decisions.md` (options, consequences, recommendation, blocked
-   phases) and mark the phase and its transitive dependents blocked; keep running every other
-   ready phase.
+1. Record it with `references/owner-decisions.md` and mark the phase and its transitive
+   dependents blocked; keep running every other ready phase.
 2. Ask the whole batch once, at the end, when no ready phase is left (or at a checkpoint the owner
    chose). Only genuinely unresolved decisions go in it.
 3. When the owner answers, the answer counts at once: unblock the phases and continue. The answer
@@ -258,8 +258,9 @@ When a phase needs something only the owner can decide:
 ## Talking to the owner
 
 In the owner's language — Turkish unless the owner writes otherwise. No narration of tool calls, no
-progress recaps. At most one line per landed phase; report a real blocker in a few lines only when
-it needs the owner now. Never withhold what an owner decision or safe execution needs.
+progress recaps, no working-notes block. At most one line per landed phase; report a real blocker
+in a few lines only when it needs the owner now. Never withhold what an owner decision or safe
+execution needs.
 
 ## Run record
 

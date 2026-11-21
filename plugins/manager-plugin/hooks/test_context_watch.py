@@ -12,7 +12,7 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.dont_write_bytecode = True
 sys.path.insert(0, HERE)
-from test_manager_compaction import MARKER, SESSION, manager_texts  # noqa: E402
+from test_manager_compaction import MARKER, NOTES, SESSION, manager_texts  # noqa: E402
 from test_prefer_plugin_agents import ENV, MANAGER, snapshot  # noqa: E402
 
 HOOK = os.path.join(HERE, "manager-context-watch.sh")
@@ -23,19 +23,19 @@ import context_watch  # noqa: E402
 BUDGET = 200000
 
 
-def request(key, fresh, cached, written, output, model="model-a"):
-    """A request's record: the orchestrator's message that calls the Agent tool."""
+def request(key, fresh, cached, written, output, model="model-a", tool="Agent"):
+    """A request's record: the orchestrator's message that calls the Agent tool (or another)."""
     return {"type": "assistant", "timestamp": "2026-01-01T09:00:00.000Z",
             "message": {"id": key, "model": model, "role": "assistant",
-                        "content": [{"type": "tool_use", "id": "toolu_1", "name": "Agent"}],
+                        "content": [{"type": "tool_use", "id": "toolu_1", "name": tool}],
                         "usage": {"input_tokens": fresh, "cache_read_input_tokens": cached,
                                   "cache_creation_input_tokens": written,
                                   "output_tokens": output}}}
 
 
-def sized(tokens, key="m1"):
+def sized(tokens, key="m1", tool="Agent"):
     """A request whose context is that many tokens."""
-    return request(key, 3, tokens - 1203, 1000, 200)
+    return request(key, 3, tokens - 1203, 1000, 200, tool=tool)
 
 
 RETURNED = {"type": "user", "timestamp": "2026-01-01T09:05:00.000Z",
@@ -119,9 +119,12 @@ class ContextWatchHookTest(unittest.TestCase):
         text = self.line()
         self.assertTrue(text.startswith(
             "manager-plugin: this session's context is 200,001 tokens, over the manager run's "
-            "budget of 200,000: write every working-notes line of the run out now, "), text)
-        self.assertIn("when you next stop for the owner, suggest that they run `/compact` before "
-                      "they answer.", text)
+            "budget of 200,000: make sure your notes file, ~/.claude/manager-runs/notes/%s.md, "
+            "is current (never print the notes), " % SESSION), text)
+        self.assertEqual(NOTES, "~/.claude/manager-runs/notes/${CLAUDE_SESSION_ID}.md")
+        self.assertIn("when you next stop for the owner, suggest once that they run `/compact` "
+                      "before they answer.", text)
+        self.assertNotIn("write every working-notes line", text)
         # A condition, never a statement: read as one, it ended a live run's notes.
         self.assertTrue(text.endswith(
             "(If no manager run is in progress any more, ignore this line and remove "
@@ -151,6 +154,62 @@ class ContextWatchHookTest(unittest.TestCase):
         self.assertIn(" is 250,000 tokens, ", self.line())
         self.transcript(large, small, *after)
         self.assert_silent()
+
+    def test_it_speaks_once_per_crossing(self):
+        """Stateless: the line comes when the last request is over the budget and the request
+        before it that called the Agent or Task tool (the hook's previous chance) was not."""
+        self.mark()
+        under, at, over = sized(BUDGET - 1, "m1"), sized(BUDGET, "m1"), sized(BUDGET + 1, "m1")
+        now = sized(BUDGET + 9000, "m9")
+        for before in (under, at, sized(9000, "m1", tool="Task")):  # crossing now
+            self.transcript(before, RETURNED, now)
+            self.assertIn(" is 209,000 tokens, ", self.line())
+        self.transcript(over, RETURNED, now)  # already over at the previous return: silent
+        self.assert_silent()
+        self.transcript(sized(BUDGET + 5, "m1", tool="Task"), RETURNED, now)
+        self.assert_silent()
+        # Requests that call no subagent don't count: the hook never ran after them.
+        tools = [sized(BUDGET + 100 * n, "b%d" % n, tool="Bash") for n in range(1, 4)]
+        self.transcript(under, RETURNED, *tools, now)
+        self.assertIn(" is 209,000 tokens, ", self.line())
+        self.transcript(over, RETURNED, *tools, now)
+        self.assert_silent()
+        self.transcript(sized(9000, "b0", tool="Bash"), now)  # no earlier Agent call: as before
+        self.assertIn(" is 209,000 tokens, ", self.line())
+        self.transcript(now)  # no earlier request at all
+        self.assertIn(" is 209,000 tokens, ", self.line())
+        # A compaction brings the context under the budget; the next crossing speaks again.
+        compacted = {"type": "system", "subtype": "compact_boundary"}
+        self.transcript(over, compacted, sized(40000, "m2"), RETURNED, now)
+        self.assertIn(" is 209,000 tokens, ", self.line())
+        # One request, several records (one per content block, the last complete): the request
+        # before it is another message id, not an earlier block of the same one.
+        blocks = [request("m9", 3, 200, 100, 7), request("m9", 3, BUDGET, 1000, 200)]
+        self.transcript(under, RETURNED, *blocks)
+        self.assertIn(" is 201,203 tokens, ", self.line())
+        self.transcript(over, RETURNED, *blocks)
+        self.assert_silent()
+        partial = request("m1", 3, BUDGET, 1000, 200)  # m1's last record: over
+        self.transcript(request("m1", 0, 10, 0, 0), partial, RETURNED, now)
+        self.assert_silent()
+        # The previous Agent call before the end that is read: as without one.
+        filler = json.dumps({"type": "attachment", "text": "x" * 4000}) + "\n"
+        self.transcript(over, filler * 300, now)
+        self.assertIn(" is 209,000 tokens, ", self.line())
+
+    def test_the_notes_folder_is_no_marker(self):
+        self.transcript(sized(BUDGET + 1))
+        notes = NOTES.replace("~", self.home).replace("${CLAUDE_SESSION_ID}", SESSION)
+        os.makedirs(os.path.dirname(notes))
+        with open(notes, "w", encoding="utf-8") as fh:
+            fh.write("Run R1: model strategy fixed\n")
+        with open(os.path.join(os.path.dirname(notes), SESSION), "w", encoding="utf-8") as fh:
+            fh.write("R1\n")
+        self.assert_silent()
+        os.makedirs(os.path.join(self.home, ".claude", "manager-runs", "active"))
+        self.assert_silent()
+        self.mark()
+        self.assertIn(" is 200,001 tokens, ", self.line())
 
     def test_only_the_end_of_the_transcript_is_read(self):
         self.mark()
