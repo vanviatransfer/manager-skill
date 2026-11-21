@@ -41,7 +41,7 @@ Out (deliberately not doing now):
 - Version: only P8 bumps `plugins/manager-plugin/.claude-plugin/plugin.json` (to 0.9.0).
 
 ## Model strategy
-Model strategy: Fable xhigh — scope: run R2026-11-20-2300 — owner: "fable xhigh review etsin"
+Model strategy: Fable xhigh — scope: run R2026-11-20-2300 — owner: "worker (fable xhigh) … fable xhigh review etsin"
 
 ## Binding decisions
 - B1. Invariant text is moved, never reworded weaker: exact-SHA review, owner authority, Git safety,
@@ -63,8 +63,9 @@ Fix-round limit per phase: 5
 Status: todo
 Objective: close the review notes and audit findings on 0.8.3's own changes.
 Scope: plugins/manager-plugin/skills/manager (SKILL.md, references), skills/code-map
-(codemap.py session-hook text and rules-hint versioning, SKILL.md), skills/self-training-skills
-SKILL.md, agents, docs/TODO.md:
+(codemap.py session-hook text and rules-hint versioning, SKILL.md, scripts/test_codemap.py),
+hooks (codemap-rules-version.sh header, test_prefer_plugin_agents.py plan-read tests),
+skills/self-training-skills SKILL.md, agents, docs/TODO.md:
 - the SessionStart rules-version line is information, not an order ("… is older; `<cmd>` updates
   it; a manager run does this in its setup PR");
 - an unversioned rules block whose text equals the current template counts as current (the marker
@@ -103,14 +104,16 @@ skill's own `hooks` frontmatter if the installed CLI supports it for plugin skil
   read at the step, each with a one-line pointer naming its trigger;
 - step 0 reads the plan's headings and every `Status`/`Depends on`/`Risk` line plus the binding
   decisions, decisions, strategy record and fix-round limit, not every remaining phase's section; a
-  phase's section is read (awk or P5's script) when it is scheduled;
+  phase's section is read (the briefs' awk at the default head) when it is scheduled;
 - a PreCompact hook prints instructions to keep the working-notes lines verbatim (≤10,000
   characters), and a SessionStart hook with matcher `compact` prints one line telling the session to
   re-read the manager skill and the references whose triggers apply, both only when a manager run
   is in progress (detect it cheaply, e.g. a marker the skill writes outside the repository; fail
   open);
 - a test with size ceilings: manager SKILL.md ≤18,000 characters, implementer-brief.md and
-  reviewer-brief.md ≤ their current word counts, code-map SKILL.md ≤20,000 characters.
+  reviewer-brief.md ≤ their word counts after this phase, code-map SKILL.md ≤20,000 characters. A
+  later phase whose scope adds a rule to one of these files may raise that file's ceiling by what
+  it adds, stated in its PR, or move detail to a trigger file instead.
 Depends on: P1
 Risk: critical — moves the loop's rules; a lost rule weakens an invariant.
 Acceptance: SKILL.md ≤18,000 characters; every moved rule exists exactly once with a pointer from
@@ -149,7 +152,7 @@ Depends on: P2, P3
 Risk: standard — advisory hook.
 Acceptance: tested below/above budget, outside a run, missing transcript; under 50 ms on the common
 path.
-Validation: standard.
+Validation: standard; plus P3's script folder `unittest discover`.
 
 ### P5. Plan validation and phase extraction
 Status: todo
@@ -158,11 +161,16 @@ Scope: plugins/manager-plugin/skills/living-plan/scripts/plan.py (+ tests): `che
 ids, every `Depends on` resolves, no cycle, each phase has Status/Objective/Scope/Depends
 on/Risk/Acceptance/Validation, scope overlap warning for phases with no dependency between them)
 and `phase <id>` (the phase section plus the constraints, binding decisions, Phases preamble, open
-decisions and model-strategy record). The briefs use `phase <id>` instead of the awk command (keep
-the awk as the no-Python fallback); living-plan SKILL.md runs `check` before a plan PR.
+decisions and model-strategy record). `phase` reads the plan from stdin
+(`git show <base-sha>:<plan-path> | <python> plan.py phase <id>`), never a working-tree path, so the
+plan-at-base read stays. The briefs and the orchestrator's step-0 phase read use it instead of the
+awk command (keep the awk as the no-Python fallback); living-plan SKILL.md runs `check` before a
+plan PR.
 Depends on: P1
 Risk: standard — new script; briefs change one line each.
-Acceptance: tests on the template shape, this plan and a malformed plan; the briefs' fallback kept.
+Acceptance: tests on the template shape, this plan and a malformed plan; the briefs' fallback kept;
+`phase` has no path argument.
+Notes: B1 (plan-at-base read).
 Validation: standard; plus
 `python3 -m unittest discover -s plugins/manager-plugin/skills/living-plan/scripts`.
 
@@ -204,6 +212,8 @@ Validation: standard.
 
 ## Change log
 - 2026-11-20: plan created from two independent audits and a research report on 0.8.x.
+- 2026-11-21: plan review notes folded in (P1 test scope, size ceilings vs later phases, P5 reads
+  the plan from stdin at base).
 
 ## How to keep this plan alive
 - A phase PR updates its own status line and links itself; other status lines only to correct facts.
