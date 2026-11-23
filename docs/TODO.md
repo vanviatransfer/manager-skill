@@ -1,5 +1,25 @@
 # Open ideas
 
+## Watching
+
+### Claude Code Code Mode (experimental) — not adopted yet
+
+- What it is: an opt-in Claude Code feature (2.1.323+, `CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1`)
+  where the model writes a JavaScript script that chains several Bash/Read/Edit calls in one step
+  (parallel commands, one result fed into the next, only the needed output returned).
+- Why it may matter here: fewer round trips and less intermediate tool output in context, the
+  same goal as the code map and the restricted agents.
+- Why not now: [claimed] experimental and may change or be removed in any release; not available
+  in the Desktop app, the VS Code panel, cloud sessions or `-p`; no published token or latency
+  figures. [claimed] Each tool call inside a script still goes through permission rules and
+  PreToolUse hooks; [not measured] whether this plugin's hooks (general-purpose block, search
+  nudge, commit check) fire inside a Code Mode script.
+- Revisit when it leaves experimental or reaches the Desktop app. First step then: one CLI
+  session, no manager run, a small task, and check that the plugin's hooks still fire; then
+  measure context use against the same task without it.
+- Sources: InfoQ and MarkTechPost coverage (November 2026); check the official Claude Code docs
+  before acting.
+
 ## Done
 
 ### 1. `/autocompact` before a run (plugin 0.5.2; 200–300k in 0.7.0, 300k since 0.7.1)
