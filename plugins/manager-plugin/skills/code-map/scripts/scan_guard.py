@@ -73,6 +73,7 @@ MAX_DEPTH = 4
 # on one long word (a 160 KB base64 -EncodedCommand took about 1 s, 850 KB 24 s), past a hook's
 # time budget, and no hand-written scan is that long.
 MAX_COMMAND = 64 * 1024
+MAX_HEREDOCS = 8  # here-document openers looked at per command (each costs a parse of its line)
 
 
 def norm(path):
@@ -160,34 +161,45 @@ def reads_stdin(args):
     return True
 
 
-def quote_after(text, quote=None):
-    """The quote (' or ") still open after a piece of shell text that starts with `quote` open,
-    as sn.simple_commands reads it: '...' is literal, a backslash escapes outside single quotes,
-    an unquoted # at a word's start comments out the rest of the line."""
-    i, n = 0, len(text)
+def heredoc_starts(line, quote):
+    """One pass over a line of shell text that starts with `quote` open: (the offsets of its
+    unquoted `<<`, the quote open at its end), or None when the quote state can't be trusted
+    from here on: a `<<` inside a quote, or `$(` or a backtick inside double quotes (a new
+    context this doesn't model). Single quotes are literal, a backslash escapes outside them,
+    an unquoted # at a word's start comments out the rest of the line; `<<<` is a here-string."""
+    starts, i, n = [], 0, len(line)
     while i < n:
-        c = text[i]
+        c = line[i]
         if quote == "'":
             quote = None if c == "'" else quote
         elif c == "\\":
             i += 1
+        elif line.startswith("<<", i):
+            if quote is not None:
+                return None
+            if line.startswith("<<<", i):
+                i += 3
+                continue
+            starts.append(i)
+            i += 1
         elif quote == '"':
+            if c == "`" or line.startswith("$(", i):
+                return None
             quote = None if c == '"' else quote
         elif c in "'\"":
             quote = c
-        elif c == "#" and (i == 0 or text[i - 1] in " \t\n;&|()"):
-            j = text.find("\n", i)
-            i = n if j < 0 else j
-            continue
+        elif c == "#" and (i == 0 or line[i - 1] in " \t;&|()"):
+            break
         i += 1
-    return quote
+    return starts, quote
 
 
 def heredoc_scripts(cmd):
     """The bodies of here-documents fed straight to a shell (`bash <<'EOF'`, `sh -s <<EOF`):
-    there they are commands, not text. A `<<` inside a quote (a commit message, a -c script, a
-    Python string spanning lines) starts none; quotes are followed across lines, bodies apart."""
-    out, ends, quote = [], [], None
+    there they are commands, not text. Quotes are followed across lines, bodies apart. Fails
+    open: once a `<<` sits inside a quote or the quote state is uncertain (see heredoc_starts),
+    or past MAX_HEREDOCS openers, nothing more is collected."""
+    out, ends, quote, seen = [], [], None, 0
     for line in cmd.split("\n"):
         if ends:
             tab, word, body = ends[0]
@@ -198,12 +210,18 @@ def heredoc_scripts(cmd):
             elif body is not None:
                 body.append(line)
             continue
-        start = quote
-        quote = quote_after(line + "\n", quote)
-        for m in HEREDOC.finditer(line):
-            if quote_after(line[:m.start()], start) is not None:
+        found = heredoc_starts(line, quote)
+        if found is None:
+            return out
+        starts, quote = found
+        for k in starts:
+            m = HEREDOC.match(line, k)
+            if not m:
                 continue
-            before = sn.simple_commands(line[:m.start()])
+            seen += 1
+            if seen > MAX_HEREDOCS:
+                return out
+            before = sn.simple_commands(line[:k])
             words = strip_wrappers(before[-1][0])[0] if before else []
             feeds = bool(words) and sn.command_name(words[0]) in SHELLS and \
                 reads_stdin(words[1:])
@@ -385,10 +403,42 @@ def leaf_dir(path, dotted=False, cwd=None):
         return path
     if any(c in m.group(2) for c in "*?"):
         return m.group(1)
-    if dotted and not os.path.isdir(path if absolute(path) or cwd is None
-                                    else sn.join(cwd, path)):
-        return m.group(1)  # a dotted name that is no folder here: a file name
+    if dotted:
+        full = expand(path)
+        if full is None:
+            return path  # a spelling this can't expand: taken for a folder (fails open)
+        if not os.path.isdir(full if absolute(full) or cwd is None else sn.join(cwd, full)):
+            return m.group(1)  # a dotted name that is no folder here: a file name
     return path
+
+
+ENV_REF = re.compile(r"%([A-Za-z_]\w*)%|\$\{env:(\w+)\}|\$env:(\w+)|\$\{(\w+)\}|\$(\w+)", re.I)
+
+
+def expand(path):
+    """The path with a leading ~ and %VAR%, $env:NAME, ${NAME}, $NAME expanded from the
+    environment, separators as /; None when one is unset (or ~user)."""
+    p = path.replace("\\", "/")
+    if p.startswith("~"):
+        if p[1:2] not in ("", "/"):
+            return None
+        home = os.environ.get("HOME") or os.environ.get("USERPROFILE")
+        if not home:
+            return None
+        p = home.replace("\\", "/").rstrip("/") + p[1:]
+    missing = []
+
+    def value(m):
+        name = next(g for g in m.groups() if g)
+        v = os.environ.get(name) or os.environ.get(name.upper())
+        if not v and name.upper() == "HOME":  # PowerShell's $HOME is the profile folder
+            v = os.environ.get("USERPROFILE")
+        if not v:
+            missing.append(name)
+            return ""
+        return v.replace("\\", "/").rstrip("/")
+    p = ENV_REF.sub(value, p)
+    return None if missing else re.sub(r"/{2,}", "/", p)
 
 
 def decode_ps(text):
@@ -628,8 +678,8 @@ def scan_cmd(scan, text, cwd, depth=0):
         args = words[1:]
         switches = {s.lower() for a in args if a.startswith("/") for s in a.split("/") if s}
         if name == "dir" and "s" in switches:
-            paths = [leaf_dir(a, dotted=True, cwd=cwd) for a in args if not a.startswith("/")] \
-                or ["."]
+            paths = [leaf_dir(a.replace('"', ""), dotted=True, cwd=cwd) for a in args
+                     if not a.startswith("/")] or ["."]
             scan.check("dir /s", paths, cwd, hint=False, posix=False)
         elif name in ("cd", "chdir"):
             cwd = new_cwd(next((a for a in args if not a.startswith("/")), None) or "", cwd,

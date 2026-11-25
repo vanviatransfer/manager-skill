@@ -305,8 +305,9 @@ case; a path above one, such as `~/..`, too), also inside `bash -c`, `eval`, a h
 to a shell, `powershell -Command`, a decoded `-EncodedCommand`, `iex`, `cmd /c`, pipes, chains,
 subshells, `$( )` and backticks; a scan with no path (or `.`) when the cwd is such a root; Glob
 or Grep there, or a Glob pattern such as `/**/x`. A depth of 0 or 1 (`find -maxdepth`, `rg` and
-`fd --max-depth`, `-Depth`, `tree -L`) is a listing and passes. Such a scan can run for hours and exhaust memory (on Windows it twice held
-millions of handles after its agent was gone). The line names the absolute code-map `query` and
+`fd --max-depth`, `-Depth`, `tree -L`) is a listing and passes. A whole-disk scan can run for
+hours and exhaust memory (on Windows it twice held millions of handles after its agent was
+gone). The line names the absolute code-map `query` and
 `skilltrain.py query` commands and a search limited to the repository. Every other search
 passes, the repository's, the scratchpad's and the plugin folder's included. It has no off
 switch; `"search_nudge": false` doesn't touch it. A refused command doesn't use up the map-first

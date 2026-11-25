@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.join(PLUGIN, "skills", "code-map", "scripts"))
 import scan_guard  # noqa: E402
 
 TOOLS = {"Bash", "PowerShell", "Glob", "Grep"}
-FIELDS = {"cat", "tool", "input", "cwd", "dirs", "expect", "note", "known_gap", "hook_gap"}
+FIELDS = {"cat", "tool", "input", "cwd", "env", "dirs", "expect", "note", "known_gap", "hook_gap"}
 REAL_ISDIR = os.path.isdir
 
 
@@ -49,9 +49,11 @@ def label(entry):
 
 
 def predicate(entry):
-    """True if scan_guard.refused refuses the entry; its `dirs` count as existing folders."""
+    """True if scan_guard.refused refuses the entry; its `dirs` count as existing folders, its
+    `env` is set."""
     dirs = set(entry.get("dirs", ()))
-    with mock.patch("os.path.isdir", lambda p: p in dirs or REAL_ISDIR(p)):
+    with mock.patch("os.path.isdir", lambda p: p in dirs or REAL_ISDIR(p)), \
+            mock.patch.dict(os.environ, entry.get("env", {})):
         return scan_guard.refused(hook_input(entry)) is not None
 
 
@@ -123,7 +125,8 @@ class CorpusTest(unittest.TestCase):
             self.assertIsInstance(e["input"], dict, e)
             self.assertTrue(e["note"] and e["cat"], e)
             self.assertFalse(e.get("known_gap") and e.get("hook_gap"), e)
-            key = (e["tool"], json.dumps(e["input"], sort_keys=True), e.get("cwd"))
+            key = (e["tool"], json.dumps(e["input"], sort_keys=True), e.get("cwd"),
+                   json.dumps(e.get("env"), sort_keys=True), json.dumps(e.get("dirs")))
             self.assertNotIn(key, seen, "duplicate entry: %s" % label(e))
             seen.add(key)
         expects = Counter(e["expect"] for e in self.entries)
@@ -147,7 +150,7 @@ class CorpusTest(unittest.TestCase):
             if e.get("dirs") or not (pred or e["expect"] == "block"):
                 results.append(pred)
                 continue
-            blocked = self.run_hook(hook_input(e), env) == 2
+            blocked = self.run_hook(hook_input(e), dict(env, **e.get("env", {}))) == 2
             results.append(blocked)
             if blocked != pred and not e.get("hook_gap"):
                 bad.append("hook and predicate differ: " + label(e))
@@ -174,6 +177,15 @@ class CorpusTest(unittest.TestCase):
                         "tool_name": "PowerShell", "tool_input": {"command": cmd}}
                 self.assertEqual(scan_guard.refused(data) is not None, want == 2, cmd)
                 self.assertEqual(self.run_hook(data, env), want, cmd)
+
+    def test_many_here_documents_in_time(self):
+        """Here-document detection is one pass per line and looks at MAX_HEREDOCS openers."""
+        for cmd in ("cat " + "<<A " * (63 * 1024 // 4), "echo '" + "sh <<B " * 9000 + "'"):
+            self.assertLessEqual(len(cmd), scan_guard.MAX_COMMAND)
+            start = time.monotonic()
+            self.assertIsNone(scan_guard.refused({"cwd": "/home/tester/proj", "tool_name": "Bash",
+                                                  "tool_input": {"command": cmd}}))
+            self.assertLess(time.monotonic() - start, 1.0, cmd[:20])
 
     def test_long_command_fails_open_in_time(self):
         script = base64.b64encode(("Write-Host x;" * 40000).encode("utf-16-le")).decode()
