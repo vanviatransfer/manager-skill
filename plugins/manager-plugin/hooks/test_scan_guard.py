@@ -17,9 +17,13 @@ NUDGE = os.path.join(HERE, "codemap-search-nudge.sh")
 PLUGIN = os.path.normpath(os.path.join(HERE, ".."))
 SCRIPTS = os.path.join(PLUGIN, "skills", "code-map", "scripts")
 sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.dirname(HERE))  # portability.py, in the plugin folder
+import portability  # noqa: E402
 sys.path.insert(0, SCRIPTS)
 import scan_guard  # noqa: E402
 import search_nudge  # noqa: E402
+
+PY = portability.hook_python()  # the Python the hooks' messages name
 
 FAKE_HOME = "/home/tester"
 CWD = "/home/tester/proj"
@@ -163,7 +167,7 @@ class PredicateTest(unittest.TestCase):
 
     def test_home_that_is_a_repository_top_is_no_root(self):
         tmp = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, tmp)
+        self.addCleanup(portability.rmtree, tmp)
         app = os.path.join(tmp, "app")
         os.makedirs(os.path.join(app, "src"))
         with mock.patch.dict(os.environ, {"HOME": app}):
@@ -191,7 +195,7 @@ class PredicateTest(unittest.TestCase):
 class HookTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, self.tmp)
+        self.addCleanup(portability.rmtree, self.tmp)
         self.state = os.path.join(self.tmp, "state")
         os.makedirs(self.state)
         self.root = os.path.join(self.tmp, "repo")
@@ -220,12 +224,12 @@ class HookTest(unittest.TestCase):
         code = os.path.join(PLUGIN, "skills", "code-map", "scripts", "codemap.py")
         skill = os.path.join(PLUGIN, "skills", "self-training-skills", "scripts", "skilltrain.py")
         return ('manager-plugin: scan refused (`%s` over `%s`): a recursive scan of a filesystem, '
-                'drive or home root can run for hours and exhaust memory. Code map: `python3 "%s" '
-                'query <term> --root "%s"`; skill files: `python3 "%s" query "%s" -- <term>`; or '
+                'drive or home root can run for hours and exhaust memory. Code map: `%s "%s" '
+                'query <term> --root "%s"`; skill files: `%s "%s" query "%s" -- <term>`; or '
                 'search only the repository: `rg <term> "%s"` or `find "%s" -name <x>` (prefix '
                 '`timeout 120` for a long one). Never search for these scripts: their paths come '
                 'here and at session and agent start.'
-                % (name, path, code, top, skill, top, top, top))
+                % (name, path, PY, code, top, PY, skill, top, top, top))
 
     def test_block_message(self):
         code, out, err = self.guard("Bash", command="find / -name codemap.py -path '*manager*'")
@@ -282,7 +286,7 @@ class HookTest(unittest.TestCase):
         self.assertEqual(self.guard("Bash", command="du -sh src"), (0, "", ""))
 
     def test_hint_ignores_search_nudge_off(self):
-        with open(os.path.join(self.root, ".codemap.json"), "w") as fh:
+        with open(os.path.join(self.root, ".codemap.json"), "w", encoding="utf-8") as fh:
             fh.write('{"map": "map.md", "search_nudge": false}\n')
         self.assertEqual(self.guard("Bash", command="find / -name x")[0], 2, "no off switch")
 
@@ -292,7 +296,7 @@ class HookTest(unittest.TestCase):
         for t in tools:
             path = shutil.which(t)
             if path and not os.path.exists(os.path.join(bin_dir, t)):
-                os.symlink(path, os.path.join(bin_dir, t))
+                portability.symlink(self, path, os.path.join(bin_dir, t))
         return dict(self.env, PATH=bin_dir)
 
     @unittest.skipUnless(os.path.exists("/bin/sh") and hasattr(os, "symlink"), "POSIX")
@@ -346,9 +350,9 @@ class HookTest(unittest.TestCase):
         self.assertEqual(code, 0, "no grep either: fail open")
 
     def test_nudge_state_not_used_by_a_refused_command(self):
-        with open(os.path.join(self.root, ".codemap.json"), "w") as fh:
+        with open(os.path.join(self.root, ".codemap.json"), "w", encoding="utf-8") as fh:
             fh.write('{"map": "map.md"}\n')
-        open(os.path.join(self.root, "src", "a.py"), "w").close()
+        open(os.path.join(self.root, "src", "a.py"), "w", encoding="utf-8").close()
         cmd = "find / -name x; grep -r foo ."  # refused, and broad for the nudge
         self.assertEqual(self.run_sh(GUARD, self.data("Bash", command=cmd))[0], 2)
         self.assertEqual(self.run_sh(NUDGE, self.data("Bash", command=cmd))[0], 0)
@@ -375,8 +379,8 @@ class HookTest(unittest.TestCase):
         code = os.path.join(PLUGIN, "skills", "code-map", "scripts", "codemap.py")
         skill = os.path.join(PLUGIN, "skills", "self-training-skills", "scripts", "skilltrain.py")
         return ('manager-plugin: the plugin\'s scripts, runnable as given (never search the disk '
-                'for these): code map `python3 "%s" query <term> --root "%s"`; skill files '
-                '`python3 "%s" query "%s" -- <term>`.' % (code, top, skill, top))
+                'for these): code map `%s "%s" query <term> --root "%s"`; skill files '
+                '`%s "%s" query "%s" -- <term>`.' % (PY, code, top, PY, skill, top))
 
     def test_start_line_needs_the_condition(self):
         self.assertIsNone(self.start(), "a repository without the plugin's marks")
@@ -384,7 +388,7 @@ class HookTest(unittest.TestCase):
         self.assertIsNone(self.start(cwd=self.tmp), "no repository")
 
     def test_start_line_with_a_codemap_config(self):
-        open(os.path.join(self.root, ".codemap.json"), "w").close()
+        open(os.path.join(self.root, ".codemap.json"), "w", encoding="utf-8").close()
         for event in ("SubagentStart", "SessionStart"):
             out = self.start(event, cwd=os.path.join(self.root, "src"))
             self.assertEqual(out, {"hookEventName": event, "additionalContext": self.start_line()})
@@ -393,29 +397,29 @@ class HookTest(unittest.TestCase):
 
     def test_start_line_with_a_rules_marker_or_a_marked_skill(self):
         path = os.path.join(self.root, "CLAUDE.md")
-        with open(path, "w") as fh:
+        with open(path, "w", encoding="utf-8") as fh:
             fh.write("# x\n<!-- manager-plugin:code-map:begin v2 (managed by the code-map skill)"
                      " -->\n")
         self.assertEqual(self.start()["additionalContext"], self.start_line())
-        with open(path, "w") as fh:
+        with open(path, "w", encoding="utf-8") as fh:
             fh.write("- use skilltrain <!-- manager-plugin:self-training-skills -->\n")
         self.assertEqual(self.start()["additionalContext"], self.start_line())
         os.remove(path)
         self.assertIsNone(self.start())
         skill = os.path.join(self.root, ".claude", "skills", "deploy")
         os.makedirs(skill)
-        with open(os.path.join(skill, "SKILL.md"), "w") as fh:
+        with open(os.path.join(skill, "SKILL.md"), "w", encoding="utf-8") as fh:
             fh.write("---\nname: deploy\ndescription: x\n---\n<!-- self-training-skill v1 -->\n")
         self.assertEqual(self.start()["additionalContext"], self.start_line())
 
     def test_start_line_without_git_finds_the_config(self):
         shutil.rmtree(os.path.join(self.root, ".git"))
-        open(os.path.join(self.root, ".codemap.json"), "w").close()
+        open(os.path.join(self.root, ".codemap.json"), "w", encoding="utf-8").close()
         out = self.start(cwd=os.path.join(self.root, "src"))
         self.assertEqual(out["additionalContext"], self.start_line())
 
     def test_hook_entries(self):
-        with open(os.path.join(HERE, "hooks.json")) as fh:
+        with open(os.path.join(HERE, "hooks.json"), encoding="utf-8") as fh:
             hooks = json.load(fh)["hooks"]
         guard = [e for e in hooks["PreToolUse"] if "scan-guard.sh" in e["hooks"][0]["command"]]
         self.assertEqual(len(guard), 1)

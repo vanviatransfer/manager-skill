@@ -12,6 +12,8 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.dont_write_bytecode = True
 sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.dirname(HERE))  # portability.py, in the plugin folder
+import portability  # noqa: E402
 from test_manager_compaction import MARKER, NOTES, SESSION, manager_texts  # noqa: E402
 from test_prefer_plugin_agents import ENV, MANAGER, snapshot  # noqa: E402
 
@@ -50,7 +52,7 @@ class ContextWatchHookTest(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, self.tmp)
+        self.addCleanup(portability.rmtree, self.tmp)
         self.home = os.path.join(self.tmp, "my home")
         self.repo = os.path.join(self.tmp, "repo")
         self.path = os.path.join(self.home, ".claude", "projects", "-work", SESSION + ".jsonl")
@@ -290,7 +292,8 @@ class ContextWatchHookTest(unittest.TestCase):
         self.assert_silent()  # no marker folder
         active = os.path.join(self.home, ".claude", "manager-runs", "active")
         os.makedirs(active)
-        with open(os.path.join(self.home, ".claude", "manager-runs", "2026-01-01.md"), "w") as fh:
+        with open(os.path.join(self.home, ".claude", "manager-runs", "2026-01-01.md"), "w",
+                  encoding="utf-8") as fh:
             fh.write("a run record is not a marker\n")
         self.assert_silent()  # no marker
         other = self.mark("another-session")
@@ -314,7 +317,7 @@ class ContextWatchHookTest(unittest.TestCase):
             found = shutil.which(name)
             if not found or not hasattr(os, "symlink"):
                 self.skipTest("needs sh, cat and symlinks")
-            os.symlink(found, os.path.join(tools, name))
+            portability.symlink(self, found, os.path.join(tools, name))
         started = os.path.join(self.tmp, "started")
         for name in ("python3", "python", "py"):  # `py -3`: the launcher's own option
             with open(os.path.join(tools, name), "w", encoding="utf-8") as fh:

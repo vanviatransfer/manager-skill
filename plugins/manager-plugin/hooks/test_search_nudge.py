@@ -14,8 +14,12 @@ HOOK = os.path.join(HERE, "codemap-search-nudge.sh")
 SCRIPTS = os.path.join(HERE, "..", "skills", "code-map", "scripts")
 PLUGIN = os.path.normpath(os.path.join(HERE, ".."))
 sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.dirname(HERE))  # portability.py, in the plugin folder
+import portability  # noqa: E402
 sys.path.insert(0, SCRIPTS)
 import search_nudge  # noqa: E402
+
+PY = portability.hook_python()  # the Python the hook's message names
 
 CONFIG = '{"vault": "vault", "map": "vault/map.md"}\n'
 
@@ -23,7 +27,7 @@ CONFIG = '{"vault": "vault", "map": "vault/map.md"}\n'
 class SearchNudgeTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, self.tmp)
+        self.addCleanup(portability.rmtree, self.tmp)
         self.root = os.path.join(self.tmp, "repo")
         self.state = os.path.join(self.tmp, "state")
         os.makedirs(self.state)
@@ -40,7 +44,7 @@ class SearchNudgeTest(unittest.TestCase):
     def write(self, rel, text):
         path = os.path.join(self.root, *rel.split("/"))
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", newline="\n") as fh:
+        with open(path, "w", newline="\n", encoding="utf-8") as fh:
             fh.write(text)
 
     def hook(self, tool, cwd=None, raw=None, **tool_input):
@@ -59,22 +63,24 @@ class SearchNudgeTest(unittest.TestCase):
         self.assertEqual(code, 2, (tool, tool_input))
         self.assertEqual(len(err.strip().splitlines()), 1)
         script = os.path.join(PLUGIN, "skills", "code-map", "scripts", "codemap.py")
-        self.assertIn('run python3 "%s" query <term> --root "%s" (or read'
-                      % (script, self.root), err)
+        self.assertIn('run %s "%s" query <term> --root "%s" (or read'
+                      % (PY, script, self.root), err)
         self.assertIn("vault/map.md", err)
         self.assertEqual(self.hook(tool, **tool_input)[0], 0, "a repeat is allowed")
 
     def test_message_names_the_plugin_root_command(self):
         plugin = os.path.join(self.tmp, "my plugins", "manager-plugin")
         os.makedirs(os.path.join(plugin, "skills", "code-map", "scripts"))
-        open(os.path.join(plugin, "skills", "code-map", "scripts", "codemap.py"), "w").close()
+        open(os.path.join(plugin, "skills", "code-map", "scripts", "codemap.py"), "w",
+             encoding="utf-8").close()
         self.env["CLAUDE_PLUGIN_ROOT"] = plugin
         code, err = self.hook("Grep", pattern="foo")
         self.assertEqual(code, 2)
         self.assertEqual(len(err.strip().splitlines()), 1)
-        self.assertIn('manager-plugin: map first: run python3 "%s/skills/code-map/scripts/'
+        self.assertIn('manager-plugin: map first: run %s "%s/skills/code-map/scripts/'
                       'codemap.py" query <term> --root "%s" (or read the vault index or the '
-                      'map page vault/map.md) before a broad search;' % (plugin, self.root), err)
+                      'map page vault/map.md) before a broad search;' % (PY, plugin, self.root),
+                      err)
 
     def test_message_roots_the_query_at_the_repository_from_a_subfolder(self):
         code, err = self.hook("Grep", cwd=os.path.join(self.root, "src"), pattern="foo")
@@ -95,9 +101,9 @@ class SearchNudgeTest(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertEqual(len(err.strip().splitlines()), 1)
         script = os.path.join(PLUGIN, "skills", "code-map", "scripts", "codemap.py")
-        self.assertIn('manager-plugin: map first: run python3 "%s" query <term> (or read the '
-                      'vault index or the map page vault/map.md) before a broad search;' % script,
-                      err)
+        self.assertIn('manager-plugin: map first: run %s "%s" query <term> (or read the '
+                      'vault index or the map page vault/map.md) before a broad search;'
+                      % (PY, script), err)
         self.assertNotIn("--root", err)
         self.assertNotIn("\t", err)
         self.assertEqual(self.hook("Grep", pattern="foo")[0], 0, "a repeat is allowed")
@@ -148,7 +154,8 @@ class SearchNudgeTest(unittest.TestCase):
         self.write(".codemap.json", '{"vault": "vault"}\n')
         self.assertEqual(self.hook("Grep", pattern="foo")[0], 0, "no map")
         os.remove(os.path.join(self.root, ".codemap.json"))
-        os.symlink(os.path.join(self.root, "README.md"), os.path.join(self.root, ".codemap.json"))
+        portability.symlink(self, os.path.join(self.root, "README.md"),
+                            os.path.join(self.root, ".codemap.json"))
         self.assertEqual(self.hook("Grep", pattern="foo")[0], 0, "a symlink")
 
     def test_outside_a_repository_it_passes(self):
@@ -243,14 +250,15 @@ class SearchNudgeTest(unittest.TestCase):
     def test_corrupt_or_unwritable_state_fails_open(self):
         folder = os.path.join(self.state, search_nudge.STATE_DIR
                               + ("-%d" % os.getuid() if hasattr(os, "getuid") else ""))
-        with open(folder, "w") as fh:
+        with open(folder, "w", encoding="utf-8") as fh:
             fh.write("not a folder")
         self.assertEqual(self.hook("Grep", pattern="foo")[0], 0, "state folder is a file")
         os.remove(folder)
         os.mkdir(folder)
-        os.chmod(folder, 0o777)
-        self.assertEqual(self.hook("Grep", pattern="foo")[0], 0, "a shared folder")
-        os.chmod(folder, 0o700)
+        if not portability.WINDOWS:  # Windows: no mode bits, so no shared-folder case
+            os.chmod(folder, 0o777)
+            self.assertEqual(self.hook("Grep", pattern="foo")[0], 0, "a shared folder")
+            os.chmod(folder, 0o700)
         self.assertEqual(self.hook("Grep", pattern="foo")[0], 2)
         for name in os.listdir(folder):
             with open(os.path.join(folder, name), "wb") as fh:
@@ -353,7 +361,7 @@ class SearchNudgeTest(unittest.TestCase):
     def test_symlinked_state_folder_fails_open(self):
         target = os.path.join(self.tmp, "elsewhere")
         os.mkdir(target, 0o700)
-        os.symlink(target, self.folder())
+        portability.symlink(self, target, self.folder())
         self.assertEqual(self.hook("Grep", pattern="foo")[0], 0)
         self.assertEqual(os.listdir(target), [])
 
@@ -373,13 +381,13 @@ class SearchNudgeTest(unittest.TestCase):
                                      os.path.abspath(self.root))
         marker = os.path.join(self.folder(), hashlib.sha256(key.encode()).hexdigest()[:40])
         victim = os.path.join(self.tmp, "victim")
-        os.symlink(victim, marker)  # dangling: O_EXCL must not create it
+        portability.symlink(self, victim, marker)  # dangling: O_EXCL must not create it
         self.assertEqual(self.hook("Grep", pattern="foo")[0], 0)
         self.assertFalse(os.path.lexists(victim))
-        with open(victim, "w") as fh:
+        with open(victim, "w", encoding="utf-8") as fh:
             fh.write("keep")
         self.assertEqual(self.hook("Grep", pattern="foo")[0], 0)
-        with open(victim) as fh:
+        with open(victim, encoding="utf-8") as fh:
             self.assertEqual(fh.read(), "keep")
 
     def test_state_lives_outside_the_repository(self):
@@ -416,7 +424,7 @@ class SearchNudgeTest(unittest.TestCase):
         self.assertEqual(rel("..\\sibling", top, top), None)
 
     def test_hook_entry(self):
-        with open(os.path.join(HERE, "hooks.json")) as fh:
+        with open(os.path.join(HERE, "hooks.json"), encoding="utf-8") as fh:
             entries = json.load(fh)["hooks"]["PreToolUse"]
         entry = [e for e in entries if "search-nudge" in e["hooks"][0]["command"]][0]
         self.assertEqual(set(entry["matcher"].split("|")), {"Bash", "Grep", "Glob"})
@@ -451,7 +459,7 @@ class SkillsBranchTest(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, self.tmp)
+        self.addCleanup(portability.rmtree, self.tmp)
         self.root = os.path.join(self.tmp, "repo")
         self.state = os.path.join(self.tmp, "state")
         os.makedirs(self.state)
@@ -467,7 +475,7 @@ class SkillsBranchTest(unittest.TestCase):
     def write(self, rel, text):
         path = os.path.join(self.root, *rel.split("/"))
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", newline="\n") as fh:
+        with open(path, "w", newline="\n", encoding="utf-8") as fh:
             fh.write(text)
 
     def hook(self, tool, session="s1", **tool_input):
@@ -482,9 +490,9 @@ class SkillsBranchTest(unittest.TestCase):
         self.assertEqual((code, out), (2, ""), err)
         self.assertEqual(len(err.strip().splitlines()), 1)
         script = os.path.join(PLUGIN, "skills", "self-training-skills", "scripts", "skilltrain.py")
-        self.assertEqual(err.strip(), 'manager-plugin: skills first: run python3 "%s" query "%s" -- '
+        self.assertEqual(err.strip(), 'manager-plugin: skills first: run %s "%s" query "%s" -- '
                          "%s before searching skill files; if that doesn't answer it, repeat the "
-                         "search and it will be allowed." % (script, self.root, term))
+                         "search and it will be allowed." % (PY, script, self.root, term))
 
     def test_first_skill_search_is_blocked_with_the_query_command_and_the_second_allowed(self):
         self.assertFalse(os.path.exists(os.path.join(self.root, ".codemap.json")))

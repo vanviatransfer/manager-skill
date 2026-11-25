@@ -10,6 +10,8 @@ import subprocess
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".."))
+import portability  # noqa: E402  (in the plugin folder)
 import skilltrain  # noqa: E402
 
 SKILL = """---
@@ -124,7 +126,7 @@ def run(*argv):
 
 class SkilltrainTest(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = portability.temp_dir()
         self.root = self.tmp.name
         self.dir = os.path.join(self.root, ".claude", "skills", "release-notes")
         self.write(".claude/skills/release-notes/SKILL.md", SKILL)

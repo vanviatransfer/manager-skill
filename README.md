@@ -279,7 +279,9 @@ only for manager phases, which the manager dispatches with a brief). A request c
 another plugin or skill that dispatches `general-purpose` needs one retry with that marker. The hook
 writes nothing, touches none of your settings files and goes away with the plugin. It is a plain
 `sh` script; on Windows it runs in Git Bash, and where Git Bash (or `grep`/`sed`) is missing it
-fails open (`onFailure: continue`), so spawns are allowed and nothing is blocked. A second
+fails open (`onFailure: continue`), so spawns are allowed and nothing is blocked. The hooks that
+run a Python script find it from their own path with `/` or `\` separators, so a `C:\...` path
+works too. A second
 `PreToolUse` hook, on Bash, is the code-map commit check above: it does nothing unless a
 repository's `.codemap.json` opts in, and fails open the same way. It writes nothing either, with
 one exception that comes from git: to see what `git add` would store for a rebuilt map page, the
@@ -511,6 +513,10 @@ Tests for the living-plan skill's `plan.py`:
 `python3 -m unittest discover -s plugins/manager-plugin/skills/living-plan/scripts`.
 Tests that hold the eval cases (below) to the CLI's case format:
 `python3 -m unittest discover -s plugins/manager-plugin/evals`.
+On Windows, run the same commands with `py -3` in Git Bash. The tests share
+`plugins/manager-plugin/portability.py` (stdlib only), which skips what Windows can't do there:
+symlinks without the privilege, file names with `"` or `*`, mode bits, paths over 260
+characters. `.gitattributes` keeps the scripts and texts LF where `core.autocrlf` is on.
 
 ### Eval cases
 

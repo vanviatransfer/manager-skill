@@ -1,0 +1,8 @@
+# Checked out with LF on every platform, also where core.autocrlf=true (Git for Windows): the
+# hook and scaffold scripts sh runs, the Python scripts and tests, and the texts the tests read
+# byte for byte (docs/LIVING_PLAN.md) or count (the skills' size ceilings).
+*.sh text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf

@@ -15,6 +15,8 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.dont_write_bytecode = True
 sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.dirname(HERE))  # portability.py, in the plugin folder
+import portability  # noqa: E402
 from test_prefer_plugin_agents import ENV, MANAGER, SKILLS, command_in, snapshot  # noqa: E402
 
 HOOK = os.path.join(HERE, "manager-run-compact.sh")
@@ -41,7 +43,7 @@ class ManagerRunCompactHookTest(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, self.tmp)
+        self.addCleanup(portability.rmtree, self.tmp)
         self.home = os.path.join(self.tmp, "my home")
         self.repo = os.path.join(self.tmp, "repo")
         os.makedirs(self.home)
@@ -86,7 +88,8 @@ class ManagerRunCompactHookTest(unittest.TestCase):
         for event in ("PreCompact", "SessionStart"):
             self.assert_silent(event)
         os.makedirs(os.path.join(self.home, ".claude", "manager-runs", "active"))
-        with open(os.path.join(self.home, ".claude", "manager-runs", "2026-01-01.md"), "w") as fh:
+        with open(os.path.join(self.home, ".claude", "manager-runs", "2026-01-01.md"), "w",
+                  encoding="utf-8") as fh:
             fh.write("a run record is not a marker\n")
         for event in ("PreCompact", "SessionStart"):
             self.assert_silent(event)
@@ -175,7 +178,7 @@ class ManagerRunCompactHookTest(unittest.TestCase):
             found = shutil.which(name)
             if not found or not hasattr(os, "symlink"):
                 self.skipTest("needs sh, cat, grep, sed and symlinks")
-            os.symlink(found, os.path.join(tools, name))
+            portability.symlink(self, found, os.path.join(tools, name))
         self.env["PATH"] = tools
         self.assertEqual(self.hook("SessionStart")[1].count("\n"), 1)
         self.assertNotEqual(self.hook("PreCompact")[1], "")
@@ -324,7 +327,7 @@ class ManagerRunCompactHookTest(unittest.TestCase):
         form = "[ -e <file> ] || echo <id> > <file>"
         self.assertIn("`%s`, only once (`%s`; `mkdir -p` its folder;" % (MARKER, form), skill)
         tmp = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, tmp)
+        self.addCleanup(portability.rmtree, tmp)
         marker = os.path.join(tmp, "active", SESSION)
         os.makedirs(os.path.dirname(marker))
         write = form.replace("<file>", '"%s"' % marker)
@@ -516,7 +519,7 @@ class StepZeroCommandTest(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, self.tmp)
+        self.addCleanup(portability.rmtree, self.tmp)
         self.env = dict(ENV, HOME=self.tmp)
         source = os.path.join(REFS, "establish-state.md")
         self.state = command_in(source, "Status|Depends on|Risk")

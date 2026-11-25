@@ -11,6 +11,8 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.dont_write_bytecode = True
 sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.join(HERE, "..", "..", ".."))  # portability.py, in the plugin folder
+import portability  # noqa: E402
 import plan  # noqa: E402
 
 SCRIPT = os.path.join(HERE, "plan.py")
@@ -340,7 +342,7 @@ class CommandLineTest(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, self.tmp)
+        self.addCleanup(portability.rmtree, self.tmp)
         os.makedirs(os.path.join(self.tmp, "docs"))
         self.path = os.path.join(self.tmp, "docs", "LIVING_PLAN.md")
         self.plan = a_plan(phase("P1"), phase("P2", "P1"))
