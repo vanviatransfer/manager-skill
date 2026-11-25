@@ -14,6 +14,10 @@ maps or checks its skills (routing, triggers) is used, not rewritten; replacing 
 <skill dir>` (with `--triggers-from <base-sha>` when the phase marks or migrates an existing one)
 and `skilltrain.py rules-hint <repo root>`.
 
+**`skilltrain.py`** here means the absolute command: the `Code map` field's command with
+`code-map/scripts/codemap.py` replaced by `self-training-skills/scripts/skilltrain.py` (`Code map:
+none`: the one in your start context). Never search the disk for it.
+
 **Reviewer.** The skill is context, never acceptance or rules. In a phase PR, the only allowed
 change to a skill's files is one factual row in its records file, with context `phase <id>` and
 outcome `pending-review`; anything else under `.claude/skills/` is out of scope (a blocker) unless

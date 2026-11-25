@@ -293,6 +293,32 @@ template, adds one line of information to the session's context (the `rules-hint
 updates the block, and that a manager run does this in its setup PR); otherwise it prints
 nothing. It writes nothing and fails open too.
 
+**Scan guard** (`PreToolUse` on Bash, PowerShell, Glob and Grep; `hooks/scan-guard.sh` with
+`skills/code-map/scripts/scan_guard.py`). It refuses (exit 2, one line) a command that
+recursively scans a filesystem root, a drive root or the home folder: `find`, `ls -R`, `du`,
+`tree`, `grep -r`, `rg`, `ag`, `ack`, `fd`, PowerShell's `Get-ChildItem`/`gci`/`dir`/`ls -Recurse`,
+`cmd /c dir /s` and `where /r` on `/`, `/c`, `/cygdrive/c`, `/mnt/c`, `C:\`, `~`, `$HOME`,
+`$env:USERPROFILE`, `/home`, `/Users`, `C:\Users` or `/root` (any drive letter, any case), also
+inside `bash -c`, `powershell -Command`, `cmd /c`, pipes, chains, subshells, `$( )` and backticks;
+a scan with no path (or `.`) when the cwd is such a root; Glob or Grep there, or a Glob pattern
+such as `/**/x`. Such a scan can run for hours and exhaust memory (on Windows it twice held
+millions of handles after its agent was gone). The line names the absolute code-map `query` and
+`skilltrain.py query` commands and a search limited to the repository. Every other search
+passes, the repository's, the scratchpad's and the plugin folder's included. It has no off
+switch; `"search_nudge": false` doesn't touch it. A refused command doesn't use up the map-first
+nudge's block. For an allowed recursive scan in Bash that isn't under `timeout`, it adds once per
+session a non-blocking note: prefix `timeout 120`. Without Python it refuses only a `find` whose
+first path is exactly a root, and otherwise fails open.
+
+**Script paths at start** (`SessionStart` on startup, resume, clear and compact, and
+`SubagentStart` for every agent type; `hooks/agent-paths.sh`). In a repository with a
+`.codemap.json`, a manager-plugin rules marker in `AGENTS.md`/`CLAUDE.md` or a marked
+self-training skill, it adds one line to the session's and every subagent's context: the absolute
+`codemap.py query` and `skilltrain.py query` commands, and never to search the disk for them.
+Elsewhere it prints nothing. The line carries only paths, no instruction about the work, so it
+doesn't touch a reviewer's independence. The rules block in `AGENTS.md`/`CLAUDE.md` keeps naming
+the skill, never a path: a plugin path is machine- and version-specific.
+
 Three more hooks act only inside a manager run. Once a run's model strategy is settled, the
 manager writes a marker file, `~/.claude/manager-runs/active/<session id>`, and keeps the run's
 working-notes lines in `~/.claude/manager-runs/notes/<session id>.md` (both outside every
@@ -470,8 +496,8 @@ rules and secret-file patterns follow ideas from
 
 Tests for the code-map script:
 `python3 -m unittest discover -s plugins/manager-plugin/skills/code-map/scripts`.
-Tests for the plugin hooks (subagent spawns, code-map commit check, map-first nudge, rules-block
-version hint, the manager-run compaction and context hooks), for the size ceilings of the manager
+Tests for the plugin hooks (subagent spawns, code-map commit check, map-first nudge, scan guard
+and start paths, rules-block version hint, the manager-run compaction and context hooks), for the size ceilings of the manager
 skill, both briefs and the code-map skill, and for the shell commands the manager skill, its
 references and its briefs give:
 `python3 -m unittest discover -s plugins/manager-plugin/hooks`.

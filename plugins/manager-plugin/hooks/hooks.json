@@ -22,6 +22,29 @@
             "onFailure": "continue"
           }
         ]
+      },
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/agent-paths.sh\" SessionStart",
+            "timeout": 10,
+            "onFailure": "continue"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/agent-paths.sh\" SubagentStart",
+            "timeout": 10,
+            "onFailure": "continue"
+          }
+        ]
       }
     ],
     "PreCompact": [
@@ -65,6 +88,17 @@
           {
             "type": "command",
             "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/codemap-search-nudge.sh\"",
+            "timeout": 10,
+            "onFailure": "continue"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell|Glob|Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/scan-guard.sh\"",
             "timeout": 10,
             "onFailure": "continue"
           }
