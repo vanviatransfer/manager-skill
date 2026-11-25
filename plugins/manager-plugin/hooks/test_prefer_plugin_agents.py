@@ -442,7 +442,8 @@ class RulesVersionHookTest(unittest.TestCase):
     def test_hook_entry(self):
         with open(os.path.join(HERE, "hooks.json")) as fh:
             entries = [e for e in json.load(fh)["hooks"]["SessionStart"]
-                       if e.get("matcher") != "compact"]  # that one: test_manager_compaction.py
+                       if e.get("matcher") != "compact"  # that one: test_manager_compaction.py
+                       and "agent-paths.sh" not in e["hooks"][0]["command"]]  # test_scan_guard
         self.assertEqual(len(entries), 1)
         self.assertEqual(set(entries[0]["matcher"].split("|")), {"startup", "resume", "clear"})
         entry = entries[0]["hooks"][0]

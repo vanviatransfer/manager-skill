@@ -30,6 +30,9 @@ there: such a search goes to the code-map branch, as before 0.9.5. A wildcard pa
 pattern with a `skills` part counts (`find -path "*/skills/*"`), one with a `references` part only
 when a marked skill has a `references/` folder; records count only at a marked skill's `Records:`
 path, its folder, or that folder's parent when it is named `skills`.
+
+A command the scan guard (scan_guard.py, its own hook) refuses as a whole-disk scan is left to it:
+no block and no state here, so the refusal doesn't use up this session's block.
 """
 import json
 import os
@@ -187,7 +190,7 @@ def find_paths(args):
     paths, i = [], 0
     while i < len(args):
         a = args[i]
-        if a in ("-H", "-L", "-P") or a.startswith("-O"):
+        if a in ("-H", "-L", "-P", "--") or a.startswith("-O"):
             i += 1
         elif a == "-D":
             i += 2
@@ -625,6 +628,9 @@ def run(data):
     used_map, targets = targets_of(data, cwd.replace("\\", "/"))
     if not used_map and not targets:
         return 0
+    import scan_guard
+    if scan_guard.refused(data):
+        return 0  # the scan guard refuses it: it must not use up this session's block
     top = find_top(cwd)
     if not top:
         return 0

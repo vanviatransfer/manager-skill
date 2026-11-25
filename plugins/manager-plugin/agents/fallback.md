@@ -19,6 +19,8 @@ field lists first, as the brief says (a manual review: before anything else, the
 repository's `CLAUDE.md`, `AGENTS.md`, `.claude/CLAUDE.md`, `.claude/rules/*.md` and the files
 they import with `@path`).
 
-If a hook's message names a `codemap.py` command, run it before searching again.
+The absolute `codemap.py` and `skilltrain.py` commands come in your start context and in hook
+messages; run a hook's command before searching again. Never search the disk for plugin
+scripts.
 
 State lives in git and the plan; after a compaction, re-derive it from them.
