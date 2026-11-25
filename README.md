@@ -411,18 +411,24 @@ on that repo then gets the plugin, including cloud sessions and teammates' machi
 /plugin install manager-plugin@vanvia-manager
 ```
 
-Update later with `claude plugin marketplace update vanvia-manager`.
+Update later in two steps: `claude plugin marketplace update vanvia-manager` refreshes the
+listing only, and `claude plugin update manager-plugin@vanvia-manager` installs the new version
+(add `--scope project` or `--scope local` for an install at that scope; without `--scope` it
+detects the scope), then asks for a restart.
 
 **After an update, restart open sessions.** A session loads the plugin's hooks and agents when it
 starts; one that was already open keeps the old ones (a session started before 0.9.6 had no scan
 guard, and its subagent's whole-disk `find` ran on after the agent ended). Leave it with `/exit`
 and start it again with `claude --resume`, which keeps the conversation. (Claude Code's docs also
-offer `/reload-plugins` in a running session; not tried with these hooks.) Remove stale copies:
+offer `/reload-plugins` in a running session; not tried with these hooks.) Check for stale copies:
 when the plugin is set at more than one scope, the local setting wins over the project one and
 the project one over the user one (Claude Code's docs), so an old project- or local-scope install
-can go on loading in that project after you update the user-scope one (not verified here). From
-that project, run `claude plugin uninstall manager-plugin@vanvia-manager --scope project` (or
-`--scope local`).
+can go on loading in that project after you update the user-scope one (not verified here). Update
+such a copy at its own scope, from that project (`claude plugin update
+manager-plugin@vanvia-manager --scope project`, or `--scope local`). Uninstall it
+(`claude plugin uninstall ... --scope project|local`) only to drop that scope: a project-scope
+uninstall edits the committed `.claude/settings.json`, and once committed it turns the plugin off
+for teammates and cloud sessions, so decide before you commit it.
 
 <details>
 <summary>What the per-repo install writes to <code>.claude/settings.json</code></summary>

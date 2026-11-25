@@ -970,11 +970,15 @@ shipped behaviour, so plugin.json stays 0.9.7.
   process outlived the agent and held about 360k handles until it was killed. Hooks and agent
   definitions load at session start, and an update doesn't reach a session already open
   (`claude plugin update --help`: "restart required to apply").
-- **README** (Install): after an update, restart open sessions (`/exit`, then `claude --resume`
+- **README** (Install): updating takes `claude plugin marketplace update vanvia-manager` (the
+  listing only) and then `claude plugin update manager-plugin@vanvia-manager` (`--scope
+  project|local` for those installs; on a Windows machine it reported 0.9.6 to 0.9.7 for scope
+  user and asked for a restart). After an update, restart open sessions (`/exit`, then `claude --resume`
   keeps the conversation); `/reload-plugins` is named as the docs' alternative, not tried with
-  these hooks. Remove a stale project- or local-scope install (`claude plugin uninstall
-  manager-plugin@vanvia-manager --scope project|local` from that project): the docs give
-  local over project over user for a plugin's setting; [not verified] that an old copy at a
+  these hooks. A stale project- or local-scope install is updated at its own scope; uninstall
+  it only to drop that scope (a project-scope uninstall edits the committed
+  `.claude/settings.json`, which turns the plugin off for teammates and cloud sessions). The docs
+  give local over project over user for a plugin's setting; [not verified] that an old copy at a
   higher scope keeps loading after the user-scope one is updated.
 - **.gitattributes:** `.gitignore` and `.gitattributes` are `text eol=lf` too (a Windows
   checkout had `evals/.gitignore` CRLF). Renormalizing changed nothing.
