@@ -36,9 +36,14 @@ import sys
 import search_nudge as sn
 
 # Roots, after norm(): lower case, forward slashes, no trailing slash ("/" is "").
-ROOT_RES = [re.compile(p) for p in (
-    r"", r"[a-z]:", r"/[a-z]", r"/cygdrive/[a-z]", r"/mnt/[a-z]", r"/root",
-    r"(?:[a-z]:|/[a-z]|/cygdrive/[a-z]|/mnt/[a-z])?/(?:home|users)")]
+ROOT_RES = [re.compile(p) for p in (r"", r"[a-z]:", r"/root", r"(?:[a-z]:)?/(?:home|users)")]
+# Git Bash, Cygwin and WSL drive spellings: roots in a POSIX shell only. In PowerShell and cmd,
+# `/c` is a folder of the current drive or a switch (`find /c`, `tree /f`).
+POSIX_RES = [re.compile(p) for p in (
+    r"/[a-z]", r"/cygdrive/[a-z]", r"/mnt/[a-z]",
+    r"(?:/[a-z]|/cygdrive/[a-z]|/mnt/[a-z])/(?:home|users)")]
+# find.exe and tree.com switches (`/i`, `/c`, `/f`, `/?`), dropped before the path check.
+WIN_SWITCH = re.compile(r"/[A-Za-z?]+")
 HOME_WORDS = {"~", "$home", "${home}", "$userprofile", "${userprofile}", "$env:userprofile",
               "${env:userprofile}", "$env:homedrive", "${env:homedrive}", "$env:systemdrive",
               "${env:systemdrive}", "%userprofile%", "%homedrive%", "%systemdrive%"}
@@ -69,16 +74,22 @@ def norm(path):
 
 
 def home_values():
+    """The literal HOME and USERPROFILE paths, unless one is itself a repository's top (a
+    container with HOME=/app holding the repository: scanning it is scanning the repository)."""
     out = set()
     for var in ("HOME", "USERPROFILE"):
         v = os.environ.get(var)
         if v and (v.startswith("/") or sn.is_drive(v.replace("\\", "/") + "/")):
+            top = sn.find_top(v) if os.path.isdir(v) else None
+            if top and os.path.normcase(top) == os.path.normcase(os.path.abspath(v)):
+                continue
             out.add(norm(v))
     return out
 
 
-def is_root_norm(s):
-    return s in HOME_WORDS or any(r.fullmatch(s) for r in ROOT_RES) or s in home_values()
+def is_root_norm(s, posix=True):
+    return s in HOME_WORDS or any(r.fullmatch(s) for r in ROOT_RES) or \
+        (posix and any(r.fullmatch(s) for r in POSIX_RES)) or s in home_values()
 
 
 def absolute(path):
@@ -86,15 +97,16 @@ def absolute(path):
     return p.startswith(("/", "~", "$", "%")) or bool(re.match(r"^[A-Za-z]:", p))
 
 
-def is_root(path, cwd):
-    """True if the path is one of the roots; a relative path counts from cwd (None: unknown)."""
+def is_root(path, cwd, posix=True):
+    """True if the path is one of the roots; a relative path counts from cwd (None: unknown).
+    posix=False (PowerShell, cmd): the Git Bash drive spellings such as /c are no roots."""
     if not isinstance(path, str) or not path.strip():
         return False
-    if is_root_norm(norm(path)):
+    if is_root_norm(norm(path), posix):
         return True
     if absolute(path) or cwd is None:
         return False
-    return is_root_norm(norm(sn.join(cwd, path)))
+    return is_root_norm(norm(sn.join(cwd, path)), posix)
 
 
 def drop_heredocs(cmd):
@@ -230,9 +242,9 @@ class Scan:
         self.refused = None  # (command, path)
         self.untimed = False
 
-    def check(self, name, paths, cwd, timed=False, hint=True):
+    def check(self, name, paths, cwd, timed=False, hint=True, posix=True):
         for p in paths:
-            if self.refused is None and is_root(p, cwd):
+            if self.refused is None and is_root(p, cwd, posix):
                 self.refused = (name, p)
         if paths and hint and not timed and name in TIMED:
             self.untimed = True
@@ -267,7 +279,7 @@ def first_operand(args):
     return next((a for a in args if not a.startswith("-")), None)
 
 
-def scan_unix(scan, name, args, cwd, after_pipe, timed, hint=True):
+def scan_unix(scan, name, args, cwd, after_pipe, timed, hint=True, posix=True):
     """The POSIX scan tools (also when PowerShell or cmd runs them)."""
     if name == "find":
         paths = sn.find_paths(args)
@@ -295,13 +307,13 @@ def scan_unix(scan, name, args, cwd, after_pipe, timed, hint=True):
     else:
         paths = sn.search_paths(name, args, after_pipe)
     if paths:
-        scan.check(name, paths, cwd, timed, hint)
+        scan.check(name, paths, cwd, timed, hint, posix)
 
 
-def new_cwd(arg, cwd):
+def new_cwd(arg, cwd, posix=True):
     if not arg or arg == "-":
         return None if arg else "~"
-    if is_root_norm(norm(arg)):
+    if is_root_norm(norm(arg), posix):
         return arg
     if "$" in arg or "%" in arg or arg.startswith("~"):
         return None
@@ -332,7 +344,7 @@ def scan_bash(scan, cmd, cwd, depth=0):
         elif name in SHELLS:
             shell_c(scan, args, cwd, depth)
         else:
-            scan_other(scan, name, args, cwd, after_pipe, timed, depth, hint=True)
+            scan_other(scan, name, args, cwd, after_pipe, timed, depth, hint=True, posix=True)
 
 
 def shell_c(scan, args, cwd, depth):
@@ -345,8 +357,12 @@ def shell_c(scan, args, cwd, depth):
             return
 
 
-def scan_other(scan, name, args, cwd, after_pipe, timed, depth, hint):
+def scan_other(scan, name, args, cwd, after_pipe, timed, depth, hint, posix):
+    """posix=False: run from PowerShell or cmd, where `find` is find.exe and `tree` tree.com
+    (their `/x` arguments are switches) and /c is no drive root."""
     low = name.lower()
+    if not posix and low in ("find", "tree"):
+        args = [a for a in args if not WIN_SWITCH.fullmatch(a)]
     if low in POWERSHELLS:
         for k, a in enumerate(args):
             if re.fullmatch(r"-(c|com|comm|comma|comman|command)", a, re.I):
@@ -360,10 +376,10 @@ def scan_other(scan, name, args, cwd, after_pipe, timed, depth, hint):
     elif low == "where" and any(re.fullmatch(r"/+r", a, re.I) for a in args):
         k = next(k for k, a in enumerate(args) if re.fullmatch(r"/+r", a, re.I))
         if k + 1 < len(args):
-            scan.check("where", [args[k + 1]], cwd, hint=False)
+            scan.check("where", [args[k + 1]], cwd, hint=False, posix=posix)
     elif low in ("find", "ls", "du", "tree", "grep", "egrep", "fgrep", "rg", "ag", "ack", "fd",
                  "fdfind"):
-        scan_unix(scan, low, args, cwd, after_pipe, timed, hint)
+        scan_unix(scan, low, args, cwd, after_pipe, timed, hint, posix)
 
 
 def ps_param(name, full, least):
@@ -371,8 +387,9 @@ def ps_param(name, full, least):
 
 
 def ps_child_item(args):
-    """(recursive, [paths]) of Get-ChildItem's arguments (parameters in any case, abbreviated)."""
-    recurse, paths, positional, i = False, [], [], 0
+    """(recursive, [paths]) of Get-ChildItem's arguments (parameters in any case, abbreviated);
+    `-Depth 0|1` is a listing, as find's -maxdepth 0|1."""
+    recurse, paths, positional, i, shallow = False, [], [], 0, False
     while i < len(args):
         a = args[i]
         i += 1
@@ -385,7 +402,10 @@ def ps_child_item(args):
         if ps_param(name, "recurse", 1):
             recurse = True
         elif ps_param(name, "depth", 2):
-            recurse = takes = True
+            recurse = True
+            if not colon and i < len(args):
+                value, i = args[i], i + 1
+            shallow = value.strip() in ("0", "1")
         elif name in ("p", "lp", "pspath") or ps_param(name, "path", 2) or \
                 ps_param(name, "literalpath", 2):
             if not colon and i < len(args):
@@ -398,7 +418,7 @@ def ps_child_item(args):
             i += 1
     if positional and not paths:
         paths = [v for v in positional[0].split(",") if v]
-    return recurse, paths or ["."]
+    return recurse and not shallow, paths or ["."]
 
 
 def scan_ps(scan, cmd, cwd, depth=0):
@@ -414,15 +434,15 @@ def scan_ps(scan, cmd, cwd, depth=0):
         args = words[1:]
         if name in PS_CD:
             arg = next((a for a in args if not a.startswith("-")), None)
-            cwd = new_cwd(arg, cwd)
+            cwd = new_cwd(arg, cwd, posix=False)
         elif name in PS_LIST:
             recurse, paths = ps_child_item(args)
             if recurse:
-                scan.check(name, paths, cwd, hint=False)
+                scan.check(name, paths, cwd, hint=False, posix=False)
         elif name in SHELLS:
             shell_c(scan, args, cwd, depth)
         else:
-            scan_other(scan, name, args, cwd, after_pipe, False, depth, hint=False)
+            scan_other(scan, name, args, cwd, after_pipe, False, depth, hint=False, posix=False)
 
 
 def scan_cmd(scan, text, cwd, depth=0):
@@ -434,14 +454,12 @@ def scan_cmd(scan, text, cwd, depth=0):
         switches = {s.lower() for a in args if a.startswith("/") for s in a.split("/") if s}
         if name == "dir" and "s" in switches:
             paths = [a for a in args if not a.startswith("/")] or ["."]
-            scan.check("dir /s", paths, cwd, hint=False)
-        elif name == "tree":
-            paths = [a for a in args if not a.startswith("/")] or ["."]
-            scan.check("tree", paths, cwd, hint=False)
+            scan.check("dir /s", paths, cwd, hint=False, posix=False)
         elif name in ("cd", "chdir"):
-            cwd = new_cwd(next((a for a in args if not a.startswith("/")), None) or "", cwd)
+            cwd = new_cwd(next((a for a in args if not a.startswith("/")), None) or "", cwd,
+                          posix=False)
         else:
-            scan_other(scan, name, args, cwd, False, False, depth, hint=False)
+            scan_other(scan, name, args, cwd, False, False, depth, hint=False, posix=False)
 
 
 def fallback(scan, cmd, cwd):
@@ -530,15 +548,16 @@ def message(found, cwd):
     qtop = sn.quote_path(top, os.name == "nt") if top else None
     where = qtop or "<repo path>"
     code, skill = commands(top)
+    known = "here and at" if code and skill else "at"
     code = "`%s`" % code if code else "the `manager-plugin:code-map` skill's `query <term>`"
     skill = "`%s`" % skill if skill else ("the `manager-plugin:self-training-skills` skill's "
                                           "`skilltrain.py query <repo root> -- <term>`")
     return ("manager-plugin: scan refused (`%s` over `%s`): a recursive scan of a filesystem, "
             "drive or home root can run for hours and exhaust memory. Code map: %s; skill files: "
             "%s; or search only the repository: `rg <term> %s` or `find %s -name <x>` (prefix "
-            "`timeout 120` for a long one). Never search for these scripts: their paths come here "
-            "and at session and agent start."
-            % (clean(name), clean(path), code, skill, where, where))
+            "`timeout 120` for a long one). Never search for these scripts: their paths come %s "
+            "session and agent start."
+            % (clean(name), clean(path), code, skill, where, where, known))
 
 
 def hint_once(data, cwd):

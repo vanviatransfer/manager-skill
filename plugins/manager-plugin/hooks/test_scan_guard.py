@@ -74,6 +74,8 @@ PASS_BASH = [
     "cd /tmp && find . -name x", "cd / && ls", "cd ~ && ls -la", "locate codemap.py",
     "find \"unbalanced / -name x", "bash script.sh /", "cat / 2>&1",
     "python3 -m unittest discover -s hooks", "rg -n foo -- /home/u/proj",
+    # cmd's find.exe and tree.com: /x are switches
+    'cmd /c find /i "x" file', 'cmd //c find //c "x" file.txt', "cmd /c tree /f",
 ]
 # PowerShell commands refused from a Windows cwd.
 BLOCK_PS = [
@@ -88,12 +90,18 @@ BLOCK_PS = [
     "Set-Location ~; Get-ChildItem -Recurse", "$x = gci C:\\ -Recurse", "& gci C:\\ -Recurse",
     "powershell -Command \"gci C:\\ -Recurse\"", "pwsh -c 'gci ~ -r'",
     "bash -c 'find / -name x'", "rg foo C:\\", "where.exe /r C:\\ codemap.py",
-    "1..2 | ForEach-Object { gci C:\\ -Recurse }",
+    "1..2 | ForEach-Object { gci C:\\ -Recurse }", "tree C:\\ /f", "cmd /c tree C:\\ /f",
+    "find / ", "gci C:\\ -Depth 2", "Get-ChildItem C:\\ -Recurse -Depth 5",
 ]
 PASS_PS = [
     "Get-ChildItem -Recurse .\\scripts", "gci C:\\", "Get-ChildItem C:\\ -Filter *.txt",
     "gci -Recurse C:\\Users\\me\\proj", "gci -Recurse", "Get-ChildItem -Recurse -Path src",
     "Write-Output 'gci C:\\ -Recurse'", "rg foo src", "dir", "ls -la /",
+    # find.exe and tree.com switches are no Git Bash drive roots; /c is no root here
+    "tree /f", "tree /f /a", 'tasklist | find /i "python"', 'find /c "x" file.txt',
+    'find /v /n "x" a.txt', "find /?", 'cmd /c find /i "x" file', "cmd /c tree /f",
+    "gci /c -Recurse", "rg foo /c", "Get-ChildItem C:\\ -Depth 0", "gci C:\\ -Depth 1",
+    "gci -Depth:1 C:\\", "Get-ChildItem -Recurse -Depth 1 C:\\",
 ]
 WIN_CWD = "C:\\Users\\me\\proj"
 
@@ -127,7 +135,11 @@ class PredicateTest(unittest.TestCase):
             for cmd in ("find . -name x", "find -name x", "rg foo", "grep -r foo .", "ls -R",
                         "du -sh", "tree", "fd x"):
                 self.assertIsNotNone(refused("Bash", cwd=cwd, command=cmd), (cwd, cmd))
-            self.assertIsNotNone(refused("PowerShell", cwd=cwd, command="gci -Recurse"), cwd)
+            ps = refused("PowerShell", cwd=cwd, command="gci -Recurse")
+            if cwd == "/c":  # a Git Bash spelling: in PowerShell, a folder of the current drive
+                self.assertIsNone(ps, cwd)
+            else:
+                self.assertIsNotNone(ps, cwd)
             self.assertIsNotNone(refused("Grep", cwd=cwd, pattern="x"), cwd)
             self.assertIsNotNone(refused("Glob", cwd=cwd, pattern="**/x"), cwd)
             self.assertIsNone(refused("Bash", cwd=cwd, command="find src -name x"), cwd)
@@ -148,6 +160,25 @@ class PredicateTest(unittest.TestCase):
                    {"pattern": "/home/u/proj/**/x"}, {"pattern": "~/.claude/plugins/**/x"},
                    {"pattern": "*.py", "path": "/home/u/proj"}, {"pattern": "/*"}):
             self.assertIsNone(refused("Glob", **ti), ti)
+
+    def test_home_that_is_a_repository_top_is_no_root(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        app = os.path.join(tmp, "app")
+        os.makedirs(os.path.join(app, "src"))
+        with mock.patch.dict(os.environ, {"HOME": app}):
+            self.assertIsNotNone(refused("Bash", command="find %s -name x" % app), "no repo")
+            os.makedirs(os.path.join(app, ".git"))
+            for cmd in ("find %s -name x" % app, "rg foo %s" % app):
+                self.assertIsNone(refused("Bash", cwd=app, command=cmd), cmd)
+            self.assertIsNone(refused("Bash", cwd=app, command="find . -name x"))
+            self.assertIsNone(refused("Grep", cwd=app, pattern="x"))
+            self.assertIsNotNone(refused("Bash", cwd=app, command="find ~ -name x"),
+                                 "the ~ spelling stays a root")
+            sub = os.path.join(app, "src")
+            with mock.patch.dict(os.environ, {"HOME": sub}):
+                self.assertIsNotNone(refused("Bash", command="find %s -name x" % sub),
+                                     "inside a repository but not its top: still a root")
 
     def test_other_tools_and_bad_input_pass(self):
         self.assertIsNone(refused("Read", file_path="/"))
@@ -214,6 +245,9 @@ class HookTest(unittest.TestCase):
         self.assertIn("Code map: the `manager-plugin:code-map` skill's `query <term>`; skill "
                       "files: the `manager-plugin:self-training-skills` skill's `skilltrain.py "
                       "query <repo root> -- <term>`;", err)
+        self.assertTrue(err.strip().endswith(
+            "Never search for these scripts: their paths come at session and agent start."), err)
+        self.assertNotIn("come here", err)
 
     def test_block_message_outside_a_repository(self):
         code, _, err = self.guard("Bash", cwd="/", command="find . -name x")
@@ -284,6 +318,27 @@ class HookTest(unittest.TestCase):
             self.assertEqual((code, out, err), (0, "", ""), cmd)
         code, _, _ = self.run_sh(GUARD, self.data("Grep", cwd="/", pattern="x"), env, sh="/bin/sh")
         self.assertEqual(code, 0, "no Python: Glob and Grep fail open")
+        compact = json.dumps(json.loads(self.data("Bash", command="find / -name x")),
+                             separators=(",", ":"))
+        self.assertEqual(self.run_sh(GUARD, compact, env, sh="/bin/sh")[0], 2, "no spaces")
+        for tool, cmd in (("PowerShell", 'tasklist | find /i "py"'), ("PowerShell", "find /"),
+                          ("Bash", "echo find / x"), ("Bash", 'echo "find / -x"'),
+                          ("Bash", "grep -n 'find /' notes")):
+            for sep in ((", ", ": "), (",", ":")):
+                data = json.dumps(json.loads(self.data(tool, command=cmd)), separators=sep)
+                self.assertEqual(self.run_sh(GUARD, data, env, sh="/bin/sh"), (0, "", ""),
+                                 (tool, cmd))
+        for sep in ((", ", ": "), (",", ":")):
+            data = json.dumps({"session_id": "s", "cwd": "/x", "tool_name": "Bash",
+                               "tool_input": {"command": "rg foo src",
+                                              "description": "not a find / scan"}},
+                              separators=sep)
+            self.assertEqual(self.run_sh(GUARD, data, env, sh="/bin/sh"), (0, "", ""),
+                             "the description field is never matched")
+        for cmd in ("cd x && find / -name x", "echo $(find / -name x)", "a; find ~ -name x",
+                    "echo x |find / -name x"):
+            code, _, _ = self.run_sh(GUARD, self.data("Bash", command=cmd), env, sh="/bin/sh")
+            self.assertEqual(code, 2, cmd)
         env = self.nopy_env(())
         env["PATH"] = os.path.join(self.tmp, "empty")
         code, _, _ = self.run_sh(GUARD, self.data("Bash", command="find / -name x"), env,

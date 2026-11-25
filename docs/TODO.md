@@ -812,68 +812,80 @@ named; the rules block names the skill, not a path).
   find/grep/rg parsing, `plugin_command` and state it reuses). It refuses (exit 2, one line on
   stderr) a recursive scan of a filesystem root, a drive root or the home folder: `find`, `ls -R`,
   `du`, `tree`, `grep -r`, `rg`, `ag`, `ack`, `fd`; PowerShell `Get-ChildItem`/`gci`/`dir`/`ls`
-  with `-Recurse` (any case, any abbreviation, `-Depth`, `-Path`/`-LiteralPath`, named or
-  positional), `cmd /c dir /s`, `cmd /c tree`, `where /r`. Roots: `/`, `/c`, `/cygdrive/c`,
-  `/mnt/c` (any letter, any case), `C:`, `C:/`, `C:\`, `\`, `~`, `$HOME`, `${HOME}`,
-  `$env:USERPROFILE`, `$env:HOMEDRIVE\`, `%USERPROFILE%`, `/home`, `/Users`, `C:\Users` (also as
-  `/c/Users`), `/root`, the literal `HOME`/`USERPROFILE` path, and `<root>/*`. Commands are
-  tokenized (the nudge's shell tokenizer, a PowerShell one, a cmd one) and `bash -c`, `sh -c`,
-  `powershell -Command`, `pwsh -c` and `cmd /c` strings are scanned again, as are pipes, chains,
-  subshells, `$( )` and backticks (also inside double quotes); here-document bodies are text.
-  Relative paths count from the cwd, which follows `cd`/`Set-Location`, so `find .` in a root
-  cwd, `cd / && find .` and `find ../..` up to `/home` are refused. Glob and Grep: a root `path`,
-  or none in a root cwd; Glob also a pattern that recurses (`**`) from a root (`/**/x`,
-  `C:/**/x`, `~/**/x`). An unparseable command (an unbalanced quote) only gets the `find <root>`
-  token check. It has no off switch and `"search_nudge": false` doesn't touch it (an off switch,
-  proposed, not built: an environment variable such as `MANAGER_PLUGIN_SCAN_GUARD=0` in the
-  settings' `env` block).
-- **The message** names why (hours, memory), the absolute code-map `query` command (with
-  `--root "<repo>"`), the absolute `skilltrain.py query "<repo>" -- <term>`, a search limited to
-  the repository (`rg <term> "<repo>"`, `find "<repo>" -name <x>`, `timeout 120` in front of a long
-  one), and that the scripts never need to be searched for. Without Python, the sh script itself
-  refuses only a `find [-H|-L|-P]... [--] <root>` (a match on the raw hook input) with a message
-  naming the repository-limited search only; otherwise it fails open. Python starts only when the
-  input names Glob, Grep or a scan word.
+  with `-Recurse` (any case, any abbreviation, `-Depth` above 1, `-Path`/`-LiteralPath`, named or
+  positional; `-Depth 0|1` is a listing, as find's `-maxdepth 0|1`), `cmd /c dir /s`, `cmd /c
+  tree`, `where /r`. Roots: `/`, `/c`, `/cygdrive/c`, `/mnt/c` (any letter, any case; in a POSIX
+  shell only: in PowerShell and cmd, `/c` is a folder or a switch), `C:`, `C:/`, `C:\`, `\`, `~`,
+  `$HOME`, `${HOME}`, `$env:USERPROFILE`, `$env:HOMEDRIVE\`, `%USERPROFILE%`, `/home`, `/Users`,
+  `C:\Users` (also as `/c/Users`), `/root`, the literal `HOME`/`USERPROFILE` path (unless it is
+  itself a repository's top, e.g. a container with `HOME=/app` holding the repository), and
+  `<root>/*`. In PowerShell and cmd, `find` is find.exe and `tree` tree.com: their `/x` switches
+  are dropped before the path check (`tree /f`, `tasklist | find /i "python"`, `find /c "x"
+  file.txt` pass). Commands are tokenized (the nudge's shell tokenizer, a PowerShell one, a cmd
+  one) and `bash -c`, `sh -c`, `powershell -Command`, `pwsh -c` and `cmd /c` strings are scanned
+  again, as are pipes, chains, subshells, `$( )` and backticks (also inside double quotes);
+  here-document bodies are text. Relative paths count from the cwd, which follows
+  `cd`/`Set-Location`, so `find .` in a root cwd, `cd / && find .` and `find ../..` up to `/home`
+  are refused. Glob and Grep: a root `path`, or none in a root cwd; Glob also a pattern that
+  recurses (`**`) from a root (`/**/x`, `C:/**/x`, `~/**/x`). An unparseable command (an unbalanced
+  quote) only gets the `find <root>` token check. It has no off switch and `"search_nudge": false`
+  doesn't touch it (an off switch, proposed, not built: an environment variable such as
+  `MANAGER_PLUGIN_SCAN_GUARD=0` in the settings' `env` block).
+- **The message** names why (hours, memory), the absolute code-map `query` command (with `--root
+  "<repo>"`), the absolute `skilltrain.py query "<repo>" -- <term>`, a search limited to the
+  repository (`rg <term> "<repo>"`, `find "<repo>" -name <x>`, `timeout 120` in front of a long
+  one), and that the scripts never need to be searched for (when the plugin folder can't be
+  resolved, the skills are named instead and the paths are said to come at session and agent
+  start). Without Python, the sh script itself refuses only a `find [-H|-L|-P]... [--] <root>` at
+  the start of a command (or after `;`, `&`, `|`, `(`, a backtick or a newline), in a Bash call's
+  `command` value taken from the raw input (PowerShell calls and other fields such as `description`
+  are never matched), with a message naming the repository-limited search only; otherwise it fails
+  open. Python starts only when the input names Glob, Grep or a scan word.
 - **The map-first nudge** imports the guard's predicate (`scan_guard.refused`) and leaves a refused
   command alone, so it doesn't use up the nudge's once-per-session block (the hooks of one event
   run in parallel). `search_nudge.find_paths` now skips a `--` (`find -H -- /`).
 - **Timeout hint.** For an allowed recursive scan in Bash (`find`, `grep -r`, `rg`, `ls -R`, `du`,
-  `tree`) not under `timeout`, a `PreToolUse` `additionalContext` with no permission decision,
-  once per session (each subagent its own; the nudge's marker folder, its own key): "long
-  recursive scans: prefix `timeout 120`". Nothing is wrapped or rewritten; none for PowerShell.
-  [not verified] that `timeout` exists in every Git Bash.
+  `tree`) not under `timeout`, a `PreToolUse` `additionalContext` with no permission decision, once
+  per session (each subagent its own; the nudge's marker folder, its own key): "long recursive
+  scans: prefix `timeout 120`". Nothing is wrapped or rewritten; none for PowerShell. [not
+  verified] that `timeout` exists in every Git Bash.
 - **Script paths at start.** `hooks/agent-paths.sh` (logic: `scan_guard.py start`) on
   `SubagentStart` (every agent type) and `SessionStart` (`startup|resume|clear|compact`): in a
-  repository (`.git`, else `.codemap.json`, walking up) with a `.codemap.json`, a
-  `<!-- manager-plugin:code-map` or `<!-- manager-plugin:self-training-skills` marker in
+  repository (`.git`, else `.codemap.json`, walking up) with a `.codemap.json`, a `<!--
+  manager-plugin:code-map` or `<!-- manager-plugin:self-training-skills` marker in
   `AGENTS.md`/`CLAUDE.md`, or a marked self-training skill, one `additionalContext` line with the
   absolute `codemap.py query` and `skilltrain.py query` commands and "never search the disk for
   these"; elsewhere nothing. A new script rather than the rules-version one: that one is bound to
   `startup|resume|clear`, `compact` belongs to the manager-run script, and SubagentStart needs JSON
   output. The line carries paths only, no instruction about the work, so the reviewer's
   independence is untouched.
-- **Agents and briefs.** `worker.md`, `researcher.md`, `fallback.md`: the absolute commands come
-  in the start context and in hook messages; never search the disk for plugin scripts.
+- **Agents and briefs.** `worker.md`, `researcher.md`, `fallback.md`: the absolute commands come in
+  the start context and in hook messages; never search the disk for plugin scripts.
   `brief-skill-records.md`: `skilltrain.py` is the `Code map` command with
   `code-map/scripts/codemap.py` replaced by `self-training-skills/scripts/skilltrain.py` (`Code
   map: none`: the start context's). The implementer and reviewer briefs are unchanged (1,326 and
   1,347 words). The commit check and the nudge already printed absolute commands (checked). The
-  `AGENTS.md`/`CLAUDE.md` rules block is unchanged and names no path (a plugin path is machine-
-  and version-specific and would leak a user path into the repository): no template version bump.
+  `AGENTS.md`/`CLAUDE.md` rules block is unchanged and names no path (a plugin path is machine- and
+  version-specific and would leak a user path into the repository): no template version bump.
 - **Ceilings.** Manager SKILL.md 17,986 and code-map SKILL.md 19,999: unchanged (no edit).
-- **Not verified.** [not measured] Live behaviour on Windows, Git Bash and the PowerShell tool:
-  the guard and its tests ran on Linux with synthetic hook input only, so whether a live
-  PowerShell call arrives as tested, and whether `SubagentStart`'s line reaches a subagent as the
+- **Not verified.** [not measured] Live behaviour on Windows, Git Bash and the PowerShell tool: the
+  guard and its tests ran on Linux with synthetic hook input only, so whether a live PowerShell
+  call arrives as tested, and whether `SubagentStart`'s line reaches a subagent as the
   documentation says, is unobserved. No eval was run.
-- **Known limits, not fixed.** Paths built at run time (`find $ROOT`, `find "$(pwd)"`), a `cd`
-  to a variable (the cwd is then unknown), `eval`, script files (`bash scan.sh`), `xargs find`,
-  `-EncodedCommand`, `Invoke-Expression`, `Start-Process` and scans in other languages
-  (`python -c "os.walk('/')"`) pass. Other top-level folders (`/usr`, `/opt`, `C:\Program
-  Files`, `/Volumes`) and other users' homes (`~bob`) are not roots. `locate` reads a database,
-  not the disk, and passes. A repository whose top is itself a root (a dotfiles repository in
-  `~`) gets its whole-repository scans refused. Glob with a root `path` is refused even for a
+- **Known limits, not fixed.** Paths built at run time (`find $ROOT`, `find "$(pwd)"`), a `cd` to a
+  variable (the cwd is then unknown), `eval`, script files (`bash scan.sh`), `-EncodedCommand`,
+  `Invoke-Expression`, `Start-Process` and scans in other languages (`python -c "os.walk('/')"`)
+  pass. Other top-level folders (`/usr`, `/opt`, `C:\Program Files`, `/Volumes`) and other users'
+  homes (`~bob`) are not roots. `locate` reads a database, not the disk, and passes. A home folder
+  that is a repository's top passes under its literal path, but `~` and `$HOME` stay roots, so a
+  dotfiles repository in `~` scanned as `find ~` is refused; a repository at `/`, `/home` or a
+  drive root gets its whole-repository scans refused. Glob with a root `path` is refused even for a
   one-level pattern; `du -d 0 /` is refused (it still walks the tree). PowerShell's `-r` is taken
-  as `-Recurse`. The no-Python fallback is a text match: it misses `find . /` and every wrapper,
-  and refuses `echo "find / -x"`. Here-document detection is approximate.
-- **Orphaned processes.** A scan that outlives its parent agent is a Claude Code process issue
-  (the child is not ended with its agent); the plugin can only keep such scans from starting.
+  as `-Recurse`. In PowerShell and cmd, `rg foo /c` is not refused (`/c` is no root there), and a
+  find.exe-style `/x` argument to `find` or `tree` is taken for a switch. The no-Python fallback is
+  a text match on the command value: it misses `find . /`, `sudo find /` and every wrapper (a `find
+  /` after a `;` inside a quoted `bash -c` string is caught, one at its start is not), and it also
+  matches inside a quoted string such as `echo "a; find / x"`. Here-document detection is
+  approximate.
+- **Orphaned processes.** A scan that outlives its parent agent is a Claude Code process issue (the
+  child is not ended with its agent); the plugin can only keep such scans from starting.

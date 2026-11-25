@@ -36,16 +36,19 @@ if [ -f "$script" ]; then
     esac
   done
 fi
-# No Python: refuse only `find [-H|-L|-P]... [--] <root>` in the raw JSON input (a JSON string
-# escapes a backslash as \\ and a quote as \").
-case "$input" in
-  *'"command"'*) ;;
-  *) exit 0 ;;
-esac
-pre='(^|[^A-Za-z0-9_.-]|\\[nt])find( +-[HLP])*( +--)? +(\\"|'"'"')?'
+# No Python: refuse only `find [-H|-L|-P]... [--] <root>` at the start of a command (or after
+# ; & | ( ` or a newline) in a Bash call's "command" value, taken from the raw JSON input (a JSON
+# string escapes a backslash as \\ and a quote as \"); a PowerShell call or any other field is
+# never matched.
+printf '%s' "$input" | grep -Eq '"tool_name"[[:space:]]*:[[:space:]]*"Bash"' || exit 0
+cmd=$(printf '%s' "$input" |
+  grep -Eo '"command"[[:space:]]*:[[:space:]]*"([^"\\]|\\.)*"' 2>/dev/null) || exit 0
+cmd=${cmd#\"command\"}
+[ -n "$cmd" ] || exit 0
+pre='(^[[:space:]]*:[[:space:]]*"|[;&|(`]|\\n)[[:space:]]*find( +-[HLP])*( +--)? +(\\"|'"'"')?'
 root_re='(/|/[A-Za-z]|/cygdrive/[A-Za-z]|/mnt/[A-Za-z]|[A-Za-z]:|~|\$HOME|\$\{HOME\}|/home|/Users|/root|[A-Za-z]:(/|(\\\\)+)Users)'
 post='(/|(\\\\)+)?(\\"|'"'"')?([ ;|&)"]|$)'
-printf '%s' "$input" | grep -Eq "$pre$root_re$post" || exit 0
+printf '%s' "$cmd" | grep -Eq "$pre$root_re$post" || exit 0
 printf '%s %s %s\n' \
   'manager-plugin: scan refused: a find over a filesystem root, drive root or home folder can run' \
   'for hours and exhaust memory; search only the repository instead: `rg <term> <repo path>` or' \

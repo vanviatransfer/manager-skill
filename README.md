@@ -307,8 +307,10 @@ millions of handles after its agent was gone). The line names the absolute code-
 passes, the repository's, the scratchpad's and the plugin folder's included. It has no off
 switch; `"search_nudge": false` doesn't touch it. A refused command doesn't use up the map-first
 nudge's block. For an allowed recursive scan in Bash that isn't under `timeout`, it adds once per
-session a non-blocking note: prefix `timeout 120`. Without Python it refuses only a `find` whose
-first path is exactly a root, and otherwise fails open.
+session a non-blocking note: prefix `timeout 120`. In PowerShell and cmd, `find` (find.exe) and
+`tree` (tree.com) switches such as `/i` or `/f` and the Git Bash spellings `/c`, `/mnt/c` are no
+roots. Without Python it refuses only a Bash command that starts with a `find` whose first path is
+exactly a root, and otherwise fails open.
 
 **Script paths at start** (`SessionStart` on startup, resume, clear and compact, and
 `SubagentStart` for every agent type; `hooks/agent-paths.sh`). In a repository with a
@@ -496,10 +498,10 @@ rules and secret-file patterns follow ideas from
 
 Tests for the code-map script:
 `python3 -m unittest discover -s plugins/manager-plugin/skills/code-map/scripts`.
-Tests for the plugin hooks (subagent spawns, code-map commit check, map-first nudge, scan guard
-and start paths, rules-block version hint, the manager-run compaction and context hooks), for the size ceilings of the manager
-skill, both briefs and the code-map skill, and for the shell commands the manager skill, its
-references and its briefs give:
+Tests for the plugin hooks (subagent spawns, code-map commit check, map-first nudge, scan guard and
+start paths, rules-block version hint, the manager-run compaction and context hooks), for the size
+ceilings of the manager skill, both briefs and the code-map skill, and for the shell commands the
+manager skill, its references and its briefs give:
 `python3 -m unittest discover -s plugins/manager-plugin/hooks`.
 Tests for the self-training-skills script:
 `python3 -m unittest discover -s plugins/manager-plugin/skills/self-training-skills/scripts`.
