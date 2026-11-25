@@ -1,24 +1,28 @@
 #!/bin/sh
 # manager-plugin PreToolUse hook for Bash, PowerShell, Glob and Grep: refuses a recursive scan of
 # a filesystem root, a drive root or the home folder (`find /`, `ls -R C:\`, `rg x ~`,
-# `Get-ChildItem C:\ -Recurse`, `cmd /c dir /s C:\`, also wrapped in `bash -c`, `powershell
-# -Command`, chains and substitutions; with no path when the cwd is such a root; Glob or Grep
-# there): exit 2, one `manager-plugin:` line on stderr naming the runnable code-map and
-# skilltrain commands and a search limited to the repository. Such a scan can run for hours and
-# exhaust memory. PreToolUse fires inside subagents too. It has no off switch (`"search_nudge":
-# false` turns off the nudge, not this). For an allowed recursive scan in Bash not under
-# `timeout` it prints, once per session, a non-blocking hint to prefix `timeout 120`.
-# Plain POSIX sh; the logic is scan_guard.py beside the code-map script, run only when the input
-# names Glob, Grep or a scan command. It finds Python as the code-map skill does (python3,
-# python, py -3) and passes it and the plugin folder, as the search nudge's wrapper does. Without
-# Python, a small fallback: refuse a `find` whose first path is exactly a root spelling, with a
-# message naming the repository-limited search only. Any other error: exit 0 (fail open).
+# `Get-ChildItem C:\ -Recurse`, `cmd /c dir /s C:\`, also wrapped in `bash -c`, `eval`,
+# `powershell -Command` or `-EncodedCommand`, chains and substitutions; with no path when the cwd
+# is such a root; Glob or Grep there): exit 2, one `manager-plugin:` line on stderr naming the
+# runnable code-map and skilltrain commands and a search limited to the repository. Such a scan
+# can run for hours and exhaust memory. PreToolUse fires inside subagents too. It has no off
+# switch (`"search_nudge": false` turns off the nudge, not this). For an allowed recursive scan in
+# Bash not under `timeout` it prints, once per session, a non-blocking hint to prefix
+# `timeout 120`. Plain POSIX sh; the logic is scan_guard.py beside the code-map script, run only
+# when the input names Glob, Grep, a scan command or a PowerShell -EncodedCommand. It finds Python
+# as the code-map skill does (python3, python, py -3) and passes it and the plugin folder, as the
+# search nudge's wrapper does. Without Python, a small fallback: refuse a `find` whose first path
+# is exactly a root spelling, with a message naming the repository-limited search only. Any other
+# error: exit 0 (fail open).
 
 input=$(cat) || exit 0
 command -v grep >/dev/null 2>&1 || exit 0
-words='(find|ls|du|tree|e?grep|fgrep|rg|ag|ack|fd|fdfind|where|get-childitem|gci|dir)'
+words='(find|ls|du|tree|e?grep|fgrep|rg|ag|ack|fd|fdfind|where|get-childitem|gci|dir|forfiles)'
+# Also a PowerShell -EncodedCommand (-e, -ec, -enc...): its base64 script names no scan word.
+enc='[[:space:]]-e[a-z]*[[:space:]]+[\\"'"'"']*[A-Za-z0-9+/]{16}'
 printf '%s' "$input" |
-  grep -Eiq '"(Grep|Glob)"|(^|[^A-Za-z0-9_.-]|\\[nt])'"$words"'([^A-Za-z0-9_-]|$)' || exit 0
+  grep -Eiq '"(Grep|Glob)"|(^|[^A-Za-z0-9_.-]|\\[nt])'"$words"'([^A-Za-z0-9_-]|$)|'"$enc" ||
+  exit 0
 # This script's folder: $0 up to its last / or \ (Git Bash on Windows may pass C:\...\x.sh).
 here=${0%[/\\]*}
 script="$here/../skills/code-map/scripts/scan_guard.py"

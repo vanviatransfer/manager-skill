@@ -993,3 +993,71 @@ shipped behaviour, so plugin.json stays 0.9.7.
   for agent-paths). A wrapper that splits `$0` at the platform's wrong separator fails it
   (checked on Linux with `here=${0%\\*}`: 3 of 3 fail). [not verified on Windows] that it
   passes there and fails with `here=${0%/*}`.
+
+### 21. Scan guard adversarial corpus (plugin 0.9.8)
+
+The scan guard's tests were hand-picked tables. A data-only corpus now measures both failure
+kinds: a leak (a root scan that passes) and a false block (normal work refused).
+
+- **Corpus.** `hooks/scan_guard_corpus.json`: 300 entries (171 block, 129 pass; Bash 219,
+  PowerShell 48, Glob 20, Grep 13), one entry per line: `cat`, `tool`, `input` (the tool input),
+  optional `cwd` (default per tool in the file's header, as is the `HOME` it assumes), `expect`
+  (`block`|`pass`), `note`, optional `known_gap` (why it is not fixed). JSON rather than TSV:
+  stdlib, typed, and commands carry tabs, newlines (here-documents) and quotes that a TSV would
+  have to escape. Categories: incident (including the `cd <repo> && sed ...; find / -maxdepth 6
+  -name codemap.py ...` command that ran for hours on Windows), root-spelling, scanner, wrapper,
+  composition, quoting, cwd-root, glob-grep, powershell, bait (repository, scratchpad and plugin
+  folder scans; listings; text, commit messages, here-document bodies, URLs), gap.
+- **Test.** `hooks/test_scan_guard_corpus.py` runs every entry through `scan_guard.refused`, prints
+  per category the entries, leaks, false blocks and known gaps (stderr), and fails on any
+  mismatch not marked `known_gap`; a `known_gap` entry that no longer mismatches fails too, so
+  its mark is dropped. Every 5th entry, plus the incident entries and every `-EncodedCommand` and
+  `forfiles` one, also runs through the real `sh hooks/scan-guard.sh`, whose exit code must match
+  the predicate (it checks the grep pre-filter and the Python lookup).
+- **Decisions.** `find -maxdepth 0|1` at a root passes (a listing, as before; GNU find applies
+  `-maxdepth` wherever it stands, so `find / -name x -maxdepth 1` passes too), consistent with
+  PowerShell `-Depth 0|1`; now also `rg -d|--max-depth 0|1`, `fd -d|--max-depth|--exact-depth
+  0|1` and `ag --depth 0|1`. `du` stays refused at any depth (`du -d 0 /` still walks the tree).
+  `-EncodedCommand` (any of `-e`, `-ec`, `-enc`...): decoded (base64 of UTF-16LE) and scanned as
+  PowerShell; undecodable: passes (fail open).
+- **Before and after** (leaks / false blocks; the 9 known gaps not counted):
+
+  | category | entries | before | after |
+  | --- | ---: | ---: | ---: |
+  | bait | 37 | 0 / 0 | 0 / 0 |
+  | composition | 23 | 2 / 0 | 0 / 0 |
+  | cwd-root | 30 | 0 / 0 | 0 / 0 |
+  | gap | 4 | 0 / 0 | 0 / 0 |
+  | glob-grep | 33 | 0 / 0 | 0 / 0 |
+  | incident | 3 | 0 / 0 | 0 / 0 |
+  | powershell | 46 | 8 / 1 | 0 / 0 |
+  | quoting | 20 | 0 / 0 | 0 / 0 |
+  | root-spelling | 29 | 2 / 0 | 0 / 0 |
+  | scanner | 43 | 3 / 3 | 0 / 0 |
+  | wrapper | 32 | 11 / 0 | 0 / 0 |
+  | total | 300 | 26 / 4 | 0 / 0 |
+
+- **Fixes** (scan_guard.py, local, same design): `eval` arguments scanned as Bash; a
+  here-document fed straight to a shell (`bash <<'EOF'`, `sh -s <<EOF`; no `-c`, no script file)
+  scanned as commands (other here-document bodies stay text); wrappers `time -p`, `command -p`
+  (`command -v|-V` is a lookup), `exec -a`, `ionice`, `busybox`; `powershell.exe`'s bare script
+  after its options (`powershell gci C:\ -Recurse`, value options such as `-ExecutionPolicy
+  Bypass` skipped; pwsh takes a bare word as a file); `-EncodedCommand`; `iex` and
+  `Invoke-Expression` strings scanned as PowerShell; a path above a root is a root (`~/..`,
+  `$HOME\..`); `gci C:\*.py -Recurse` (a wildcard leaf: its folder); cmd `dir/s` glued, `dir /s
+  C:\codemap.py` and `dir /s C:\*.py` (a file name or wildcard leaf: its folder); `forfiles /s`
+  (its `/p`, else the cwd) from Bash, cmd and PowerShell; `-Recurse:$false` is no recursion;
+  the rg/fd/ag depth rule above. scan-guard.sh: `forfiles` joins the pre-filter's words, and an
+  `-e...` option followed by 16 base64 characters starts Python too (an encoded script names no
+  scan word). search_nudge.py: untouched.
+- **Known gaps** (in the corpus as `known_gap`, reported, not failed): text piped into a shell
+  (`echo "find / -name x" | bash`); paths from stdin (`echo / | xargs find`); paths built at run
+  time (`F=/; find $F`, `find $(echo /)`); scans in other languages (`python3 -c
+  "os.walk('/')"`); `robocopy C:\ NUL /L /S`; `Start-Process cmd -ArgumentList '/c dir /s C:\'`;
+  .NET enumeration (`[IO.Directory]::EnumerateFiles('C:\', '*', 'AllDirectories')`); and one
+  false block: Glob with a root `path` and a one-level pattern (`*` in `/`). Each would need the
+  guard to evaluate or interpret more than one command's words. Also not in the corpus: a
+  here-string to a shell (`bash <<< 'find /'`).
+- **Version.** plugin.json 0.9.8 (the guard refuses more). README: the hook description names
+  `eval`, `-EncodedCommand`, `iex`, `forfiles /s` and the depth rule. Ceilings unchanged (no
+  SKILL.md edit). [not verified on Windows] the new paths; synthetic hook input on Linux only.

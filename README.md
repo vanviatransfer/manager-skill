@@ -299,11 +299,13 @@ nothing. It writes nothing and fails open too.
 `skills/code-map/scripts/scan_guard.py`). It refuses (exit 2, one line) a command that
 recursively scans a filesystem root, a drive root or the home folder: `find`, `ls -R`, `du`,
 `tree`, `grep -r`, `rg`, `ag`, `ack`, `fd`, PowerShell's `Get-ChildItem`/`gci`/`dir`/`ls -Recurse`,
-`cmd /c dir /s` and `where /r` on `/`, `/c`, `/cygdrive/c`, `/mnt/c`, `C:\`, `~`, `$HOME`,
-`$env:USERPROFILE`, `/home`, `/Users`, `C:\Users` or `/root` (any drive letter, any case), also
-inside `bash -c`, `powershell -Command`, `cmd /c`, pipes, chains, subshells, `$( )` and backticks;
-a scan with no path (or `.`) when the cwd is such a root; Glob or Grep there, or a Glob pattern
-such as `/**/x`. Such a scan can run for hours and exhaust memory (on Windows it twice held
+`cmd /c dir /s`, `forfiles /s` and `where /r` on `/`, `/c`, `/cygdrive/c`, `/mnt/c`, `C:\`, `~`,
+`$HOME`, `$env:USERPROFILE`, `/home`, `/Users`, `C:\Users` or `/root` (any drive letter, any
+case; a path above one, such as `~/..`, too), also inside `bash -c`, `eval`, a here-document fed
+to a shell, `powershell -Command`, a decoded `-EncodedCommand`, `iex`, `cmd /c`, pipes, chains,
+subshells, `$( )` and backticks; a scan with no path (or `.`) when the cwd is such a root; Glob
+or Grep there, or a Glob pattern such as `/**/x`. A depth of 0 or 1 (`find -maxdepth`, `rg` and
+`fd --max-depth`, `-Depth`, `tree -L`) is a listing and passes. Such a scan can run for hours and exhaust memory (on Windows it twice held
 millions of handles after its agent was gone). The line names the absolute code-map `query` and
 `skilltrain.py query` commands and a search limited to the repository. Every other search
 passes, the repository's, the scratchpad's and the plugin folder's included. It has no off
