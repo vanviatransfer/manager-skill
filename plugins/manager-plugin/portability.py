@@ -38,12 +38,20 @@ def symlink(test, source, link, **kw):
         test.skipTest("symlinks not permitted here: %s" % exc)
 
 
+_REMOVERS = (os.unlink, os.remove, os.rmdir)
+
+
 def _clear_read_only_and_retry(func, path, _exc):
     """rmtree's error handler, on Windows only (elsewhere rmtree() is the plain call). A
     read-only file (git keeps its objects read-only, which Windows refuses to delete,
     WinError 5) is made writable and removed again, and a file another process still holds
     (WinError 32) gets a few short retries; one that still cannot go is left behind in the
-    temporary folder. A symlink is never chmod-ed (chmod would follow it to its target)."""
+    temporary folder. A symlink is never chmod-ed (chmod would follow it to its target). Only a
+    removing call (unlink, rmdir, remove) is retried; any other that failed (os.scandir, lstat,
+    open) is never called again (a repeated os.scandir would leak a directory handle), and what
+    it covers is left behind the same way."""
+    if func not in _REMOVERS:
+        return
     for attempt in range(5):
         if not os.path.islink(path):
             try:

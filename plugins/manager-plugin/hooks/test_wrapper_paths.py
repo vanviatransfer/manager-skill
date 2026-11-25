@@ -115,6 +115,68 @@ class SnippetTest(unittest.TestCase):
                                      (name, zero))
 
 
+class RealPathTest(unittest.TestCase):
+    """The three wrappers that run scan_guard.py and search_nudge.py, started from where they
+    stand as `sh <os.path.join(HERE, name)>` with CLAUDE_PLUGIN_ROOT unset, as the tests and Git
+    Bash on Windows start them (there `$0` is `C:\\...\\hooks\\<name>.sh`, which `${0%/*}` leaves
+    whole). Each must run its Python check and name the plugin's own scripts. Not skipped
+    anywhere: on Windows it covers the backslash `$0`, elsewhere the POSIX one."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(portability.rmtree, self.tmp)
+        self.root = os.path.join(self.tmp, "repo")
+        os.makedirs(os.path.join(self.root, ".git"))
+        os.makedirs(os.path.join(self.root, "src"))
+        with open(os.path.join(self.root, ".codemap.json"), "w", encoding="utf-8") as fh:
+            fh.write('{"map": "map.md"}\n')
+        with open(os.path.join(self.root, "src", "a.py"), "w", encoding="utf-8") as fh:
+            fh.write("x = 1\n")
+        state = os.path.join(self.tmp, "state")
+        os.mkdir(state)
+        self.env = dict(os.environ, TMPDIR=state, TEMP=state, TMP=state,
+                        PYTHONDONTWRITEBYTECODE="1")
+        self.env.pop("CLAUDE_PLUGIN_ROOT", None)
+
+    def run_hook(self, name, data, *args):
+        p = subprocess.run(["sh", os.path.join(HERE, name)] + list(args),
+                           input=json.dumps(data).encode(), capture_output=True, env=self.env)
+        return p.returncode, p.stdout.decode(), p.stderr.decode()
+
+    def tool(self, name, **tool_input):
+        return {"session_id": "s1", "transcript_path": "/t/s1.jsonl", "cwd": self.root,
+                "hook_event_name": "PreToolUse", "tool_name": name, "tool_input": tool_input}
+
+    def script(self, skill, name):
+        """The plugin script's path as the hooks print it (`/` on Windows)."""
+        return portability.slashed(os.path.join(PLUGIN, "skills", skill, "scripts", name))
+
+    def test_scan_guard_runs_its_python_check(self):
+        code, _, err = self.run_hook("scan-guard.sh", self.tool("Bash", command="find / -name x"))
+        self.assertEqual(code, 2, err)
+        self.assertIn("manager-plugin: scan refused (`find` over `/`)", err)  # scan_guard.py's
+        self.assertNotIn("a find over a filesystem root", err)  # not the no-Python fallback
+        self.assertIn('"%s"' % self.script("code-map", "codemap.py"), err)
+        code, _, err = self.run_hook("scan-guard.sh", self.tool("Grep", pattern="x", path="/"))
+        self.assertEqual(code, 2, "Glob and Grep: only scan_guard.py refuses them")
+
+    def test_search_nudge_runs_its_python_check(self):
+        code, _, err = self.run_hook("codemap-search-nudge.sh", self.tool("Grep", pattern="foo"))
+        self.assertEqual(code, 2, err)
+        self.assertIn("manager-plugin: map first:", err)
+        self.assertIn('"%s"' % self.script("code-map", "codemap.py"), err)
+
+    def test_agent_paths_prints_the_start_line(self):
+        data = {"session_id": "s", "cwd": self.root, "hook_event_name": "SubagentStart",
+                "agent_id": "a1", "agent_type": "manager-plugin:worker"}
+        code, out, err = self.run_hook("agent-paths.sh", data, "SubagentStart")
+        self.assertEqual((code, err), (0, ""))
+        self.assertTrue(out.strip(), "agent-paths.sh printed nothing")
+        context = json.loads(out)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn('"%s"' % self.script("code-map", "codemap.py"), context)
+        self.assertIn('"%s"' % self.script("self-training-skills", "skilltrain.py"), context)
+
+
 @unittest.skipIf(portability.WINDOWS, "a file name with \\ in it: POSIX only")
 class BackslashZeroTest(unittest.TestCase):
     """The three wrappers that run scan_guard.py and search_nudge.py, started as
