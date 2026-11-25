@@ -959,3 +959,33 @@ hook gets valid JSON. No guard logic changed.
   `src/tmpin`, and Bash commands built from `\` paths. Those are fixed above.
 - **Not verified on Windows.** [not verified on Windows] that the hooks suite now passes there,
   after those fixes (run on Linux only), and that MSYS sets `HOME` when it is unset.
+
+### 20. Restart after an update, test hardening (follow-up to 0.9.7; no version bump)
+
+A new entry rather than more lines in 19: 19 records what 0.9.7 shipped, and this changes no
+shipped behaviour, so plugin.json stays 0.9.7.
+
+- **Incident.** A long-running session that had started before the plugin update kept the 0.9.5
+  hooks (no scan guard). Its reviewer subagent ran `find / -maxdepth 6 -name codemap.py`; the
+  process outlived the agent and held about 360k handles until it was killed. Hooks and agent
+  definitions load at session start, and an update doesn't reach a session already open
+  (`claude plugin update --help`: "restart required to apply").
+- **README** (Install): after an update, restart open sessions (`/exit`, then `claude --resume`
+  keeps the conversation); `/reload-plugins` is named as the docs' alternative, not tried with
+  these hooks. Remove a stale project- or local-scope install (`claude plugin uninstall
+  manager-plugin@vanvia-manager --scope project|local` from that project): the docs give
+  local over project over user for a plugin's setting; [not verified] that an old copy at a
+  higher scope keeps loading after the user-scope one is updated.
+- **.gitattributes:** `.gitignore` and `.gitattributes` are `text eol=lf` too (a Windows
+  checkout had `evals/.gitignore` CRLF). Renormalizing changed nothing.
+- **portability.rmtree** (Windows handler only): a retry calls the failing function again only
+  when it is `os.unlink`, `os.remove` or `os.rmdir`; a failed `os.scandir` (or `lstat`, `open`)
+  is never called again, which leaked a directory handle each time. Off Windows: plain
+  `shutil.rmtree`, unchanged.
+- **Test.** `hooks/test_wrapper_paths.py` `RealPathTest`, skipped nowhere: scan-guard.sh,
+  codemap-search-nudge.sh and agent-paths.sh run as `sh os.path.join(HERE, name)` with
+  `CLAUDE_PLUGIN_ROOT` unset; each must give its Python script's output (not the fallback, not
+  empty) naming `portability.slashed()` of the plugin's own `codemap.py` (and `skilltrain.py`
+  for agent-paths). A wrapper that splits `$0` at the platform's wrong separator fails it
+  (checked on Linux with `here=${0%\\*}`: 3 of 3 fail). [not verified on Windows] that it
+  passes there and fails with `here=${0%/*}`.
