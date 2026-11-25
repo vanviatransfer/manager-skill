@@ -27,7 +27,9 @@ input=$(cat) || exit 0
 runs="$HOME/.claude/manager-runs/active"
 set -- "$runs"/*
 [ -e "$1" ] || exit 0
-script="${0%/*}/../skills/manager/scripts/context_watch.py"
+# This script's folder: $0 up to its last / or \ (Git Bash on Windows may pass C:\...\x.sh).
+here=${0%[/\\]*}
+script="$here/../skills/manager/scripts/context_watch.py"
 [ -f "$script" ] || exit 0
 for c in python3 python "py -3"; do
   out=$(printf '%s' "$input" | PYTHONDONTWRITEBYTECODE=1 $c "$script" "$runs" 2>/dev/null) ||

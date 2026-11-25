@@ -15,6 +15,8 @@ from unittest import mock
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.dont_write_bytecode = True
 sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.join(HERE, "..", "..", ".."))  # portability.py, in the plugin folder
+import portability  # noqa: E402
 import usage  # noqa: E402
 
 SCRIPT = os.path.join(HERE, "usage.py")
@@ -108,7 +110,7 @@ def tree(root):
 class Fixture(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, self.tmp)
+        self.addCleanup(portability.rmtree, self.tmp)
         self.config = os.path.join(self.tmp, "config [1] folder")
         patch = mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": self.config})
         patch.start()
@@ -174,7 +176,8 @@ class Fixture(unittest.TestCase):
         folder = os.path.join(project, SESSION, "subagents")
         path = self.write(folder, "agent-%s.jsonl" % name, groups, junk)
         if kind:
-            with open(os.path.join(folder, "agent-%s.meta.json" % name), "w") as fh:
+            with open(os.path.join(folder, "agent-%s.meta.json" % name), "w",
+                      encoding="utf-8") as fh:
                 json.dump({"agentType": kind, "description": "words that are never printed"}, fh)
         return path
 

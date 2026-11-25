@@ -21,11 +21,13 @@ if command -v grep >/dev/null 2>&1; then
   printf '%s' "$input" |
     grep -Eq '"(Grep|Glob)"|(^|[^A-Za-z0-9_.-]|\\[nt])'"$words"'([^A-Za-z0-9_-]|$)' || exit 0
 fi
-script="${0%/*}/../skills/code-map/scripts/search_nudge.py"
+# This script's folder: $0 up to its last / or \ (Git Bash on Windows may pass C:\...\x.sh).
+here=${0%[/\\]*}
+script="$here/../skills/code-map/scripts/search_nudge.py"
 [ -f "$script" ] || exit 0
 root=${CLAUDE_PLUGIN_ROOT:-}
 case "$root:$0" in
-  :/*) root="${0%/*}/.." ;;
+  :/* | :[A-Za-z]:[/\\]* | :\\\\*) root="$here/.." ;;
 esac
 for c in python3 python "py -3"; do
   err=$(printf '%s' "$input" | CODEMAP_NUDGE_PYTHON="$c" CODEMAP_NUDGE_ROOT="$root" \

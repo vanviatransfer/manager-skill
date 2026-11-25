@@ -54,6 +54,8 @@ import tempfile
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(HERE))  # portability.py, in the plugin folder
+import portability  # noqa: E402
 PLUGIN = os.path.dirname(HERE)
 README = os.path.join(PLUGIN, "..", "..", "README.md")
 BACKENDS = os.path.join(PLUGIN, "skills", "manager", "references", "github-backends.md")
@@ -485,7 +487,7 @@ def run_scaffold(folder, work):
            "TMP": temp, "TEMP": temp, "TERM": "dumb", "GIT_CONFIG_NOSYSTEM": "1"}
     if "SYSTEMROOT" in os.environ:
         env["SYSTEMROOT"] = os.environ["SYSTEMROOT"]
-    done = subprocess.run(["bash", script], cwd=work, env=env, stdin=subprocess.DEVNULL,
+    done = subprocess.run([portability.bash(), script], cwd=work, env=env, stdin=subprocess.DEVNULL,
                           capture_output=True, timeout=120)
     return done.returncode, done.stderr.decode("utf-8", "replace")
 
@@ -860,7 +862,8 @@ class CasesTest(unittest.TestCase):
                               "add_issue_comment"}, tools)
 
 
-@unittest.skipUnless(shutil.which("bash") and shutil.which("git"), "needs bash and git")
+@unittest.skipUnless(portability.bash() and shutil.which("git"),
+                     "needs bash (Git Bash on Windows, not System32's WSL bash) and git")
 class ScaffoldTest(unittest.TestCase):
     """The scaffolded workspaces: built the same every time, and the ones the mocks and graders
     of their case describe."""
@@ -868,7 +871,7 @@ class ScaffoldTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmp = tempfile.mkdtemp()
-        cls.addClassCleanup(shutil.rmtree, cls.tmp)
+        cls.addClassCleanup(portability.rmtree, cls.tmp)
         cls.cases = {folder: load(folder) for folder in case_folders()
                      if load(folder).get("context", {}).get("scaffold_script")}
         cls.work = {folder: scaffold(folder, os.path.join(cls.tmp, str(number)))

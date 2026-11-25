@@ -14,7 +14,9 @@ case "$input" in
   *commit*) ;;
   *) exit 0 ;;
 esac
-script="${0%/*}/../skills/code-map/scripts/codemap.py"
+# This script's folder: $0 up to its last / or \ (Git Bash on Windows may pass C:\...\x.sh).
+here=${0%[/\\]*}
+script="$here/../skills/code-map/scripts/codemap.py"
 [ -f "$script" ] || exit 0
 for c in python3 python "py -3"; do
   err=$(printf '%s' "$input" | PYTHONDONTWRITEBYTECODE=1 $c "$script" claude-hook --python "$c" 2>&1 >/dev/null)

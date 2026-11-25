@@ -19,10 +19,12 @@ command -v grep >/dev/null 2>&1 || exit 0
 words='(find|ls|du|tree|e?grep|fgrep|rg|ag|ack|fd|fdfind|where|get-childitem|gci|dir)'
 printf '%s' "$input" |
   grep -Eiq '"(Grep|Glob)"|(^|[^A-Za-z0-9_.-]|\\[nt])'"$words"'([^A-Za-z0-9_-]|$)' || exit 0
-script="${0%/*}/../skills/code-map/scripts/scan_guard.py"
+# This script's folder: $0 up to its last / or \ (Git Bash on Windows may pass C:\...\x.sh).
+here=${0%[/\\]*}
+script="$here/../skills/code-map/scripts/scan_guard.py"
 root=${CLAUDE_PLUGIN_ROOT:-}
 case "$root:$0" in
-  :/*) root="${0%/*}/.." ;;
+  :/* | :[A-Za-z]:[/\\]* | :\\\\*) root="$here/.." ;;
 esac
 if [ -f "$script" ]; then
   for c in python3 python "py -3"; do

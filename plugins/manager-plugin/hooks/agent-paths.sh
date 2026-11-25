@@ -10,11 +10,13 @@
 # output) on any error.
 
 input=$(cat) || exit 0
-script="${0%/*}/../skills/code-map/scripts/scan_guard.py"
+# This script's folder: $0 up to its last / or \ (Git Bash on Windows may pass C:\...\x.sh).
+here=${0%[/\\]*}
+script="$here/../skills/code-map/scripts/scan_guard.py"
 [ -f "$script" ] || exit 0
 root=${CLAUDE_PLUGIN_ROOT:-}
 case "$root:$0" in
-  :/*) root="${0%/*}/.." ;;
+  :/* | :[A-Za-z]:[/\\]* | :\\\\*) root="$here/.." ;;
 esac
 for c in python3 python "py -3"; do
   out=$(printf '%s' "$input" | CODEMAP_NUDGE_PYTHON="$c" CODEMAP_NUDGE_ROOT="$root" \

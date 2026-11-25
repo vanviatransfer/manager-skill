@@ -889,3 +889,73 @@ named; the rules block names the skill, not a path).
   approximate.
 - **Orphaned processes.** A scan that outlives its parent agent is a Claude Code process issue (the
   child is not ended with its agent); the plugin can only keep such scans from starting.
+
+### 19. Hook wrappers and tests portable to Windows (plugin 0.9.7)
+
+Run on a Windows 11 machine (Git Bash, Python 3.13 as `py -3`; `python3` and `python` there are
+Microsoft Store stubs that exit 9009), the 0.9.6 unit tests failed in about 40 hook tests and in
+a set of others. The live guard itself was checked there and works [measured]: a Bash `find /`
+and a PowerShell `Get-ChildItem C:\ -Recurse` both exit 2 with scan_guard.py's message when the
+hook gets valid JSON. No guard logic changed.
+
+- **Wrappers.** The tests start a hook as `sh <os.path.join(...)>`, so `$0` is
+  `C:\...\hooks\scan-guard.sh`: `${0%/*}` stripped nothing, the script path beside it didn't
+  exist, and the wrappers fell to the no-Python fallback (scan-guard.sh) or printed nothing
+  (agent-paths.sh; the tests then got `None`). Every hook that finds its script from `$0`
+  (agent-paths, codemap-commit-check, codemap-rules-version, codemap-search-nudge,
+  manager-context-watch, scan-guard) now takes its folder as `here=${0%[/\\]*}` (up to the last
+  `/` or `\`), and the three that pass the plugin root (agent-paths, codemap-search-nudge,
+  scan-guard) take `$0` as absolute for `/*`, `[A-Za-z]:[/\\]*` and `\\*`, not only `/*` (a
+  drive-relative `C:x\...` is not). A `/` path
+  gives what it gave before (a test compares the two). prefer-plugin-agents.sh,
+  manager-run-compact.sh and retro.sh don't use `$0`: unchanged. `hooks/test_wrapper_paths.py`
+  runs each wrapper's own lines in sh with `C:\`, `c:/`, mixed, UNC and relative `$0` values
+  (from a script file with `$0` read as `$1`: through `sh -c` on Windows the command line's
+  parsing changed the backslashes of `[/\\]`), and
+  runs scan-guard, the search nudge and agent-paths for real through a `$0` whose separators are
+  backslashes (a file named `plugin\hooks\<name>.sh` beside a folder of that name, on Linux); with
+  the 0.9.6 wrappers those three fail.
+- **Line endings.** The repository had no `.gitattributes` and that machine has
+  `core.autocrlf=true`, so every `.sh` was checked out CRLF (sh still ran them). Now `*.sh`,
+  `*.py`, `*.md`, `*.json` and `*.yaml` are `text eol=lf` (`.md`: `test_plan.py` reads
+  `docs/LIVING_PLAN.md` byte for byte; the skills' size ceilings count characters). Every file was
+  LF in the index already: renormalizing changed nothing.
+- **Tests.** A shared, stdlib-only `plugins/manager-plugin/portability.py` (imported by the tests
+  only; on POSIX each helper is the plain call):
+  - the Python a hook names in its message is the first of `python3`, `python`, `py -3` that runs
+    under sh, as the wrappers pick it (`hook_python()`), not a literal `python3`; the tests that
+    run `codemap.py` themselves use `sys.executable`. This also explains the `git update-index`
+    `CalledProcessError`: the commit-check test built its map with `python3`, the Store stub, so
+    the map page was never in the index for `update-index` to mark;
+  - every text `open()` in the tests reads and writes UTF-8 (the code-map `read` helper decoded
+    with cp1252 there);
+  - `symlink()` skips the test on Windows when creating a symlink needs a privilege (WinError
+    1314); elsewhere an error still fails it;
+  - `rmtree()` is the plain call off Windows; on Windows it clears read-only (git's read-only
+    objects, WinError 5; never through a symlink) and retries, retries a held file a few times
+    and then leaves it (WinError 32); `temp_dir()` is a `TemporaryDirectory` that ignores cleanup
+    errors on Windows;
+  - `slashed()`: on Windows the hooks print paths with `/` (search_nudge.quote_path and codemap's
+    rules hint, on purpose: Git Bash and PowerShell both take them), so the expected messages use
+    that form there; and a test that puts a path into a Bash command uses it too (Bash reads an
+    unquoted `C:\Users\x` as `C:Usersx`, so those commands named no such path);
+  - skipped on Windows, each with its reason: the two `"a".py` tests and the `notes/m*.md` map
+    page test (no such file names there), the long-path batching test when its paths pass
+    MAX_PATH from the temporary folder, the 0o777 shared-state-folder case of the nudge (no mode
+    bits), the `0o750` mode check after `uninstall-hook` (the reported `438 != 488`: 0o666 against
+    0o750, a mode, not a byte count), and the retro switch's no-`HOME` case (Git Bash's sh sets
+    `HOME` when it is unset);
+  - evals: the scaffold scripts run with Git Bash (`bash.exe` beside `sh`, else under the Git
+    install, else a `bash` on PATH outside System32), never System32's `bash.exe`, which starts
+    WSL; without one the scaffold tests skip with that reason.
+- **Version.** plugin.json 0.9.7 (marketplace.json carries none). README: the hooks find their
+  scripts from a `C:\...` path; how to run the tests on Windows.
+- **Ceilings.** Manager SKILL.md 17,986, code-map SKILL.md 19,999, implementer brief 1,327 words,
+  reviewer brief 1,347: unchanged (no edit).
+- **Measured on Windows** (the first version of this change): code-map, self-training-skills,
+  manager, living-plan and evals passed; hooks failed 28 of 153. The hooks then resolved their
+  scripts and named `py -3` (so the wrapper fix and `hook_python()` held there); the failures were
+  the `/` message paths, `sh -c` mangling the snippet test's backslashes, a hard-coded
+  `src/tmpin`, and Bash commands built from `\` paths. Those are fixed above.
+- **Not verified on Windows.** [not verified on Windows] that the hooks suite now passes there,
+  after those fixes (run on Linux only), and that MSYS sets `HOME` when it is unset.

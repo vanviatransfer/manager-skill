@@ -12,6 +12,8 @@ import tempfile
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(HERE))  # portability.py, in the plugin folder
+import portability  # noqa: E402
 HOOK = os.path.join(HERE, "prefer-plugin-agents.sh")
 COMMIT_HOOK = os.path.join(HERE, "codemap-commit-check.sh")
 RULES_HOOK = os.path.join(HERE, "codemap-rules-version.sh")
@@ -65,7 +67,7 @@ class HookTest(unittest.TestCase):
             self.assertEqual(run(spawn(subagent_type=t, prompt="x"))[0], 2, t)
 
     def test_hook_entry_fails_open_on_windows_without_bash(self):
-        with open(os.path.join(os.path.dirname(HOOK), "hooks.json")) as fh:
+        with open(os.path.join(os.path.dirname(HOOK), "hooks.json"), encoding="utf-8") as fh:
             entry = json.load(fh)["hooks"]["PreToolUse"][0]["hooks"][0]
         self.assertEqual(entry.get("onFailure"), "continue")
 
@@ -79,7 +81,7 @@ class CodemapCommitCheckTest(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, self.tmp)
+        self.addCleanup(portability.rmtree, self.tmp)
         self.root = os.path.join(self.tmp, "repo")
         self.env = dict(ENV, HOME=self.tmp)
         self.write("src/app.py", "def run():\n    pass\n")
@@ -93,7 +95,7 @@ class CodemapCommitCheckTest(unittest.TestCase):
     def write(self, rel, text):
         path = os.path.join(self.root, *rel.split("/"))
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", newline="\n") as fh:
+        with open(path, "w", newline="\n", encoding="utf-8") as fh:
             fh.write(text)
 
     def git(self, *args):
@@ -102,7 +104,7 @@ class CodemapCommitCheckTest(unittest.TestCase):
                        env=self.env)
 
     def codemap(self, *args):
-        return subprocess.run(["python3", CODEMAP] + list(args) + ["--root", self.root],
+        return subprocess.run([sys.executable, CODEMAP] + list(args) + ["--root", self.root],
                               capture_output=True, env=self.env).returncode
 
     def opt_in(self):
@@ -260,7 +262,7 @@ class CodemapCommitCheckTest(unittest.TestCase):
         self.assertEqual(run_commit_hook("not json"), 0)
 
     def test_commit_hook_entry_fails_open(self):
-        with open(os.path.join(HERE, "hooks.json")) as fh:
+        with open(os.path.join(HERE, "hooks.json"), encoding="utf-8") as fh:
             entries = json.load(fh)["hooks"]["PreToolUse"]
         bash = [e for e in entries if e["matcher"] == "Bash"][0]["hooks"][0]
         self.assertEqual(bash.get("onFailure"), "continue")
@@ -296,7 +298,7 @@ class RulesVersionHookTest(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, self.tmp)
+        self.addCleanup(portability.rmtree, self.tmp)
         self.root = os.path.join(self.tmp, "my repo")
         os.makedirs(os.path.join(self.root, ".git"))
         os.makedirs(os.path.join(self.root, "src", "pkg"))
@@ -315,7 +317,7 @@ class RulesVersionHookTest(unittest.TestCase):
         return "# Rules\n\nKeep this.\n\n%s\n- an old line\n%s\n" % (begin, RULES_END)
 
     def rules_hint(self):
-        p = subprocess.run(["python3", CODEMAP, "rules-hint", "--root", self.root],
+        p = subprocess.run([sys.executable, CODEMAP, "rules-hint", "--root", self.root],
                            capture_output=True, env=self.env)
         self.assertEqual(p.returncode, 0, p.stderr.decode())
 
@@ -345,10 +347,12 @@ class RulesVersionHookTest(unittest.TestCase):
             self.assertEqual(len(out.splitlines()), 1, out)
             script = os.path.normpath(CODEMAP)
             self.assertEqual(out, "manager-plugin: the code-map rules block in AGENTS.md is older "
-                             "than this plugin's template; `python3 \"%s\" rules-hint --root "
+                             "than this plugin's template; `%s \"%s\" rules-hint --root "
                              "\"%s\"` updates it; a manager run does this in its setup PR.\n"
-                             % (script, self.root))
-            told = out.replace(script, "").replace(self.root, "")  # information, not an order
+                             % (portability.hook_python(), portability.slashed(script),
+                                portability.slashed(self.root)))
+            told = out.replace(portability.slashed(script), "").replace(
+                portability.slashed(self.root), "")  # information, not an order
             self.assertNotRegex(told, r"(?i)\bcommit|\brun `|\bmust\b|\bshould\b")
         command = re.search(r"`(.+)`", out).group(1)  # the printed command does the update
         p = subprocess.run(["sh", "-c", command], capture_output=True, env=self.env, cwd=self.tmp)
@@ -388,7 +392,7 @@ class RulesVersionHookTest(unittest.TestCase):
     def test_no_repository_and_no_block_are_silent(self):
         outside = os.path.join(self.tmp, "plain folder")
         os.makedirs(outside)
-        with open(os.path.join(outside, "AGENTS.md"), "w") as fh:
+        with open(os.path.join(outside, "AGENTS.md"), "w", encoding="utf-8") as fh:
             fh.write(self.old_block())
         self.assert_silent(cwd=outside)  # no repository around it
         self.assert_silent()  # a repository without rules files
@@ -411,9 +415,9 @@ class RulesVersionHookTest(unittest.TestCase):
         if hasattr(os, "symlink"):
             os.rmdir(os.path.join(self.root, "AGENTS.md"))
             target = os.path.join(self.tmp, "elsewhere.md")
-            with open(target, "w") as fh:
+            with open(target, "w", encoding="utf-8") as fh:
                 fh.write(self.old_block())
-            os.symlink(target, os.path.join(self.root, "AGENTS.md"))
+            portability.symlink(self, target, os.path.join(self.root, "AGENTS.md"))
             self.assert_silent()  # a linked rules file is never read
 
     def test_without_python_it_is_silent(self):
@@ -424,7 +428,7 @@ class RulesVersionHookTest(unittest.TestCase):
             found = shutil.which(name)
             if not found or not hasattr(os, "symlink"):
                 self.skipTest("needs sh, cat and symlinks")
-            os.symlink(found, os.path.join(tools, name))
+            portability.symlink(self, found, os.path.join(tools, name))
         self.env["PATH"] = tools
         self.assert_silent()
 
@@ -440,7 +444,7 @@ class RulesVersionHookTest(unittest.TestCase):
         self.assertEqual(before, after)
 
     def test_hook_entry(self):
-        with open(os.path.join(HERE, "hooks.json")) as fh:
+        with open(os.path.join(HERE, "hooks.json"), encoding="utf-8") as fh:
             entries = [e for e in json.load(fh)["hooks"]["SessionStart"]
                        if e.get("matcher") != "compact"  # that one: test_manager_compaction.py
                        and "agent-paths.sh" not in e["hooks"][0]["command"]]  # test_scan_guard
@@ -484,7 +488,7 @@ class PlanSectionCommandTest(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, self.tmp)
+        self.addCleanup(portability.rmtree, self.tmp)
         self.env = dict(ENV, HOME=self.tmp)
         refs = os.path.join(MANAGER, "references")
         self.command = command_in(os.path.join(refs, "implementer-brief.md"), "awk -v id=<id>")
@@ -648,7 +652,7 @@ class IgnoredDataGuardTest(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, self.tmp)
+        self.addCleanup(portability.rmtree, self.tmp)
         self.root = os.path.join(self.tmp, "check out")
         os.makedirs(self.root)
         self.env = dict(ENV, HOME=self.tmp)

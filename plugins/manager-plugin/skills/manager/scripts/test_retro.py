@@ -11,6 +11,8 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.join(HERE, "..", "..", ".."))  # portability.py, in the plugin folder
+import portability  # noqa: E402
 SCRIPT = os.path.join(HERE, "retro.sh")
 MANAGER = os.path.dirname(HERE)
 RETRO_SKILL = os.path.join(os.path.dirname(MANAGER), "manager-retro", "SKILL.md")
@@ -36,7 +38,7 @@ def tree(top):
 class RetroSwitchTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, self.tmp)
+        self.addCleanup(portability.rmtree, self.tmp)
         self.home = os.path.join(self.tmp, "my home")
         self.cwd = os.path.join(self.tmp, "repo")
         os.makedirs(self.home)
@@ -139,6 +141,10 @@ class RetroSwitchTest(unittest.TestCase):
         code, out, err = self.run_script("on", CLAUDE_CONFIG_DIR=blocked)
         self.assertEqual((code, out), (1, OFF))
         self.assertIn("cannot write", err)
+
+    @unittest.skipIf(portability.WINDOWS,
+                     "Git Bash's sh sets HOME itself when it is unset: no case without one")
+    def test_no_config_folder_and_no_home_is_reported(self):
         code, out, err = self.run_script("on", HOME=None)
         self.assertEqual((code, out), (1, OFF))
         self.assertIn("no CLAUDE_CONFIG_DIR and no HOME", err)
@@ -241,7 +247,7 @@ class RetroTextTest(unittest.TestCase):
         listing = re.search(r"\(`(ls ~/\.claude/manager-runs/\S+)` through Bash\)", rule).group(1)
         self.assertIn("`cat %s`" % listing[len("ls "):], body)  # the files step 1 reads
         home = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, home)
+        self.addCleanup(portability.rmtree, home)
         runs = os.path.join(home, ".claude", "manager-runs")
         os.makedirs(os.path.join(runs, "active"))
 
