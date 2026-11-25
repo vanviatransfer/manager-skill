@@ -999,65 +999,89 @@ shipped behaviour, so plugin.json stays 0.9.7.
 The scan guard's tests were hand-picked tables. A data-only corpus now measures both failure
 kinds: a leak (a root scan that passes) and a false block (normal work refused).
 
-- **Corpus.** `hooks/scan_guard_corpus.json`: 300 entries (171 block, 129 pass; Bash 219,
-  PowerShell 48, Glob 20, Grep 13), one entry per line: `cat`, `tool`, `input` (the tool input),
-  optional `cwd` (default per tool in the file's header, as is the `HOME` it assumes), `expect`
-  (`block`|`pass`), `note`, optional `known_gap` (why it is not fixed). JSON rather than TSV:
-  stdlib, typed, and commands carry tabs, newlines (here-documents) and quotes that a TSV would
-  have to escape. Categories: incident (including the `cd <repo> && sed ...; find / -maxdepth 6
-  -name codemap.py ...` command that ran for hours on Windows), root-spelling, scanner, wrapper,
-  composition, quoting, cwd-root, glob-grep, powershell, bait (repository, scratchpad and plugin
-  folder scans; listings; text, commit messages, here-document bodies, URLs), gap.
-- **Test.** `hooks/test_scan_guard_corpus.py` runs every entry through `scan_guard.refused`, prints
-  per category the entries, leaks, false blocks and known gaps (stderr), and fails on any
-  mismatch not marked `known_gap`; a `known_gap` entry that no longer mismatches fails too, so
-  its mark is dropped. Every 5th entry, plus the incident entries and every `-EncodedCommand` and
-  `forfiles` one, also runs through the real `sh hooks/scan-guard.sh`, whose exit code must match
-  the predicate (it checks the grep pre-filter and the Python lookup).
+- **Corpus.** `hooks/scan_guard_corpus.json`: 306 entries (172 block, 134 pass; Bash 222,
+  PowerShell 51, Glob 20, Grep 13), one entry per line: `cat`, `tool`, `input` (the tool input),
+  optional `cwd` (default per tool in the file's header, as is the `HOME` it assumes), optional
+  `dirs` (paths the test makes `os.path.isdir` report as folders), `expect` (`block`|`pass`),
+  `note`, optional `known_gap` (why the predicate gets it wrong) or `hook_gap` (why only the sh
+  hook does). JSON rather than TSV: stdlib, typed, and commands carry tabs, newlines
+  (here-documents) and quotes that a TSV would have to escape. Categories: incident (including
+  the `cd <repo> && sed ...; find / -maxdepth 6 -name codemap.py ...` command that ran for hours
+  on Windows), root-spelling, scanner, wrapper, composition, quoting, cwd-root, glob-grep,
+  powershell, bait (repository, scratchpad and plugin folder scans; listings; text, commit
+  messages, PR bodies, here-document bodies, a here-document to a shell inside a quoted argument,
+  dotted folders, URLs), gap.
+- **Test.** `hooks/test_scan_guard_corpus.py` runs every entry through `scan_guard.refused`
+  (the predicate) and through the real `sh hooks/scan-guard.sh` (the hook: its grep pre-filter and
+  its Python lookup), and prints, per category and for each level, the entries, leaks, false
+  blocks and known gaps (stderr). The hook runs for every entry that is to be refused or that the
+  predicate refuses (173 runs, about 5 s on Linux); for the rest it exits 0 whatever the pre-filter
+  does, so its result is the predicate's. Entries with `dirs` take the predicate's result (a mock
+  can't reach a subprocess). Any mismatch not marked fails, as does a hook result that differs from
+  the predicate's without a `hook_gap`, and a marked entry that no longer mismatches (so its mark
+  is dropped). Also: a dotted folder in a real temporary home (`dir /s .\my.app` passes,
+  `.\codemap.py` and `.\*.py` are refused, predicate and hook), and the length cap below.
 - **Decisions.** `find -maxdepth 0|1` at a root passes (a listing, as before; GNU find applies
   `-maxdepth` wherever it stands, so `find / -name x -maxdepth 1` passes too), consistent with
   PowerShell `-Depth 0|1`; now also `rg -d|--max-depth 0|1`, `fd -d|--max-depth|--exact-depth
   0|1` and `ag --depth 0|1`. `du` stays refused at any depth (`du -d 0 /` still walks the tree).
   `-EncodedCommand` (any of `-e`, `-ec`, `-enc`...): decoded (base64 of UTF-16LE) and scanned as
-  PowerShell; undecodable: passes (fail open).
-- **Before and after** (leaks / false blocks; the 9 known gaps not counted):
+  PowerShell; undecodable: passes (fail open). A Bash or PowerShell command over 64 KB is not
+  scanned at all (passes): shlex and the tokenizers are superlinear on one long word (a 160 KB
+  base64 argument about 1 s, 850 KB 24 s, measured on the 0.9.8 review), the hook would outlive its
+  time budget, and no hand-written scan is that long. The whole scan is skipped, not only the
+  decode, because the time goes into tokenizing the word, before any decode.
+- **Before and after**, leaks / false blocks, the gaps not counted; predicate | sh hook (they
+  differ only in the hook gap, which is counted as a gap). Before is f3a720f (0.9.7); 8b20f4b is
+  the first 0.9.8 commit, before the review fixes:
 
-  | category | entries | before | after |
-  | --- | ---: | ---: | ---: |
-  | bait | 37 | 0 / 0 | 0 / 0 |
-  | composition | 23 | 2 / 0 | 0 / 0 |
-  | cwd-root | 30 | 0 / 0 | 0 / 0 |
-  | gap | 4 | 0 / 0 | 0 / 0 |
-  | glob-grep | 33 | 0 / 0 | 0 / 0 |
-  | incident | 3 | 0 / 0 | 0 / 0 |
-  | powershell | 46 | 8 / 1 | 0 / 0 |
-  | quoting | 20 | 0 / 0 | 0 / 0 |
-  | root-spelling | 29 | 2 / 0 | 0 / 0 |
-  | scanner | 43 | 3 / 3 | 0 / 0 |
-  | wrapper | 32 | 11 / 0 | 0 / 0 |
-  | total | 300 | 26 / 4 | 0 / 0 |
+  | category | entries | before | 8b20f4b | after |
+  | --- | ---: | ---: | ---: | ---: |
+  | bait | 42 | 0 / 0 \| 0 / 0 | 0 / 5 \| 0 / 5 | 0 / 0 \| 0 / 0 |
+  | composition | 23 | 2 / 0 \| 2 / 0 | 0 / 0 \| 0 / 0 | 0 / 0 \| 0 / 0 |
+  | cwd-root | 30 | 0 / 0 \| 0 / 0 | 0 / 0 \| 0 / 0 | 0 / 0 \| 0 / 0 |
+  | gap | 4 | 0 / 0 \| 0 / 0 | 0 / 0 \| 0 / 0 | 0 / 0 \| 0 / 0 |
+  | glob-grep | 33 | 0 / 0 \| 0 / 0 | 0 / 0 \| 0 / 0 | 0 / 0 \| 0 / 0 |
+  | incident | 3 | 0 / 0 \| 0 / 0 | 0 / 0 \| 0 / 0 | 0 / 0 \| 0 / 0 |
+  | powershell | 47 | 9 / 1 \| 9 / 1 | 0 / 0 \| 0 / 0 | 0 / 0 \| 0 / 0 |
+  | quoting | 20 | 0 / 0 \| 0 / 0 | 0 / 0 \| 0 / 0 | 0 / 0 \| 0 / 0 |
+  | root-spelling | 29 | 2 / 0 \| 2 / 0 | 0 / 0 \| 0 / 0 | 0 / 0 \| 0 / 0 |
+  | scanner | 43 | 3 / 3 \| 3 / 3 | 0 / 0 \| 0 / 0 | 0 / 0 \| 0 / 0 |
+  | wrapper | 32 | 11 / 0 \| 11 / 0 | 0 / 0 \| 0 / 0 | 0 / 0 \| 0 / 0 |
+  | total | 306 | 27 / 4 \| 27 / 4 | 0 / 5 \| 0 / 5 | 0 / 0 \| 0 / 0 |
 
+  Gaps: 9 for the predicate, 10 for the hook (the hook gap below). The 5 false blocks at 8b20f4b
+  are the review's: three here-documents to a shell inside a quoted argument, two dotted folders.
 - **Fixes** (scan_guard.py, local, same design): `eval` arguments scanned as Bash; a
   here-document fed straight to a shell (`bash <<'EOF'`, `sh -s <<EOF`; no `-c`, no script file)
-  scanned as commands (other here-document bodies stay text); wrappers `time -p`, `command -p`
-  (`command -v|-V` is a lookup), `exec -a`, `ionice`, `busybox`; `powershell.exe`'s bare script
-  after its options (`powershell gci C:\ -Recurse`, value options such as `-ExecutionPolicy
-  Bypass` skipped; pwsh takes a bare word as a file); `-EncodedCommand`; `iex` and
-  `Invoke-Expression` strings scanned as PowerShell; a path above a root is a root (`~/..`,
-  `$HOME\..`); `gci C:\*.py -Recurse` (a wildcard leaf: its folder); cmd `dir/s` glued, `dir /s
-  C:\codemap.py` and `dir /s C:\*.py` (a file name or wildcard leaf: its folder); `forfiles /s`
-  (its `/p`, else the cwd) from Bash, cmd and PowerShell; `-Recurse:$false` is no recursion;
-  the rg/fd/ag depth rule above. scan-guard.sh: `forfiles` joins the pre-filter's words, and an
-  `-e...` option followed by 16 base64 characters starts Python too (an encoded script names no
-  scan word). search_nudge.py: untouched.
+  scanned as commands, but only a `<<` outside quotes: the quote state is followed across lines
+  (bodies apart), so a `sh -s <<X` line inside a quoted commit message, PR body or Python string
+  is text; other here-document bodies stay text; wrappers `time -p`, `command -p` (`command
+  -v|-V` is a lookup), `exec -a`, `ionice`, `busybox`; `powershell.exe`'s bare script after its
+  options (`powershell gci C:\ -Recurse`, value options such as `-ExecutionPolicy Bypass`
+  skipped; pwsh takes a bare word as a file); `-EncodedCommand`; `iex` and `Invoke-Expression`
+  strings scanned as PowerShell; a path above a root is a root (`~/..`, `$HOME\..`); `gci
+  C:\*.py -Recurse` (a wildcard leaf: its folder); cmd `dir/s` glued, `dir /s C:\*.py` (a
+  wildcard leaf: its folder) and `dir /s C:\codemap.py` (a dotted leaf that is not an existing
+  folder, `os.path.isdir`, relative ones from the cwd: its folder; `dir /s D:\src.old` or
+  `C:\Users\me\my.app` that exist as folders are scanned alone and pass); `forfiles /s` (its
+  `/p`, else the cwd) from Bash, cmd and PowerShell; `-Recurse:$false` is no recursion; the
+  rg/fd/ag depth rule; the 64 KB cap. scan-guard.sh: `forfiles` joins the pre-filter's words, and
+  an `-e...` option followed by 16 base64 characters starts Python too (an encoded script names
+  no scan word). search_nudge.py: untouched.
 - **Known gaps** (in the corpus as `known_gap`, reported, not failed): text piped into a shell
   (`echo "find / -name x" | bash`); paths from stdin (`echo / | xargs find`); paths built at run
   time (`F=/; find $F`, `find $(echo /)`); scans in other languages (`python3 -c
   "os.walk('/')"`); `robocopy C:\ NUL /L /S`; `Start-Process cmd -ArgumentList '/c dir /s C:\'`;
   .NET enumeration (`[IO.Directory]::EnumerateFiles('C:\', '*', 'AllDirectories')`); and one
   false block: Glob with a root `path` and a one-level pattern (`*` in `/`). Each would need the
-  guard to evaluate or interpret more than one command's words. Also not in the corpus: a
-  here-string to a shell (`bash <<< 'find /'`).
+  guard to evaluate or interpret more than one command's words. Hook gap (`hook_gap`): `f"in"d /
+  -name x` is refused by the predicate but the sh pre-filter sees no scan word, so Python never
+  runs; catching it would mean a regex with optional quotes between every letter of every word,
+  for a deliberate obfuscation. Not in the corpus: a here-string to a shell (`bash <<< 'find
+  /'`); a command over 64 KB (the cap; tested in the corpus test); a dotted name under a root
+  that is a folder on the user's machine but not where the hook runs (a Windows path checked on
+  Linux) stays refused; the corpus makes such folders exist with `dirs`.
 - **Version.** plugin.json 0.9.8 (the guard refuses more). README: the hook description names
   `eval`, `-EncodedCommand`, `iex`, `forfiles /s` and the depth rule. Ceilings unchanged (no
   SKILL.md edit). [not verified on Windows] the new paths; synthetic hook input on Linux only.

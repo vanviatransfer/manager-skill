@@ -69,6 +69,10 @@ TIMED = {"find", "grep", "egrep", "fgrep", "rg", "ls", "du", "tree"}  # for the 
 HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][\w.-]*)\1")
 HINT = "manager-plugin: long recursive scans: prefix `timeout 120`."
 MAX_DEPTH = 4
+# Longer command text is not scanned (fails open): shlex and the tokenizers grow superlinearly
+# on one long word (a 160 KB base64 -EncodedCommand took about 1 s, 850 KB 24 s), past a hook's
+# time budget, and no hand-written scan is that long.
+MAX_COMMAND = 64 * 1024
 
 
 def norm(path):
@@ -156,10 +160,34 @@ def reads_stdin(args):
     return True
 
 
+def quote_after(text, quote=None):
+    """The quote (' or ") still open after a piece of shell text that starts with `quote` open,
+    as sn.simple_commands reads it: '...' is literal, a backslash escapes outside single quotes,
+    an unquoted # at a word's start comments out the rest of the line."""
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if quote == "'":
+            quote = None if c == "'" else quote
+        elif c == "\\":
+            i += 1
+        elif quote == '"':
+            quote = None if c == '"' else quote
+        elif c in "'\"":
+            quote = c
+        elif c == "#" and (i == 0 or text[i - 1] in " \t\n;&|()"):
+            j = text.find("\n", i)
+            i = n if j < 0 else j
+            continue
+        i += 1
+    return quote
+
+
 def heredoc_scripts(cmd):
     """The bodies of here-documents fed straight to a shell (`bash <<'EOF'`, `sh -s <<EOF`):
-    there they are commands, not text."""
-    out, ends = [], []
+    there they are commands, not text. A `<<` inside a quote (a commit message, a -c script, a
+    Python string spanning lines) starts none; quotes are followed across lines, bodies apart."""
+    out, ends, quote = [], [], None
     for line in cmd.split("\n"):
         if ends:
             tab, word, body = ends[0]
@@ -170,7 +198,11 @@ def heredoc_scripts(cmd):
             elif body is not None:
                 body.append(line)
             continue
+        start = quote
+        quote = quote_after(line + "\n", quote)
         for m in HEREDOC.finditer(line):
+            if quote_after(line[:m.start()], start) is not None:
+                continue
             before = sn.simple_commands(line[:m.start()])
             words = strip_wrappers(before[-1][0])[0] if before else []
             feeds = bool(words) and sn.command_name(words[0]) in SHELLS and \
@@ -344,12 +376,18 @@ def shallow(values, keys):
     return any(values.get(k, "").strip() in ("0", "1") for k in keys if values.get(k))
 
 
-def leaf_dir(path, dotted=False):
-    """The folder a path with a wildcard leaf (or, dotted=True, a file name such as
-    codemap.py) searches from: cmd's `dir /s C:\\codemap.py` walks all of C:\\."""
+def leaf_dir(path, dotted=False, cwd=None):
+    """The folder a path with a wildcard leaf (or, dotted=True, a dotted name that is not an
+    existing folder, such as codemap.py) searches from: cmd's `dir /s C:\\codemap.py` walks all
+    of C:\\, `dir /s C:\\Users\\me\\my.app` (a folder) only that folder."""
     m = LEAF_FILE.match(path)
-    if m and (dotted or any(c in m.group(2) for c in "*?")):
+    if not m:
+        return path
+    if any(c in m.group(2) for c in "*?"):
         return m.group(1)
+    if dotted and not os.path.isdir(path if absolute(path) or cwd is None
+                                    else sn.join(cwd, path)):
+        return m.group(1)  # a dotted name that is no folder here: a file name
     return path
 
 
@@ -590,7 +628,8 @@ def scan_cmd(scan, text, cwd, depth=0):
         args = words[1:]
         switches = {s.lower() for a in args if a.startswith("/") for s in a.split("/") if s}
         if name == "dir" and "s" in switches:
-            paths = [leaf_dir(a, dotted=True) for a in args if not a.startswith("/")] or ["."]
+            paths = [leaf_dir(a, dotted=True, cwd=cwd) for a in args if not a.startswith("/")] \
+                or ["."]
             scan.check("dir /s", paths, cwd, hint=False, posix=False)
         elif name in ("cd", "chdir"):
             cwd = new_cwd(next((a for a in args if not a.startswith("/")), None) or "", cwd,
@@ -636,6 +675,8 @@ def inspect(data):
             if recursive:
                 scan.check(tool, [base], cwd, hint=False)
     elif tool in ("Bash", "PowerShell") and isinstance(ti.get("command"), str):
+        if len(ti["command"]) > MAX_COMMAND:
+            return scan  # too long to parse in time: fail open
         if tool == "Bash":
             scan_bash(scan, ti["command"], cwd)
         else:

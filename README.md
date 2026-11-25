@@ -314,7 +314,8 @@ nudge's block. For an allowed recursive scan in Bash that isn't under `timeout`,
 session a non-blocking note: prefix `timeout 120`. In PowerShell and cmd, `find` (find.exe) and
 `tree` (tree.com) switches such as `/i` or `/f` and the Git Bash spellings `/c`, `/mnt/c` are no
 roots. Without Python it refuses only a Bash command that starts with a `find` whose first path is
-exactly a root, and otherwise fails open.
+exactly a root, and otherwise fails open. A Bash or PowerShell command over 64 KB is not scanned
+(parsing it would outlast the hook).
 
 **Script paths at start** (`SessionStart` on startup, resume, clear and compact, and
 `SubagentStart` for every agent type; `hooks/agent-paths.sh`). In a repository with a
