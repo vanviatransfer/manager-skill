@@ -141,8 +141,10 @@ class RetroSwitchTest(unittest.TestCase):
         code, out, err = self.run_script("on", CLAUDE_CONFIG_DIR=blocked)
         self.assertEqual((code, out), (1, OFF))
         self.assertIn("cannot write", err)
-        if portability.WINDOWS:
-            self.skipTest("Git Bash's sh sets HOME itself when it is unset: no case without one")
+
+    @unittest.skipIf(portability.WINDOWS,
+                     "Git Bash's sh sets HOME itself when it is unset: no case without one")
+    def test_no_config_folder_and_no_home_is_reported(self):
         code, out, err = self.run_script("on", HOME=None)
         self.assertEqual((code, out), (1, OFF))
         self.assertIn("no CLAUDE_CONFIG_DIR and no HOME", err)

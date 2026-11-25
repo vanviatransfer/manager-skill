@@ -20,6 +20,7 @@ sys.path.insert(0, SCRIPTS)
 import search_nudge  # noqa: E402
 
 PY = portability.hook_python()  # the Python the hook's message names
+SL = portability.slashed  # a path as the hook prints it (`/` on Windows)
 
 CONFIG = '{"vault": "vault", "map": "vault/map.md"}\n'
 
@@ -64,7 +65,7 @@ class SearchNudgeTest(unittest.TestCase):
         self.assertEqual(len(err.strip().splitlines()), 1)
         script = os.path.join(PLUGIN, "skills", "code-map", "scripts", "codemap.py")
         self.assertIn('run %s "%s" query <term> --root "%s" (or read'
-                      % (PY, script, self.root), err)
+                      % (PY, SL(script), SL(self.root)), err)
         self.assertIn("vault/map.md", err)
         self.assertEqual(self.hook(tool, **tool_input)[0], 0, "a repeat is allowed")
 
@@ -79,13 +80,14 @@ class SearchNudgeTest(unittest.TestCase):
         self.assertEqual(len(err.strip().splitlines()), 1)
         self.assertIn('manager-plugin: map first: run %s "%s/skills/code-map/scripts/'
                       'codemap.py" query <term> --root "%s" (or read the vault index or the '
-                      'map page vault/map.md) before a broad search;' % (PY, plugin, self.root),
+                      'map page vault/map.md) before a broad search;'
+                      % (PY, SL(plugin), SL(self.root)),
                       err)
 
     def test_message_roots_the_query_at_the_repository_from_a_subfolder(self):
         code, err = self.hook("Grep", cwd=os.path.join(self.root, "src"), pattern="foo")
         self.assertEqual(code, 2)
-        self.assertIn('query <term> --root "%s"' % self.root, err)
+        self.assertIn('query <term> --root "%s"' % SL(self.root), err)
 
     def test_message_omits_root_when_the_top_cannot_be_quoted(self):
         # A control character in the repository path: quote_path gives None, so no --root.
@@ -103,7 +105,7 @@ class SearchNudgeTest(unittest.TestCase):
         script = os.path.join(PLUGIN, "skills", "code-map", "scripts", "codemap.py")
         self.assertIn('manager-plugin: map first: run %s "%s" query <term> (or read the '
                       'vault index or the map page vault/map.md) before a broad search;'
-                      % (PY, script), err)
+                      % (PY, SL(script)), err)
         self.assertNotIn("--root", err)
         self.assertNotIn("\t", err)
         self.assertEqual(self.hook("Grep", pattern="foo")[0], 0, "a repeat is allowed")
@@ -182,7 +184,7 @@ class SearchNudgeTest(unittest.TestCase):
     def test_first_broad_shell_searches_blocked(self):
         cmds = ["rg foo", "rg -n 'foo bar' .", "grep -rn foo .", "grep -R foo src",
                 "find . -name '*.py'", "find src -type f", "git grep foo", "ag foo",
-                "ack foo", "cd %s && grep -rn foo ." % self.root, "egrep -r 'a|b'",
+                "ack foo", "cd %s && grep -rn foo ." % SL(self.root), "egrep -r 'a|b'",
                 "rg --files", "/usr/bin/grep -r foo", "LC_ALL=C grep -r x .",
                 "echo start; rg foo | head", "x=$(rg -l foo)", "grep -r foo * 2>/dev/null",
                 "grep -r --include='*.py' foo .", "ls -la\nrg foo", "ls;\tfind ."]
@@ -226,7 +228,7 @@ class SearchNudgeTest(unittest.TestCase):
         script = os.path.join(SCRIPTS, "codemap.py")
         for k, cmd in enumerate(('python3 "%s" query handler' % script,
                                  'py -3 "C:\\p\\scripts\\codemap.py" mentions --base abc',
-                                 'cd %s && python3 codemap.py query x | head' % self.root)):
+                                 'cd %s && python3 codemap.py query x | head' % SL(self.root))):
             self.new_session("map-%d" % k)
             self.assertEqual(self.bash(cmd), 0, cmd)
             self.assertEqual(self.hook("Grep", pattern="foo")[0], 0, cmd)
@@ -294,7 +296,7 @@ class SearchNudgeTest(unittest.TestCase):
             self.assertEqual(self.hook("Grep", pattern="foo")[0], 0, rel)
             self.assertEqual(self.bash("rg foo ."), 0, rel)
             self.assertEqual(os.listdir(inside), [], rel)
-        self.assertEqual(self.listing(), sorted(before + ["tmpin", "src/tmpin"]))
+        self.assertEqual(self.listing(), sorted(before + ["tmpin", os.path.join("src", "tmpin")]))
 
     def test_temp_dir_inside_the_process_cwd_fails_open(self):
         """The hook process runs elsewhere (e.g. after a Bash cd): its own cwd is kept out too."""
@@ -492,7 +494,7 @@ class SkillsBranchTest(unittest.TestCase):
         script = os.path.join(PLUGIN, "skills", "self-training-skills", "scripts", "skilltrain.py")
         self.assertEqual(err.strip(), 'manager-plugin: skills first: run %s "%s" query "%s" -- '
                          "%s before searching skill files; if that doesn't answer it, repeat the "
-                         "search and it will be allowed." % (PY, script, self.root, term))
+                         "search and it will be allowed." % (PY, SL(script), SL(self.root), term))
 
     def test_first_skill_search_is_blocked_with_the_query_command_and_the_second_allowed(self):
         self.assertFalse(os.path.exists(os.path.join(self.root, ".codemap.json")))
@@ -525,7 +527,7 @@ class SkillsBranchTest(unittest.TestCase):
     def test_the_printed_command_runs_with_a_dash_term(self):
         code, _, err = self.hook("Bash", command="grep -rn -e -rf .claude/skills")
         self.assertEqual(code, 2)
-        self.assertIn(' query "%s" -- "-rf" before' % self.root, err)
+        self.assertIn(' query "%s" -- "-rf" before' % SL(self.root), err)
         cmd = err.split("run ", 1)[1].split(" before searching", 1)[0]
         p = subprocess.run(cmd, shell=True, capture_output=True, env=self.env)
         self.assertEqual(p.returncode, 1, p.stderr)  # no hits, but the term was taken

@@ -24,7 +24,7 @@ here=${0%[/\\]*}
 script="$here/../skills/code-map/scripts/scan_guard.py"
 root=${CLAUDE_PLUGIN_ROOT:-}
 case "$root:$0" in
-  :/* | :[A-Za-z]:* | :\\\\*) root="$here/.." ;;
+  :/* | :[A-Za-z]:[/\\]* | :\\\\*) root="$here/.." ;;
 esac
 if [ -f "$script" ]; then
   for c in python3 python "py -3"; do

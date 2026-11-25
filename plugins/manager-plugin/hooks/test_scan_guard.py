@@ -24,6 +24,7 @@ import scan_guard  # noqa: E402
 import search_nudge  # noqa: E402
 
 PY = portability.hook_python()  # the Python the hooks' messages name
+SL = portability.slashed  # a path as the hooks print it (`/` on Windows)
 
 FAKE_HOME = "/home/tester"
 CWD = "/home/tester/proj"
@@ -171,9 +172,10 @@ class PredicateTest(unittest.TestCase):
         app = os.path.join(tmp, "app")
         os.makedirs(os.path.join(app, "src"))
         with mock.patch.dict(os.environ, {"HOME": app}):
-            self.assertIsNotNone(refused("Bash", command="find %s -name x" % app), "no repo")
+            # Bash takes an unquoted `\` as an escape: the command names the path with `/`.
+            self.assertIsNotNone(refused("Bash", command="find %s -name x" % SL(app)), "no repo")
             os.makedirs(os.path.join(app, ".git"))
-            for cmd in ("find %s -name x" % app, "rg foo %s" % app):
+            for cmd in ("find %s -name x" % SL(app), "rg foo %s" % SL(app)):
                 self.assertIsNone(refused("Bash", cwd=app, command=cmd), cmd)
             self.assertIsNone(refused("Bash", cwd=app, command="find . -name x"))
             self.assertIsNone(refused("Grep", cwd=app, pattern="x"))
@@ -181,7 +183,7 @@ class PredicateTest(unittest.TestCase):
                                  "the ~ spelling stays a root")
             sub = os.path.join(app, "src")
             with mock.patch.dict(os.environ, {"HOME": sub}):
-                self.assertIsNotNone(refused("Bash", command="find %s -name x" % sub),
+                self.assertIsNotNone(refused("Bash", command="find %s -name x" % SL(sub)),
                                      "inside a repository but not its top: still a root")
 
     def test_other_tools_and_bad_input_pass(self):
@@ -229,7 +231,7 @@ class HookTest(unittest.TestCase):
                 'search only the repository: `rg <term> "%s"` or `find "%s" -name <x>` (prefix '
                 '`timeout 120` for a long one). Never search for these scripts: their paths come '
                 'here and at session and agent start.'
-                % (name, path, PY, code, top, PY, skill, top, top, top))
+                % (name, path, PY, SL(code), top, PY, SL(skill), top, top, top))
 
     def test_block_message(self):
         code, out, err = self.guard("Bash", command="find / -name codemap.py -path '*manager*'")
@@ -380,7 +382,7 @@ class HookTest(unittest.TestCase):
         skill = os.path.join(PLUGIN, "skills", "self-training-skills", "scripts", "skilltrain.py")
         return ('manager-plugin: the plugin\'s scripts, runnable as given (never search the disk '
                 'for these): code map `%s "%s" query <term> --root "%s"`; skill files '
-                '`%s "%s" query "%s" -- <term>`.' % (PY, code, top, PY, skill, top))
+                '`%s "%s" query "%s" -- <term>`.' % (PY, SL(code), top, PY, SL(skill), top))
 
     def test_start_line_needs_the_condition(self):
         self.assertIsNone(self.start(), "a repository without the plugin's marks")

@@ -38,18 +38,32 @@ def snippet(path):
     return "\n".join(out)
 
 
+def run_sh_file(code, zero, env=None):
+    """Stdout of the sh code `code` with the value `zero` in place of `$0`. The code goes in a
+    script file with `$0` read as `$1`, and `zero` as that argument: through `sh -c <code>` on
+    Windows, the command line's parsing changes the backslashes in `[/\\]` (the snippet then
+    split nothing), and a file run with sh can't be given another `$0`."""
+    assert "$1" not in code and "${1" not in code
+    fd, script = tempfile.mkstemp(suffix=".sh")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(code.replace("${0", "${1").replace("$0", "$1") + "\n")
+        p = subprocess.run(["sh", script, zero], capture_output=True, env=env)
+    finally:
+        os.remove(script)
+    if p.returncode:
+        raise AssertionError(p.stderr.decode())
+    return p.stdout.decode()
+
+
 def run_snippet(path, zero, plugin_root=None):
-    """(here, root) after the wrapper's snippet ran with `$0` = zero (sh -c sets `$0` from the
-    first argument after the script)."""
+    """(here, root) after the wrapper's snippet ran with `$0` = zero."""
     env = dict(os.environ)
     env.pop("CLAUDE_PLUGIN_ROOT", None)
     if plugin_root is not None:
         env["CLAUDE_PLUGIN_ROOT"] = plugin_root
-    code = snippet(path) + '\nprintf "%s\\n%s" "$here" "${root-}"'
-    p = subprocess.run(["sh", "-c", code, zero], capture_output=True, env=env)
-    if p.returncode:
-        raise AssertionError(p.stderr.decode())
-    here, root = p.stdout.decode().split("\n")
+    out = run_sh_file(snippet(path) + '\nprintf "%s\\n%s" "$here" "${root-}"', zero, env)
+    here, root = out.split("\n")
     return here, root
 
 
@@ -63,7 +77,8 @@ class SnippetTest(unittest.TestCase):
             self.assertNotIn("${0%/*}", text, name)  # `/` only: Windows paths break it
             self.assertEqual(name in FINDS_ITS_FOLDER, "here=${0%[/\\\\]*}" in text, name)
             self.assertEqual(name in TAKES_ITS_ROOT,
-                             ":/* | :[A-Za-z]:* | :\\\\\\\\*) root=\"$here/..\" ;;" in text, name)
+                             ":/* | :[A-Za-z]:[/\\\\]* | :\\\\\\\\*) root=\"$here/..\" ;;" in text,
+                             name)
             if "$here" in text:
                 self.assertIn('script="$here/../skills/', text, name)
 
@@ -75,6 +90,7 @@ class SnippetTest(unittest.TestCase):
             ("C:\\a b\\plugin\\hooks/x.sh", "C:\\a b\\plugin\\hooks", True),
             ("\\\\server\\share\\plugin\\hooks\\x.sh", "\\\\server\\share\\plugin\\hooks", True),
             ("plugin\\hooks\\x.sh", "plugin\\hooks", False),
+            ("C:plugin\\hooks\\x.sh", "C:plugin\\hooks", False),  # drive-relative: no root
         )
         for path in [os.path.join(HERE, n) for n in FINDS_ITS_FOLDER]:
             name = os.path.basename(path)
@@ -91,8 +107,7 @@ class SnippetTest(unittest.TestCase):
             name = os.path.basename(path)
             for zero in ("/home/u/.claude/plugins/m/hooks/" + name, "hooks/" + name,
                          "./" + name, name, "/" + name, "/a b/c'd/hooks/" + name):
-                old = subprocess.run(["sh", "-c", 'printf %s "${0%/*}"', zero],
-                                     capture_output=True).stdout.decode()
+                old = run_sh_file('printf %s "${0%/*}"', zero)
                 here, root = run_snippet(path, zero)
                 self.assertEqual(here, old, (name, zero))
                 if name in TAKES_ITS_ROOT:

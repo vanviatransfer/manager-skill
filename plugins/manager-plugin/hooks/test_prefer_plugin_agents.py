@@ -349,8 +349,10 @@ class RulesVersionHookTest(unittest.TestCase):
             self.assertEqual(out, "manager-plugin: the code-map rules block in AGENTS.md is older "
                              "than this plugin's template; `%s \"%s\" rules-hint --root "
                              "\"%s\"` updates it; a manager run does this in its setup PR.\n"
-                             % (portability.hook_python(), script, self.root))
-            told = out.replace(script, "").replace(self.root, "")  # information, not an order
+                             % (portability.hook_python(), portability.slashed(script),
+                                portability.slashed(self.root)))
+            told = out.replace(portability.slashed(script), "").replace(
+                portability.slashed(self.root), "")  # information, not an order
             self.assertNotRegex(told, r"(?i)\bcommit|\brun `|\bmust\b|\bshould\b")
         command = re.search(r"`(.+)`", out).group(1)  # the printed command does the update
         p = subprocess.run(["sh", "-c", command], capture_output=True, env=self.env, cwd=self.tmp)

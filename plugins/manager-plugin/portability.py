@@ -39,35 +39,42 @@ def symlink(test, source, link, **kw):
 
 
 def _clear_read_only_and_retry(func, path, _exc):
-    """rmtree's error handler: a read-only file (git keeps its objects read-only, which Windows
-    refuses to delete, WinError 5) is made writable and removed again; a file another process
-    still holds (WinError 32) gets a few short retries. On Windows a temporary folder that still
-    cannot go is left behind; elsewhere the error is raised."""
+    """rmtree's error handler, on Windows only (elsewhere rmtree() is the plain call). A
+    read-only file (git keeps its objects read-only, which Windows refuses to delete,
+    WinError 5) is made writable and removed again, and a file another process still holds
+    (WinError 32) gets a few short retries; one that still cannot go is left behind in the
+    temporary folder. A symlink is never chmod-ed (chmod would follow it to its target)."""
     for attempt in range(5):
-        try:
-            os.chmod(path, stat.S_IWRITE | stat.S_IREAD | stat.S_IEXEC)
-        except OSError:
-            pass
+        if not os.path.islink(path):
+            try:
+                os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
+            except OSError:
+                pass
         try:
             func(path)
             return
         except FileNotFoundError:
             return
         except OSError:
-            if not WINDOWS:
-                raise
             time.sleep(0.1 * (attempt + 1))
-    # Windows only: give up on this entry; the rest of the folder is still removed.
 
 
 def rmtree(path, ignore_errors=False):
-    """shutil.rmtree that also removes read-only files (git objects on Windows)."""
-    if ignore_errors:
-        shutil.rmtree(path, ignore_errors=True)
+    """shutil.rmtree; on Windows it also removes read-only files (git objects)."""
+    if not WINDOWS or ignore_errors:
+        shutil.rmtree(path, ignore_errors=ignore_errors)
     elif sys.version_info >= (3, 12):
         shutil.rmtree(path, onexc=_clear_read_only_and_retry)
     else:
         shutil.rmtree(path, onerror=_clear_read_only_and_retry)
+
+
+def slashed(path):
+    """`path` with `/` for `\\` on Windows, unchanged elsewhere. That is how the hooks print a
+    path there (search_nudge.quote_path; Git Bash and PowerShell both take it), and how a test
+    puts a path into a Bash command, where an unquoted `\\` is an escape (Bash would read
+    `C:\\Users\\x` as `C:Usersx`)."""
+    return path.replace("\\", "/") if WINDOWS else path
 
 
 def temp_dir():

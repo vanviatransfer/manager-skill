@@ -27,7 +27,7 @@ script="$here/../skills/code-map/scripts/search_nudge.py"
 [ -f "$script" ] || exit 0
 root=${CLAUDE_PLUGIN_ROOT:-}
 case "$root:$0" in
-  :/* | :[A-Za-z]:* | :\\\\*) root="$here/.." ;;
+  :/* | :[A-Za-z]:[/\\]* | :\\\\*) root="$here/.." ;;
 esac
 for c in python3 python "py -3"; do
   err=$(printf '%s' "$input" | CODEMAP_NUDGE_PYTHON="$c" CODEMAP_NUDGE_ROOT="$root" \
