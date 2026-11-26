@@ -281,20 +281,30 @@ def age(row):
     return start is None, start or 0, row[0]
 
 
-DATED = re.compile(r"-\d{8}$")  # a full model id's date: `claude-x-1-20250101`
+DATED = re.compile(r"[-@]\d{8}$")  # a full model id's date: `vendor-x-1-20250101`
 
 
 def family(model):
-    """A model id or name in lower case, without a context suffix (`[1m]`) or a trailing date."""
-    return DATED.sub("", model.split("[")[0].strip().lower())
+    """A model id or name in lower case, without a context suffix (`[1m]`), a trailing date or
+    a provider prefix (up to the last `.` or `/`)."""
+    name = DATED.sub("", model.split("[")[0].strip().lower())
+    return name[max(name.rfind("."), name.rfind("/")) + 1:]
+
+
+def matches(name, model):
+    """A name with a version digit must equal the id or end it; an alias need only be in it."""
+    model = family(model)
+    if any(c.isdigit() for c in name):
+        return model.endswith(name)
+    return name in model
 
 
 def off(totals, expected):
-    """True when a request in `totals` ran on a model that matches none of `expected`: a name
-    matches a model whose id contains it, both without suffix and date (`opus` and
-    `claude-opus-4-6[1m]` match `claude-opus-4-6-20260101`)."""
+    """True when a request in `totals` ran on a model that matches none of `expected` (both as
+    `family` gives them: `big` and `vendor-big-4-6[1m]` match `prov.vendor-big-4-6@20260101`;
+    `big-4` does not match `vendor-big-4-6`)."""
     return bool(expected and totals) and any(
-        not any(name in family(model) for name in expected) for model in totals["models"])
+        not any(matches(name, model) for name in expected) for model in totals["models"])
 
 
 def render(agent, kind, totals, expected=()):

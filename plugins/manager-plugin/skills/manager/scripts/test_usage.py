@@ -557,18 +557,27 @@ class ExpectedModelTest(Fixture):
 
     def test_a_suffix_a_date_and_inherit_are_no_mismatch(self):
         self.agent(self.new, "g7", "manager-plugin:implementer", (
-            other(10), request(20, "q1", 1, 0, 100, 10, model="claude-opus-4-6")))
+            other(10), request(20, "q1", 1, 0, 100, 10, model="vendor-big-4-6")))
         plain = lines(SESSION, "g7")[0]
-        for arg in ("g7=opus[1m]", "g7=claude-opus-4-6[1m]", "g7=claude-opus-4-6-20260101",
-                    "g7=inherit", "g7=Opus", "g7=sonnet,inherit"):
+        for arg in ("g7=big[1m]", "g7=vendor-big-4-6[1m]", "g7=vendor-big-4-6-20260101",
+                    "g7=inherit", "g7=Big", "g7=small,inherit", "g7=big-4-6"):
             self.assertEqual(lines(SESSION, arg), [plain], arg)
-        self.assertEqual(lines(SESSION, "g7=sonnet[1m]"),
-                         [plain.replace("| claude-opus-4-6 |", "| claude-opus-4-6!=sonnet |")])
-        self.assertEqual(lines(SESSION, "g7=claude-opus-4-5-20250101"), [plain.replace(
-            "| claude-opus-4-6 |", "| claude-opus-4-6!=claude-opus-4-5 |")])
+        self.assertEqual(lines(SESSION, "g7=small[1m]"),
+                         [plain.replace("| vendor-big-4-6 |", "| vendor-big-4-6!=small |")])
+        self.assertEqual(lines(SESSION, "g7=vendor-big-4-5-20250101"), [plain.replace(
+            "| vendor-big-4-6 |", "| vendor-big-4-6!=vendor-big-4-5 |")])
         self.agent(self.new, "h8", None, (request(5, "q2", 1, 0, 1, 1,
-                                                  model="claude-opus-4-6-20260101[1m]"),))
-        self.assertNotIn("!=", lines(SESSION, "h8=claude-opus-4-6")[0])
+                                                  model="vendor-big-4-6-20260101[1m]"),))
+        self.assertNotIn("!=", lines(SESSION, "h8=vendor-big-4-6")[0])
+
+    def test_a_versioned_name_must_end_the_id(self):
+        self.agent(self.new, "g7", None, (request(5, "q1", 1, 0, 1, 1, model="vendor-big-4-6"),))
+        self.assertIn("| vendor-big-4-6!=big-4 |", lines(SESSION, "g7=big-4")[0])
+        self.agent(self.new, "h8", None, (request(5, "q2", 1, 0, 1, 1,
+                                                  model="prov.vendor-big-4-6@20260101"),))
+        self.assertNotIn("!=", lines(SESSION, "h8=vendor-big-4-6")[0])
+        self.assertNotIn("!=", lines(SESSION, "h8=big")[0])
+        self.assertIn("!=small |", lines(SESSION, "h8=small")[0])  # an alias of another family
 
     def test_what_is_unknown_is_never_marked(self):
         self.assertEqual(lines(SESSION, "zz=sonnet"), ["usage | zz | unknown" + UNKNOWN])
