@@ -201,8 +201,9 @@ class UsageTest(Fixture):
             record = fh.read()
         self.assertIn("\n%s\n" % row, record)  # the run record's column line
         record_text = " ".join(record.split())
-        self.assertIn('`<python> "${CLAUDE_SKILL_DIR}/scripts/usage.py" <session id> <agent>... '
-                      '>> <file>`', record_text)
+        self.assertIn('`<python> "${CLAUDE_SKILL_DIR}/scripts/usage.py" <session id> '
+                      '<agent>[=<model>]... >> <file>`', record_text)
+        self.assertIn("ending `!=<model>` when a request ran on another", record_text)
         self.assertIn("`orchestrator --since <the **Run marker** file>`", record_text)
         for column in usage.COLUMNS:  # each one is defined there
             self.assertIn("`%s`" % column, record.split("\n## Usage lines\n")[1])
@@ -522,6 +523,104 @@ class ResumeTest(Fixture):
             other(900), request(901, "p4", 0, 0, 10030, 10),
             other(905), request(906, "p5", 0, 10030, 10, 10),
             other(1000), request(1001, "p6", 0, 10040, 10, 10)), (2, 2))
+
+
+class ExpectedModelTest(Fixture):
+    """`AGENT=MODEL`: the model the strategy gave the agent. A request counted on a model that
+    matches none of the expected names (as `usage.matches` says) ends the `model` field in
+    `!=MODEL`; the line keeps its fields, and nothing else changes."""
+
+    def test_a_match_leaves_the_line_as_it_was(self):
+        for arg in ("a1=model-a", "a1=MODEL-A", "a1=model", "a1=other,model-a"):
+            self.assertEqual(lines(SESSION, arg), [IMPLEMENTER], arg)
+        self.assertEqual(lines(SESSION, "b2=model-b", "orchestrator=model-a,model-c"),
+                         [REVIEWER, ORCHESTRATOR])
+
+    def test_another_model_is_marked_in_the_model_field(self):
+        self.assertEqual(lines(SESSION, "a1=sonnet"),
+                         [IMPLEMENTER.replace("| model-a |", "| model-a!=sonnet |")])
+        self.assertEqual(lines(SESSION, "b2=Opus,Sonnet"),
+                         [REVIEWER.replace("| model-b |", "| model-b!=opus,sonnet |")])
+        for line in lines(SESSION, "a1=sonnet", "b2=x"):
+            self.assertEqual(len(line.split(" | ")), 1 + len(usage.COLUMNS), line)
+
+    def test_every_request_counts_not_only_the_last(self):
+        # The orchestrator's last request ran on model-c, the three before it on model-a.
+        self.assertEqual(lines(SESSION, "orchestrator=model-c"),
+                         [ORCHESTRATOR.replace("| model-c |", "| model-c!=model-c |")])
+        marker = os.path.join(self.tmp, "marker")
+        with open(marker, "w", encoding="utf-8") as fh:
+            fh.write("R\n")
+        os.utime(marker, (epoch(5015), epoch(5015)))  # only o4 counts: model-c
+        self.assertEqual(lines(SESSION, "orchestrator=model-c", "--since", marker)[0].split(
+            " | ")[3], "model-c")
+
+    def test_a_suffix_a_date_and_inherit_are_no_mismatch(self):
+        self.agent(self.new, "g7", "manager-plugin:implementer", (
+            other(10), request(20, "q1", 1, 0, 100, 10, model="vendor-big-4-6")))
+        plain = lines(SESSION, "g7")[0]
+        for arg in ("g7=big[1m]", "g7=vendor-big-4-6[1m]", "g7=vendor-big-4-6-20260101",
+                    "g7=inherit", "g7=Big", "g7=small,inherit", "g7=big-4-6"):
+            self.assertEqual(lines(SESSION, arg), [plain], arg)
+        self.assertEqual(lines(SESSION, "g7=small[1m]"),
+                         [plain.replace("| vendor-big-4-6 |", "| vendor-big-4-6!=small |")])
+        self.assertEqual(lines(SESSION, "g7=vendor-big-4-5-20250101"), [plain.replace(
+            "| vendor-big-4-6 |", "| vendor-big-4-6!=vendor-big-4-5 |")])
+        self.agent(self.new, "h8", None, (request(5, "q2", 1, 0, 1, 1,
+                                                  model="vendor-big-4-6-20260101[1m]"),))
+        self.assertNotIn("!=", lines(SESSION, "h8=vendor-big-4-6")[0])
+
+    def test_a_versioned_name_must_end_the_id(self):
+        self.agent(self.new, "g7", None, (request(5, "q1", 1, 0, 1, 1, model="vendor-big-4-6"),))
+        self.assertIn("| vendor-big-4-6!=big-4 |", lines(SESSION, "g7=big-4")[0])
+        self.agent(self.new, "h8", None, (request(5, "q2", 1, 0, 1, 1,
+                                                  model="prov.vendor-big-4-6@20260101"),))
+        self.assertNotIn("!=", lines(SESSION, "h8=vendor-big-4-6")[0])
+        self.assertNotIn("!=", lines(SESSION, "h8=big")[0])
+        self.assertIn("!=small |", lines(SESSION, "h8=small")[0])  # an alias of another family
+        self.assertIn("!=g-4-6 |", lines(SESSION, "g7=g-4-6")[0])  # only on a `-` boundary
+
+    def test_a_dotted_version_is_not_a_provider_prefix(self):
+        self.agent(self.new, "g7", None, (request(5, "q1", 1, 0, 1, 1,
+                                                  model="vendor-small-4.6"),))
+        self.assertIn("!=big-4.6 |", lines(SESSION, "g7=big-4.6")[0])
+        self.agent(self.new, "h8", None, (request(5, "q2", 1, 0, 1, 1,
+                                                  model="prov.vendor-big-4.6@20260101"),))
+        self.assertNotIn("!=", lines(SESSION, "h8=vendor-big-4.6")[0])
+        self.assertNotIn("!=", lines(SESSION, "h8=big-4.6")[0])
+
+    def test_a_bare_version_is_marked(self):
+        self.agent(self.new, "g7", None, (request(5, "q1", 1, 0, 1, 1,
+                                                  model="vendor-small-4-6"),))
+        for name in ("4-6", "6", "4.6", "-4-6"):
+            self.assertIn("!=" + name + " |", lines(SESSION, "g7=" + name)[0], name)
+        self.assertNotIn("!=", lines(SESSION, "g7=4-6,small")[0])  # another name still matches
+
+    def test_a_trailing_provider_suffix_is_marked(self):
+        # A false mark is the safe side: `-v1:0` after the version never passes.
+        self.agent(self.new, "g7", None, (request(5, "q1", 1, 0, 1, 1,
+                                                  model="vendor-big-4-6-v1:0"),))
+        self.assertIn("!=vendor-big-4-6 |", lines(SESSION, "g7=vendor-big-4-6")[0])
+
+    def test_what_is_unknown_is_never_marked(self):
+        self.assertEqual(lines(SESSION, "zz=sonnet"), ["usage | zz | unknown" + UNKNOWN])
+        self.assertEqual(lines("no-such-session", "orchestrator=sonnet"),
+                         ["usage | orchestrator | main" + UNKNOWN])
+        self.assertEqual(lines(SESSION, "a1=", "a1=,"), [IMPLEMENTER])  # no model named
+
+    def test_a_name_with_a_model_is_still_never_a_path(self):
+        self.assertEqual(lines(SESSION, "../a1=model-a", "a*=x"),
+                         ["usage | .._a1 | unknown" + UNKNOWN, "usage | a_ | unknown" + UNKNOWN])
+        self.assertEqual(lines(SESSION, "a1=x|y z"),
+                         [IMPLEMENTER.replace("| model-a |", "| model-a!=x_y_z |")])
+
+    def test_the_command_takes_the_models(self):
+        env = dict(os.environ, CLAUDE_CONFIG_DIR=self.config)
+        p = subprocess.run([sys.executable, "-I", "-B", SCRIPT, SESSION, "a1=sonnet", "b2=model-b"],
+                           capture_output=True, env=env, cwd=self.tmp)
+        self.assertEqual((p.returncode, p.stderr.decode()), (0, ""))
+        self.assertEqual(p.stdout.decode("ascii").splitlines(),
+                         [IMPLEMENTER.replace("| model-a |", "| model-a!=sonnet |"), REVIEWER])
 
 
 if __name__ == "__main__":

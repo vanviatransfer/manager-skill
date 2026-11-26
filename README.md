@@ -107,20 +107,23 @@ your machine, shared by all your projects, outside every repository, and holds n
 contents; delete the folder to reset it (between runs: its `active/` subfolder holds the markers of
 runs in progress, and `notes/` their working notes). It may not persist in cloud sessions.
 
-**What a run spent.** An agent's context size is not what it cost, so the record also holds
-`usage` lines. The manager skill's `usage.py` (standard-library Python; it only reads) takes them
-from the session's transcript and its subagents' transcripts under the Claude config folder
+**What a run spent.** An agent's context size is not what it cost, so the record also holds `usage`
+lines. The manager skill's `usage.py` (standard-library Python; it only reads) takes them from the
+session's transcript and its subagents' transcripts under the Claude config folder
 (`CLAUDE_CONFIG_DIR`, else `~/.claude`): for the orchestrator and for each subagent, the API
-requests, the uncached input, the cache reads, the cache writes by lifetime (5 minutes, 1 hour),
-the output, the context at the last return, the warm and cold resumes (a request sent 60 seconds
-or more after the previous one: cold when the cache had expired and the context was written
-again) and the seconds from its first record to its last. The orchestrator's line counts the run
-only, from the time its run marker (under **How `manager` works**) was written. `manager-retro`
-measures these lines too, among other things to re-tune the rotation thresholds. The lines need
-Python: on a machine without one the record gets none, and the final report says so. Limits: the
-transcript format is undocumented, so a line or a field that can't be read is skipped and a
-missing value is `unknown`; the script is tested on synthetic transcripts and was run on one real
-session's; and no threshold has been changed from these figures yet.
+requests, the uncached input, the cache reads, the cache writes by lifetime (5 minutes, 1 hour), the
+output, the context at the last return, the warm and cold resumes (a request sent 60 seconds or more
+after the previous one: cold when the cache had expired and the context was written again) and the
+seconds from its first record to its last. The orchestrator's line counts the run only, from the
+time its run marker (under **How `manager` works**) was written. Given the model the strategy
+assigned an agent, the script marks its `model` field (`<model>!=<expected>`) when any of its
+requests ran on another model, so a resumed or replaced agent that ran on the wrong model shows in
+the record; with the record off, this isn't checked. `manager-retro` measures these lines too, among
+other things to re-tune the rotation thresholds. The lines need Python: on a machine without one the
+record gets none, and the final report says so. Limits: the transcript format is undocumented, so a
+line or a field that can't be read is skipped and a missing value is `unknown`; the script is tested
+on synthetic transcripts and was run on one real session's; and no threshold has been changed from
+these figures yet.
 
 Two things learn from the record:
 
@@ -154,8 +157,11 @@ against run records, not measurements):
 - **Fix rounds:** at most 5 per phase by default (a plan's or project's own limit wins); only rounds
   after a CHANGES REQUIRED review count, retry rounds included. At the third round, and when two
   reviews in a row report the same blockers while rounds are left, the manager asks whether the
-  approach is wrong rather than the last attempt. An owner decision that unblocks a phase a brake
-  had stopped restarts that phase's counts.
+  approach is wrong rather than the last attempt. "The same blockers" is exact, not a prose
+  comparison: the re-reviewer, given the previous blockers by number, marks each one `still present
+  as B<k>` (its own blocker for that defect), and the brake trips when all are still present and
+  they cover all of its blockers. An owner decision that unblocks a phase a brake had stopped
+  restarts that phase's counts.
 - **Integration rounds** (bringing a candidate up to a default branch that moved): at most 5 per
   phase, counted separately (a plan's or project's limit on review attempts wins); a 6th needed
   blocks the phase as "default branch moving faster than the phase can land". The review-ledger
@@ -279,21 +285,23 @@ only for manager phases, which the manager dispatches with a brief). A request c
 another plugin or skill that dispatches `general-purpose` needs one retry with that marker. The hook
 writes nothing, touches none of your settings files and goes away with the plugin. It is a plain
 `sh` script; on Windows it runs in Git Bash, and where Git Bash (or `grep`/`sed`) is missing it
-fails open (`onFailure: continue`), so spawns are allowed and nothing is blocked. The hooks that
-run a Python script find it from their own path with `/` or `\` separators, so a `C:\...` path
-works too. A second
-`PreToolUse` hook, on Bash, is the code-map commit check above: it does nothing unless a
-repository's `.codemap.json` opts in, and fails open the same way. It writes nothing either, with
-one exception that comes from git: to see what `git add` would store for a rebuilt map page, the
-check has git run that page's clean filter, and a filter that stores what it cleans (git-lfs,
-when the map pages are LFS-tracked) then adds the page's object under `.git/lfs/objects`, the
-one that `git add` stores anyway; nothing else is written. A third, on Grep, Glob and
-Bash, is the code-map "map first" nudge above, with its "skills first" branch: it does nothing in
-a repository without a code map or a marked self-training skill, and fails open the same way. A `SessionStart` hook (startup, resume, clear) reads the repository's
-`AGENTS.md` and `CLAUDE.md` and, when their code-map rules block is older than the plugin's
-template, adds one line of information to the session's context (the `rules-hint` command that
-updates the block, and that a manager run does this in its setup PR); otherwise it prints
-nothing. It writes nothing and fails open too.
+fails open (`onFailure: continue`), so spawns are allowed and nothing is blocked. The hooks that run
+a Python script find it from their own path with `/` or `\` separators, so a `C:\...` path works
+too. They try `python3`, `python`, then `py -3`, except that a `python3` or `python` under a
+`WindowsApps` folder (on Windows often a Microsoft Store stub that only fails, slowly) is tried only
+after `py -3`. A second `PreToolUse` hook, on Bash, is the code-map commit check above: it does
+nothing unless a repository's `.codemap.json` opts in, and fails open the same way. It writes
+nothing either, with one exception that comes from git: to see what `git add` would store for a
+rebuilt map page, the check has git run that page's clean filter, and a filter that stores what it
+cleans (git-lfs, when the map pages are LFS-tracked) then adds the page's object under
+`.git/lfs/objects`, the one that `git add` stores anyway; nothing else is written. A third, on Grep,
+Glob and Bash, is the code-map "map first" nudge above, with its "skills first" branch: it does
+nothing in a repository without a code map or a marked self-training skill, and fails open the same
+way. A `SessionStart` hook (startup, resume, clear) reads the repository's `AGENTS.md` and
+`CLAUDE.md` and, when their code-map rules block is older than the plugin's template, adds one line
+of information to the session's context (the `rules-hint` command that updates the block, and that a
+manager run does this in its setup PR); otherwise it prints nothing. It writes nothing and fails
+open too.
 
 **Scan guard** (`PreToolUse` on Bash, PowerShell, Glob and Grep; `hooks/scan-guard.sh` with
 `skills/code-map/scripts/scan_guard.py`). It refuses (exit 2, one line) a command that recursively

@@ -246,5 +246,129 @@ class BackslashZeroTest(unittest.TestCase):
                       json.loads(out)["hookSpecificOutput"]["additionalContext"])
 
 
+@unittest.skipIf(portability.WINDOWS, "sh-script stand-ins for python3, python and py: POSIX only "
+                                      "[not verified on Windows]")
+class WindowsAppsStubTest(unittest.TestCase):
+    """On Windows, `python3` and `python` are often Microsoft Store stubs under
+    `...\\Microsoft\\WindowsApps\\` that only fail (exit 9009), slowly. Every wrapper with the Python
+    lookup tries such a candidate only after `py -3`, and still tries it last (a Store Python is a
+    real one there). Stand-ins on PATH: a stub folder first, a `py` that runs this Python."""
+
+    WRAPPERS = ("agent-paths.sh", "codemap-commit-check.sh", "codemap-rules-version.sh",
+                "codemap-search-nudge.sh", "manager-context-watch.sh", "scan-guard.sh")
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(portability.rmtree, self.tmp)
+        self.root = os.path.join(self.tmp, "repo")
+        os.makedirs(os.path.join(self.root, ".git"))
+        os.makedirs(os.path.join(self.root, "src"))
+        with open(os.path.join(self.root, ".codemap.json"), "w", encoding="utf-8") as fh:
+            fh.write('{"map": "map.md"}\n')
+        with open(os.path.join(self.root, "src", "a.py"), "w", encoding="utf-8") as fh:
+            fh.write("x = 1\n")
+        home = os.path.join(self.tmp, "home")
+        os.makedirs(os.path.join(home, ".claude", "manager-runs", "active"))
+        with open(os.path.join(home, ".claude", "manager-runs", "active", "s1"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("R2026-01-01-0900\n")
+        state = os.path.join(self.tmp, "state")
+        os.mkdir(state)
+        self.log = os.path.join(self.tmp, "ran.log")
+        self.env = dict(os.environ, TMPDIR=state, TEMP=state, TMP=state, HOME=home,
+                        PYTHONDONTWRITEBYTECODE="1")
+        self.env.pop("CLAUDE_PLUGIN_ROOT", None)
+
+    def command(self, folder, name, body):
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, name)
+        with open(path, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write("#!/bin/sh\necho %s >> '%s'\n%s\n" % (name, self.log, body))
+        os.chmod(path, 0o755)
+
+    def path(self, *folders):
+        self.env["PATH"] = os.pathsep.join(folders + (os.environ.get("PATH", ""),))
+
+    def ran(self):
+        if not os.path.exists(self.log):
+            return []
+        with open(self.log, encoding="utf-8") as fh:
+            return fh.read().split()
+
+    def inputs(self):
+        tool = {"session_id": "s1", "transcript_path": "/t/s1.jsonl", "cwd": self.root,
+                "hook_event_name": "PreToolUse"}
+        return (
+            ("agent-paths.sh", {"session_id": "s1", "cwd": self.root,
+                                "hook_event_name": "SubagentStart", "agent_id": "a1",
+                                "agent_type": "manager-plugin:worker"}, ["SubagentStart"]),
+            ("codemap-commit-check.sh", dict(tool, tool_name="Bash",
+                                             tool_input={"command": "git commit -m x"}), []),
+            ("codemap-rules-version.sh", {"session_id": "s1", "cwd": self.root,
+                                          "hook_event_name": "SessionStart"}, []),
+            ("codemap-search-nudge.sh", dict(tool, tool_name="Grep",
+                                             tool_input={"pattern": "foo"}), []),
+            ("manager-context-watch.sh", dict(tool, hook_event_name="PostToolUse",
+                                              tool_name="Bash", tool_input={"command": "ls"}),
+             []),
+            ("scan-guard.sh", dict(tool, tool_name="Bash", tool_input={"command": "ls -la"}), []))
+
+    def run_all(self):
+        """{wrapper: (exit code, stdout, stderr, the stand-ins it ran)}, each from a clean log."""
+        found = {}
+        for name, data, args in self.inputs():
+            if os.path.exists(self.log):
+                os.remove(self.log)
+            p = subprocess.run(["sh", os.path.join(HERE, name)] + args,
+                               input=json.dumps(data).encode(), capture_output=True,
+                               env=self.env, timeout=60)
+            found[name] = (p.returncode, p.stdout.decode(), p.stderr.decode(), self.ran())
+        self.assertEqual(sorted(found), sorted(self.WRAPPERS))
+        return found
+
+    def test_every_wrapper_with_the_lookup_is_covered(self):
+        for path in WRAPPERS:
+            name = os.path.basename(path)
+            self.assertEqual('for c in python3 python "py -3"' in read(path),
+                             name in self.WRAPPERS, name)
+
+    def test_a_windowsapps_stub_is_never_run_when_py_works(self):
+        stubs = os.path.join(self.tmp, "Users", "o", "AppData", "Local", "Microsoft", "WindowsApps")
+        for name in ("python3", "python"):
+            self.command(stubs, name, "sleep 2\nexit 49")  # 9009, as an exit status
+        self.command(os.path.join(self.tmp, "launcher"), "py",
+                     '[ "$1" = -3 ] || exit 3\nshift\nexec "%s" "$@"' % sys.executable)
+        self.path(stubs, os.path.join(self.tmp, "launcher"))
+        found = self.run_all()
+        for name, (code, out, err, ran) in found.items():
+            self.assertEqual(ran, ["py"], (name, code, out, err))
+        self.assertEqual(found["codemap-search-nudge.sh"][0], 2)
+        self.assertIn("manager-plugin: map first:", found["codemap-search-nudge.sh"][2])
+        self.assertIn("hookSpecificOutput", found["agent-paths.sh"][1])
+        self.assertEqual(found["scan-guard.sh"][:3], (0, "", ""))
+
+    def test_a_store_python_under_windowsapps_still_runs_last(self):
+        if shutil.which("py", path=os.environ.get("PATH", "")):
+            self.skipTest("a real `py` on PATH")
+        stubs = os.path.join(self.tmp, "AppData", "Local", "Microsoft", "WINDOWSAPPS")
+        self.command(stubs, "python3", 'exec "%s" "$@"' % sys.executable)
+        self.command(stubs, "python", "exit 49")
+        self.path(stubs)
+        found = self.run_all()
+        for name, (code, out, err, ran) in found.items():
+            self.assertEqual(ran, ["python3"], (name, code, out, err))
+        self.assertEqual(found["codemap-search-nudge.sh"][0], 2)
+        self.assertIn("hookSpecificOutput", found["agent-paths.sh"][1])
+        self.assertEqual(found["scan-guard.sh"][:3], (0, "", ""))
+
+    def test_a_python_elsewhere_runs_first_as_before(self):
+        folder = os.path.join(self.tmp, "usr", "bin")
+        self.command(folder, "python3", 'exec "%s" "$@"' % sys.executable)
+        self.command(os.path.join(self.tmp, "launcher"), "py", "exit 3")
+        self.path(folder, os.path.join(self.tmp, "launcher"))
+        for name, (code, out, err, ran) in self.run_all().items():
+            self.assertEqual(ran, ["python3"], (name, code, out, err))
+
+
 if __name__ == "__main__":
     unittest.main()
