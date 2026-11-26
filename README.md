@@ -300,8 +300,8 @@ nothing. It writes nothing and fails open too.
 scans a filesystem root, a drive root or the home folder: `find`, `ls -R`, `du`, `tree`, `grep -r`,
 `rg`, `ag`, `ack`, `fd`, PowerShell's `Get-ChildItem`/`gci`/`dir`/`ls -Recurse`, `cmd /c dir /s`,
 `forfiles /s` and `where /r` on `/`, `/c`, `/cygdrive/c`, `/mnt/c`, `C:\`, `~`, `$HOME`,
-`$env:USERPROFILE`, `/home`, `/Users`, `C:\Users` or `/root` (any drive letter, any case; a path
-above one, such as `~/..`, too), also inside `bash -c`, `eval`, `powershell -Command`, a decoded
+`$env:USERPROFILE`, `/home`, `/Users`, `C:\Users` or `/root` (any drive letter, any case; a root
+spelling followed only by `..`, such as `~/..`, too), also inside `bash -c`, `eval`, `powershell -Command`, a decoded
 `-EncodedCommand`, `iex`, `cmd /c`, pipes, chains, subshells, `$( )` and backticks (a
 here-document's body is text, even one fed to a shell); a scan with no path (or `.`) when the cwd
 is such a root; Glob or Grep there, or a Glob pattern such as `/**/x`. A depth of 0 or 1

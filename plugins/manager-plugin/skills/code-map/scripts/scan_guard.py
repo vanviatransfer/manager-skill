@@ -131,8 +131,8 @@ def is_root(path, cwd, posix=True):
 
 def drop_heredocs(cmd):
     """The command without here-document bodies: their lines are text, never commands, whatever
-    they are fed to (`bash <<EOF` included: a known gap, see TODO 21). A `<<` (not `<<<`) whose
-    delimiter can't be read fails open: the command ends before it."""
+    they are fed to (`bash <<EOF` included: a known gap, see TODO 21). A `<<` whose delimiter
+    can't be read (`1<<2`, `<< ""`) stays as text."""
     out, ends = [], []
     for line in cmd.split("\n"):
         if ends:
@@ -150,8 +150,8 @@ def drop_heredocs(cmd):
                 continue
             m = HEREDOC.match(line, i)
             if not m:
-                out.append(line[:i])
-                return "\n".join(out)
+                i += 2
+                continue
             ends.append((m.group(1) == "-", next(g for g in m.groups()[1:] if g)))
             i = m.end()
         out.append(line)
@@ -467,13 +467,16 @@ def new_cwd(arg, cwd, posix=True):
 def scan_bash(scan, cmd, cwd, depth=0):
     if depth > MAX_DEPTH:
         return
-    cmd = drop_heredocs(cmd)
+    dropped = drop_heredocs(cmd)
+    changed, cmd = dropped != cmd, dropped
     # An unquoted drive root before a space (`find C:\ -name x`): Git Bash would read `\ ` as an
     # escaped space; the model meant the drive.
     cmd = re.sub(r"(?<![\w\\])([A-Za-z]:)\\(?=[\s;|&)\"']|$)", r"\1/", cmd)
     try:
         shlex.split(cmd, comments=True, posix=True)
     except ValueError:
+        if changed:  # a here-document opener inside a quote ate lines: fail open
+            return
         return fallback(scan, cmd, cwd)
     for inner in substitutions(cmd):
         scan_bash(scan, inner, cwd, depth + 1)

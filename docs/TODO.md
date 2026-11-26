@@ -999,7 +999,7 @@ shipped behaviour, so plugin.json stays 0.9.7.
 The scan guard's tests were hand-picked tables. A data-only corpus now measures both failure
 kinds: a leak (a root scan that passes) and a false block (normal work refused).
 
-- **Corpus.** `hooks/scan_guard_corpus.json`: 324 entries (177 block, 147 pass; Bash 233,
+- **Corpus.** `hooks/scan_guard_corpus.json`: 331 entries (179 block, 152 pass; Bash 240,
   PowerShell 58, Glob 20, Grep 13), one entry per line: `cat`, `tool`, `input` (the tool input),
   optional `cwd` (default per tool in the file's header, as is the `HOME` it assumes), optional
   `env` (variables set for the entry), optional `dirs` (paths, expanded and with `/`, that the
@@ -1045,8 +1045,11 @@ kinds: a leak (a root scan that passes) and a false block (normal work refused).
   read. Body lines are dropped before the command is parsed. The opener pattern now reads
   `<<WORD`, `<<-WORD`, `<<\WORD`, `<< \WORD`, `<<'WORD'` and `<<"WORD"` (quoted: spaces allowed);
   that fixes a false block since 0.9.6 (`cat > notes.md <<\EOF` with `find / -name x` in the
-  body). A `<<` (not `<<<`) whose delimiter can't be read (`$((1<<2))`, `<<$END`) fails open: the
-  command is cut there and nothing after it is scanned.
+  body). A `<<` (not `<<<`) whose delimiter can't be read (`$((1<<2))`, `<< ""`) stays text, as in
+  f3a720f, and the rest of the command is scanned. A `<<WORD` inside quotes is still taken for an
+  opener and drops the lines after it up to `WORD` (as in f3a720f); when that leaves text shlex
+  can't split (an opener inside a quoted commit message), the command passes: no refusal, and the
+  token fallback is not run on it (fail open).
 - **Dotted leaves for `dir /s`.** `dir /s <root>\x.y` counts as a search for the file `x.y` over
   the whole root only when `x.y` is not an existing folder. The spelling is expanded first (`~`,
   `%VAR%`, `$env:NAME`, `${NAME}`, `$NAME`; PowerShell's `$HOME` falls back to `USERPROFILE`), and
@@ -1062,28 +1065,29 @@ kinds: a leak (a root scan that passes) and a false block (normal work refused).
 
   | category | entries | f3a720f | after |
   | --- | ---: | ---: | ---: |
-  | bait | 55 | 0/1 \| 0/1 | 0/0 \| 0/0 |
-  | composition | 24 | 0/0 \| 0/0 | 0/0 \| 0/0 |
+  | bait | 60 | 0/2 \| 0/2 | 0/0 \| 0/0 |
+  | composition | 25 | 0/0 \| 0/0 | 0/0 \| 0/0 |
   | cwd-root | 30 | 0/0 \| 0/0 | 0/0 \| 0/0 |
   | gap | 4 | 0/0 \| 0/0 | 0/0 \| 0/0 |
   | glob-grep | 33 | 0/0 \| 0/0 | 0/0 \| 0/0 |
   | incident | 3 | 0/0 \| 0/0 | 0/0 \| 0/0 |
   | powershell | 49 | 10/1 \| 10/1 | 0/0 \| 0/0 |
   | quoting | 20 | 0/0 \| 0/0 | 0/0 \| 0/0 |
-  | root-spelling | 29 | 2/0 \| 2/0 | 0/0 \| 0/0 |
+  | root-spelling | 30 | 2/0 \| 2/0 | 0/0 \| 0/0 |
   | scanner | 45 | 5/3 \| 5/3 | 0/0 \| 0/0 |
   | wrapper | 32 | 11/0 \| 11/0 | 0/0 \| 0/0 |
-  | total | 324 | 28/5 \| 28/5 | 0/0 \| 0/0 |
+  | total | 331 | 28/6 \| 28/6 | 0/0 \| 0/0 |
 
-  Gaps: 13 for the predicate, 14 for the hook (the hook gap below). f3a720f's bait false block is
-  `cat > notes.md <<\EOF ... find / -name x ... EOF`. One gap is new with this change: f3a720f
-  refused `echo $((1<<2)); find / -name x`, which now fails open.
+  Gaps: 14 for the predicate, 15 for the hook (the hook gap below), the same entries at f3a720f.
+  f3a720f's bait false blocks are `cat > notes.md <<\EOF ... find / -name x ... EOF` and a
+  double-quoted commit message with `cat <<EOF` and a newline in it. No gap is new with this
+  change.
 - **Fixes** (scan_guard.py, local, same design): `eval` arguments scanned as Bash; the here-document
   opener pattern, as above; wrappers `time -p`, `command -p` (`command -v|-V` is a lookup),
   `exec -a`, `ionice`, `busybox`; `powershell.exe`'s bare script after its options (`powershell
   gci C:\ -Recurse`, value options such as `-ExecutionPolicy Bypass` skipped; pwsh takes a bare
   word as a file); `-EncodedCommand`; `iex` and `Invoke-Expression` strings scanned as
-  PowerShell; a path above a root is a root (`~/..`, `$HOME\..`); `gci C:\*.py -Recurse`; cmd
+  PowerShell; a root spelling followed only by `..` is a root (`~/..`, `$HOME\..`); `gci C:\*.py -Recurse`; cmd
   `dir/s` glued and the `dir /s` leaf rule above; `forfiles /s` (its `/p`, else the cwd) from
   Bash, cmd and PowerShell; `-Recurse:$false` is no recursion; the rg/fd/ag depth rule; the
   64 KB cap. scan-guard.sh: `forfiles` joins the pre-filter's words, and an `-e...` option
@@ -1091,12 +1095,13 @@ kinds: a leak (a root scan that passes) and a false block (normal work refused).
   search_nudge.py: untouched.
 - **Known gaps** (in the corpus as `known_gap`, reported, not failed). From failing open: a
   here-document's body, also one fed to a shell (`bash <<'EOF' ... EOF`, `sh -s <<EOF ... EOF`);
-  everything after a `<<` whose delimiter can't be read (`echo $((1<<2)); find / -name x`); a
-  dotted `dir /s` leaf whose variable is unset in the hook's environment
+  the lines after a quoted `<<WORD` up to `WORD` (`grep -n '<<EOF' notes.md` then `find / -name
+  x` on the next line; as in f3a720f); a dotted `dir /s` leaf whose variable is unset in the hook's environment
   (`%USERPROFILE%\codemap.py` with `USERPROFILE` unset); a command over 64 KB. Others: text piped
   into a shell (`echo "find / -name x" | bash`); paths from stdin (`echo / | xargs find`); paths
   built at run time (`F=/; find $F`, `find $(echo /)`); scans in other languages (`python3 -c
-  "os.walk('/')"`); `robocopy C:\ NUL /L /S`; `Start-Process cmd -ArgumentList '/c dir /s C:\'`;
+  "os.walk('/')"`); a root spelling with more than `..` after it (`find ~/proj/../.. -name x`);
+  `robocopy C:\ NUL /L /S`; `Start-Process cmd -ArgumentList '/c dir /s C:\'`;
   .NET enumeration (`[IO.Directory]::EnumerateFiles('C:\', '*', 'AllDirectories')`); and one false
   block: Glob with a root `path` and a one-level pattern (`*` in `/`). Each would need the guard to
   evaluate or interpret more than one command's words. Hook gap (`hook_gap`): `f"in"d / -name x` is
