@@ -31,7 +31,13 @@ case "$root:$0" in
   :/* | :[A-Za-z]:[/\\]* | :\\\\*) root="$here/.." ;;
 esac
 if [ -f "$script" ]; then
-  for c in python3 python "py -3"; do
+  # A python3 or python under WindowsApps (often a Microsoft Store stub, slow to fail) is
+  # tried only last (`+`), after `py -3`.
+  for c in python3 python "py -3" +python3 +python; do
+    case "$c:$(command -v "${c#+}" 2>/dev/null)" in
+      +*[/\\][Ww][Ii][Nn][Dd][Oo][Ww][Ss][Aa][Pp][Pp][Ss][/\\]*) c=${c#+} ;;
+      +* | *[/\\][Ww][Ii][Nn][Dd][Oo][Ww][Ss][Aa][Pp][Pp][Ss][/\\]*) continue ;;
+    esac
     out=$(printf '%s' "$input" | CODEMAP_NUDGE_PYTHON="$c" CODEMAP_NUDGE_ROOT="$root" \
       PYTHONDONTWRITEBYTECODE=1 $c "$script" 2>/dev/null)
     status=$?

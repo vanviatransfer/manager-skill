@@ -15,7 +15,7 @@ Rulings: <given to the implementer, verbatim | none>
 Plan records: <given to the implementer, verbatim | none | unknown (resumed)>
 Plan change: <exact text or specification file path; plan-only PR only>
 Setup: <code map | code map + commit check; setup PR only>
-Previous blockers: <titles; re-review only>
+Previous blockers: <B<n> titles; re-review only>
 Code map: <python command and quoted codemap.py path | none>
 ```
 
@@ -25,7 +25,7 @@ You are a new, independent reviewer of exactly the Candidate SHA; your verdict i
 gate. Judge the code, not anyone's account of it. Don't spawn subagents; use no skills or MCP tools
 beyond the GitHub backend's read tools. A tool you need is missing → verdict not given; reply
 `BLOCKED: missing tool <name>`. Rare cases live in files beside this one; read one only when its
-trigger holds (again after a compaction while it still holds):
+trigger holds (again after a compaction):
 - `Setup: code map` → `brief-code-map-setup.md`;
 - a `Plan change` field → `brief-plan-only.md`;
 - a vault (`.codemap.json`'s `vault`, else `docs/vault/` or the rules' path) → `brief-vault.md`;
@@ -60,16 +60,16 @@ git show <base-sha>:<plan-path> | awk -v id=<id> '
   /^### /{h=0; q=index($0,"### " id ".")==1} p||h||q'
 ```
 
-No phase section printed → `grep -n` its heading and read from there; no `## Constraints…` or
-`## Binding decisions` section printed → `grep -n '^## '` and read them under the names the plan
-gives them; an entry it cites (`D<n>`)
-→ `grep -n` it. **Read at the candidate:** the full `git diff <base>...<candidate>` (with a
-`Code map` command, without the generated map pages, which `check` covers: add the pathspecs
-`:!<map>` and `:!<map dir>/`, where `<map>` is the `map` in `.codemap.json` at the candidate and
-`<map dir>` is that path without `.md`); the surrounding code its correctness depends on. Not PR
-comments or reviews, the PR description or commit messages. With a `Code map` command, run
-`<code map> changed --base <base> --head <candidate>` (pointers only, never a filter) and, before
-any broad search of code or vault, `<code map> query <term>` (and read the vault index).
+No phase section printed → read from its heading (`grep -n`); no `## Constraints…` or
+`## Binding decisions` section printed → `grep -n '^## '` and read them under the plan's names;
+an entry it cites (`D<n>`) → `grep -n` it. **Read at the candidate:** the full
+`git diff <base>...<candidate>` (with a `Code map` command, without the generated map pages,
+which `check` covers: add the pathspecs `:!<map>` and `:!<map dir>/`, where `<map>` is the `map`
+in `.codemap.json` at the candidate and `<map dir>` is that path without `.md`); the surrounding
+code its correctness depends on. Not PR comments or reviews, the PR description or commit
+messages. With a `Code map` command, run `<code map> changed --base <base> --head <candidate>`
+(pointers only, never a filter) and, before any broad search of code or vault, `<code map> query
+<term>` (and read the vault index).
 
 **Review for.** Phase PR: acceptance criteria; bugs,
 edge cases, broken invariants in touched code and its callers; security and data safety; project
@@ -80,10 +80,10 @@ security or data-safety issue; project-rule breach; missing required test; out-o
 plan or record misstatement; or one that "Always blockers" below or a `brief-*.md` file names.
 Anything else is a note. **Notes:** at most 3 (lean ones included), each with a concrete
 consequence and a suggested action; none that is cosmetic, needs no action or is "for awareness",
-and never this phase's own `done (PR #n)` status line (the implementer brief requires it).
+and never this phase's own `done (PR #n)` status line.
 English plan, vault, project-skill or skill-record text is never a blocker or a note, whatever
 language a project rule names (the owner's standing policy).
-Lean notes, from the diff only (no extra exploration to find them): code the plan doesn't need, as
+Lean notes, from the diff only (no extra exploration): code the plan doesn't need, as
 `N<k>. lean: delete | reuse <existing path> | yagni — <file:line> — <what to remove>`; never a
 blocker on their own, never for what the plan requires (e.g. an expand–contract shim), and not for
 what is already a blocker above (out-of-scope code stays a blocker). They go to the plan's notes,
@@ -95,8 +95,9 @@ status lines or the model-strategy record that doesn't match Plan records exactl
 
 **Validate independently:** run every validation command the plan and project require at the
 candidate (with a `Code map` command, `<code map> check` too, except for a plan-only PR: stale is a
-failure), once each (SKILL.md's retry after an invalid run excepted); output to a file outside the
-repo, only the exit code and failure summary into context. A command the plan marks `(when:
+failure), once each (SKILL.md's retry after an invalid run excepted), under `timeout -k 30 1800`
+where `timeout` exists (plan or project limits win; 124/137 = fail); output to a file outside
+the repo, only the exit code and failure summary into context. A command the plan marks `(when:
 <trigger>)` is required only if the phase's diff matches the trigger, judged by you against the
 current diff (run it when in doubt); report a skipped one as `not required: <reason from the diff>`.
 Known-flaky list = the project's documented list **at the base SHA** (entries the diff adds or
@@ -114,8 +115,8 @@ Run in the first place that works:
    move the checkout to make it work, and never imply a pass.
 
 **Validation-only resume:** keep the same Candidate SHA, redo these checks, run only the missing
-validation, re-report the full format. **Previous blockers:** only after your own review is
-complete, check each title separately.
+validation, re-report the full format. **Previous blockers:** only after your own review, check
+each separately.
 
 Answer exactly this, nothing else:
 
@@ -133,7 +134,7 @@ Acceptance: <criterion → met / not met>
 Validation: <command → pass/fail (exit code) at the candidate | fail, known flaky: <tests> |
   not required: <reason from the diff> | not run: reason>
 Not checked: <what in scope you did not read, run or verify, and why | none>
-Previous blockers: <title → resolved / still present>   (re-review only)
+Previous blockers: <B<n> → resolved / still present as B<k>>   (re-review only)
 Checkout untouched: <`git rev-parse HEAD` and `git status --short` of the repo path, after your
   work; untracked files your validation created, if any; a worktree left in place and why, if any>
 ```

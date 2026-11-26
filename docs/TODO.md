@@ -1128,3 +1128,71 @@ kinds: a leak (a root scan that passes) and a false block (normal work refused).
   `eval`, `-EncodedCommand`, `iex`, `forfiles /s`, the depth rule, the 64 KB cap, the Git Bash
   spellings of a Windows home and that a here-document's body is text. Ceilings unchanged (no
   SKILL.md edit). [not verified on Windows] the new paths; synthetic hook input on Linux only.
+
+### 22. Exact same-blocker brake, model check, bounded validation, doc self-check, record format (plugin 0.9.9)
+
+Owner rule for this change: no added model token cost to a manager run (no new subagent, model
+call or per-phase or per-round tool call; the manager SKILL.md and both briefs not longer in
+words; ceilings unchanged; script output into context at most one short line, only when there is
+something to say).
+
+- **Same-blockers brake made exact.** The re-reviewer gets `Previous blockers` numbered as the
+  last review numbered them (`B<n> <title>`) and answers each as `resolved` or
+  `still present as B<k>` (its own blocker for that defect). `review-round.md`: the brake holds
+  when every previous blocker is `still present as B<k>` and those cover all of the re-review's
+  blockers; the ledger line keeps the numbered titles and gets `same` when it holds; an untagged
+  line (an incomplete one) → titles compared as before. Cost: a few output tokens in a line the
+  reviewer already writes; no extra call; the orchestrator matches tags instead of judging prose.
+  SKILL.md untouched (the definition lives in `review-round.md`, read at every review step).
+- **Model check.** `usage.py` takes `AGENT=MODEL` (several: `a,b`; matched as a case-insensitive
+  part of the model id, so `sonnet` matches a full Sonnet id); when any request it counts ran on
+  a model matching none of them, its `model` field ends in `!=MODEL` (the line keeps its 14
+  fields). `run-record.md` passes the strategy's model with each agent; `manager-retro` counts the
+  marked agents per role and run. Cost: none in context (the line is appended to the record file
+  in a Bash call that already runs). With the retro switch off there is no record and no
+  `usage.py`, so the model is **not checked** in such runs. Tests: `scripts/test_usage.py`
+  (`ExpectedModelTest`).
+- **Bounded validation.** Implementer step 5 and the reviewer's validation: run commands under
+  `timeout -k 30 1800` where `timeout` exists (the implementer: long probes too), a plan or
+  project limit wins, exit 124 or 137 is a fail. The defaults (30 s grace, 30 min limit) are this
+  change's choice. Cost: four words in each command the agents already run. `timeout` does not
+  kill a Windows process tree reliably (Git Bash's coreutils `timeout` signals the process it
+  started, not necessarily the native children it spawned) [not verified on Windows].
+- **Doc/record self-check** (retro evidence: 27 of 66 real blockers, 41%, were doc or record
+  accuracy, in 6 of 7 projects; 49% of phases needed a second review). No equivalent rule existed
+  (step 4 updates later phases "if facts require"; the vault brief covers pages a phase makes
+  false, not lines it writes wrong). Implementer step 5, before the final validation: check every
+  plan, vault and doc line you changed against the code; fix misstatements. Cost: a few reads of
+  lines the implementer just wrote, against a fix round (a cold resume plus a new review) it
+  avoids. Failure signal: in later run records the doc/record share of blocker classes stays at
+  35% or more, or the implementer context median rises more than 10%.
+- **Run-record format** (retro evidence: 3 of 6 records since 0.7.3 drifted: `193k`-style
+  values, `?`, `1 fix`, tags with spaces, abbreviated verdicts, phase lines after the last
+  summary). `run-record.md`: numbers are integers or `unknown`; `rounds` counts the phase's
+  reviews; verdicts in full; blocker tags kebab-case without spaces; a phase line written after
+  a `summary:` line is followed by a new one. Location, privacy rules and columns unchanged. The
+  pre-0.8.3 column-name note moved out (the retro skill keeps it).
+- **Hook Python lookup on Windows** (measured on a Windows 11 machine, idle: `ls -la` through
+  `scan-guard.sh` ~650 ms at 0.9.7 and 0.9.8; `sh` start ~20 ms, `py -3` start ~57 ms; there
+  `python3` and `python` are Microsoft Store stubs under `WindowsApps` that exit 9009).
+  Not re-measured here: timing on Linux says nothing about the stubs; reasoned from the code, the
+  wrappers ran both stubs before `py -3` [inference: the stubs cost most of the ~570 ms]. All six
+  wrappers with the loop (`agent-paths.sh`, `codemap-commit-check.sh`,
+  `codemap-rules-version.sh`, `codemap-search-nudge.sh`, `manager-context-watch.sh`,
+  `scan-guard.sh`) now try a `python3` or `python` whose `command -v` path has a `WindowsApps`
+  folder (case-insensitive) only after `py -3`, and still try it last: a Microsoft Store Python is
+  a real one there, so skipping it outright would leave such machines without Python. POSIX
+  behaviour unchanged (a Python found elsewhere runs first, as before); the cost is one
+  `command -v` in a subshell per candidate tried. No new files or caches. Tests:
+  `hooks/test_wrapper_paths.py` (`WindowsAppsStubTest`: a sleeping, failing stub under a
+  `WindowsApps` folder is never run when `py` works; a Store-style Python there still runs; a
+  Python elsewhere runs first), POSIX only. [not verified on Windows] the timing gain.
+- **Word and character counts** (`wc -w`, and `str.split()` / `len` as
+  `hooks/test_manager_compaction.py` counts; before → after): manager SKILL.md 2,721 → 2,721
+  words, 17,986 → 17,986 chars (untouched); code-map SKILL.md untouched (19,999 chars);
+  implementer-brief.md 1,306 → 1,305 (`split` 1,326 → 1,325; ceiling 1,327); reviewer-brief.md
+  1,325 → 1,324 (`split` 1,347 → 1,346; ceiling 1,347); review-round.md 559 → 556;
+  run-record.md 1,156 → 1,153. The added rules are offset by tightening nearby text in the same
+  files. manager-retro SKILL.md 1,391 → 1,420 (not read in a manager run).
+- **Version.** plugin.json 0.9.9. README: the same-blockers brake, the model mark in the `usage`
+  lines and the hooks' Python order.

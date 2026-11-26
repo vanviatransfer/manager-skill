@@ -2,11 +2,14 @@
 """usage: what a Claude Code session's orchestrator and its subagents spent, from the transcripts.
 
 Usage:
-  usage.py SESSION_ID [AGENT ...] [--since WHEN]
+  usage.py SESSION_ID [AGENT[=MODEL] ...] [--since WHEN]
 
 Prints one line for the session's main conversation (`orchestrator`) and one per subagent, oldest
 first; with AGENT names (`orchestrator`, or a subagent's id as the Agent tool returns it) only
-those, in that order. With `--since WHEN` a line counts only the records stamped at or after
+those, in that order. `AGENT=MODEL` names the model the agent should have run on (the model
+strategy's, as dispatched: `sonnet`, a full model id; several: `a,b`): when a request it counts
+ran on a model whose id contains none of them (case-insensitive), its `model` field ends in
+`!=MODEL`. With `--since WHEN` a line counts only the records stamped at or after
 WHEN, a file's modification time (the manager's run marker: the run, not the whole session) or
 an ISO 8601 time; the first request counted is then no resume. Each line, with ` | ` between its
 fields:
@@ -15,7 +18,7 @@ fields:
   output | context at return | warm resumes | cold resumes | seconds
 
 - agent: `orchestrator` or the subagent's id; role: `main`, or the subagent's type from its
-  `.meta.json`; model: the last request's.
+  `.meta.json`; model: the last request's (and `!=MODEL`, above).
 - requests: API requests. A transcript holds one record per content block, each with its
   request's message id and usage, so a request is counted once, by message id.
 - input, cache read, cache write 5m, cache write 1h, output: tokens, summed over the requests
@@ -109,6 +112,7 @@ def read(paths, since=None, waits=True):
     With `since`, a time in seconds, only the records stamped at or after it count. Without
     `waits`, a request that a tool result started is no resume."""
     requests = {}  # message id -> [time of its first record, of its last, model, usage]
+    models = set()  # every model a counted request ran on
     sent = []  # (time, whether a tool result) of the prompts and tool results
     compacted = []  # the times of the compactions
     start = end = None
@@ -145,13 +149,15 @@ def read(paths, since=None, waits=True):
                         entry[0] = at if entry[0] is None else min(entry[0], at)
                         entry[1] = at if entry[1] is None else max(entry[1], at)
                     entry[2:] = model, usage  # the last record's: the complete one
+                    if isinstance(model, str):
+                        models.add(model)
         except OSError:
             continue
     if not opened:
         return None
     timed = start is not None
     total = dict.fromkeys(FIELDS, 0)
-    total.update(model=None, context=None, start=start,
+    total.update(model=None, context=None, start=start, models=models,
                  seconds=int(end - start) if timed else None,
                  warm=0 if timed else None, cold=0 if timed else None)
     sent.sort()
@@ -274,10 +280,23 @@ def age(row):
     return start is None, start or 0, row[0]
 
 
-def render(agent, kind, totals):
+def off(totals, expected):
+    """True when a request in `totals` ran on a model that matches none of `expected`."""
+    return bool(expected and totals) and any(
+        not any(name in model.lower() for name in expected) for model in totals["models"])
+
+
+def render(agent, kind, totals, expected=()):
     values = [totals[key] if totals else None for key in FIELDS]
-    return " | ".join(["usage", tag(agent), tag(kind), tag(values[0])]
+    model = tag(values[0]) + ("!=" + ",".join(map(tag, expected)) if off(totals, expected) else "")
+    return " | ".join(["usage", tag(agent), tag(kind), model]
                       + ["unknown" if value is None else str(value) for value in values[1:]])
+
+
+def expect(arg):
+    """`AGENT[=MODEL[,MODEL...]]`: (AGENT, the models in lower case)."""
+    name, _, models = arg.partition("=")
+    return name, tuple(m.strip().lower() for m in models.split(",") if m.strip())
 
 
 def moment(text):
@@ -296,14 +315,16 @@ def main(argv=None):
         prog="usage.py", description="What a session's orchestrator and subagents spent: one "
                                      "`usage` line each (" + " | ".join(COLUMNS) + ").")
     ap.add_argument("session", metavar="SESSION_ID")
-    ap.add_argument("agents", metavar="AGENT", nargs="*",
-                    help="`orchestrator` or a subagent's id; none: all of them")
+    ap.add_argument("agents", metavar="AGENT", nargs="*", type=expect,
+                    help="`orchestrator` or a subagent's id, with =MODEL the model it should "
+                         "have run on (mismatch: `model` ends in !=MODEL); none: all of them")
     ap.add_argument("--since", metavar="WHEN", type=moment,
                     help="count only the records stamped at or after WHEN: a file's "
                          "modification time (the run marker's: the run) or an ISO 8601 time")
     args = ap.parse_intermixed_args(argv)
-    for row in rows(args.session, args.agents, args.since):
-        print(render(*row))
+    expected = dict(args.agents)  # the last =MODEL given for an agent
+    for row in rows(args.session, [name for name, _ in args.agents], args.since):
+        print(render(*row, expected=expected.get(row[0], ())))
     return 0
 
 

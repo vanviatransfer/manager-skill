@@ -201,8 +201,9 @@ class UsageTest(Fixture):
             record = fh.read()
         self.assertIn("\n%s\n" % row, record)  # the run record's column line
         record_text = " ".join(record.split())
-        self.assertIn('`<python> "${CLAUDE_SKILL_DIR}/scripts/usage.py" <session id> <agent>... '
-                      '>> <file>`', record_text)
+        self.assertIn('`<python> "${CLAUDE_SKILL_DIR}/scripts/usage.py" <session id> '
+                      '<agent>[=<model>]... >> <file>`', record_text)
+        self.assertIn("ending `!=<model>` when a request ran on another", record_text)
         self.assertIn("`orchestrator --since <the **Run marker** file>`", record_text)
         for column in usage.COLUMNS:  # each one is defined there
             self.assertIn("`%s`" % column, record.split("\n## Usage lines\n")[1])
@@ -522,6 +523,57 @@ class ResumeTest(Fixture):
             other(900), request(901, "p4", 0, 0, 10030, 10),
             other(905), request(906, "p5", 0, 10030, 10, 10),
             other(1000), request(1001, "p6", 0, 10040, 10, 10)), (2, 2))
+
+
+class ExpectedModelTest(Fixture):
+    """`AGENT=MODEL`: the model the strategy gave the agent. A request counted on a model whose id
+    contains none of the expected names (case-insensitive) ends the `model` field in `!=MODEL`;
+    the line keeps its fields, and nothing else changes."""
+
+    def test_a_match_leaves_the_line_as_it_was(self):
+        for arg in ("a1=model-a", "a1=MODEL-A", "a1=model", "a1=other,model-a"):
+            self.assertEqual(lines(SESSION, arg), [IMPLEMENTER], arg)
+        self.assertEqual(lines(SESSION, "b2=model-b", "orchestrator=model-a,model-c"),
+                         [REVIEWER, ORCHESTRATOR])
+
+    def test_another_model_is_marked_in_the_model_field(self):
+        self.assertEqual(lines(SESSION, "a1=sonnet"),
+                         [IMPLEMENTER.replace("| model-a |", "| model-a!=sonnet |")])
+        self.assertEqual(lines(SESSION, "b2=Opus,Sonnet"),
+                         [REVIEWER.replace("| model-b |", "| model-b!=opus,sonnet |")])
+        for line in lines(SESSION, "a1=sonnet", "b2=x"):
+            self.assertEqual(len(line.split(" | ")), 1 + len(usage.COLUMNS), line)
+
+    def test_every_request_counts_not_only_the_last(self):
+        # The orchestrator's last request ran on model-c, the three before it on model-a.
+        self.assertEqual(lines(SESSION, "orchestrator=model-c"),
+                         [ORCHESTRATOR.replace("| model-c |", "| model-c!=model-c |")])
+        marker = os.path.join(self.tmp, "marker")
+        with open(marker, "w", encoding="utf-8") as fh:
+            fh.write("R\n")
+        os.utime(marker, (epoch(5015), epoch(5015)))  # only o4 counts: model-c
+        self.assertEqual(lines(SESSION, "orchestrator=model-c", "--since", marker)[0].split(
+            " | ")[3], "model-c")
+
+    def test_what_is_unknown_is_never_marked(self):
+        self.assertEqual(lines(SESSION, "zz=sonnet"), ["usage | zz | unknown" + UNKNOWN])
+        self.assertEqual(lines("no-such-session", "orchestrator=sonnet"),
+                         ["usage | orchestrator | main" + UNKNOWN])
+        self.assertEqual(lines(SESSION, "a1=", "a1=,"), [IMPLEMENTER])  # no model named
+
+    def test_a_name_with_a_model_is_still_never_a_path(self):
+        self.assertEqual(lines(SESSION, "../a1=model-a", "a*=x"),
+                         ["usage | .._a1 | unknown" + UNKNOWN, "usage | a_ | unknown" + UNKNOWN])
+        self.assertEqual(lines(SESSION, "a1=x|y z"),
+                         [IMPLEMENTER.replace("| model-a |", "| model-a!=x_y_z |")])
+
+    def test_the_command_takes_the_models(self):
+        env = dict(os.environ, CLAUDE_CONFIG_DIR=self.config)
+        p = subprocess.run([sys.executable, "-I", "-B", SCRIPT, SESSION, "a1=sonnet", "b2=model-b"],
+                           capture_output=True, env=env, cwd=self.tmp)
+        self.assertEqual((p.returncode, p.stderr.decode()), (0, ""))
+        self.assertEqual(p.stdout.decode("ascii").splitlines(),
+                         [IMPLEMENTER.replace("| model-a |", "| model-a!=sonnet |"), REVIEWER])
 
 
 if __name__ == "__main__":

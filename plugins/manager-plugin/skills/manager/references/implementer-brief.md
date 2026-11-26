@@ -27,8 +27,8 @@ Report file: <full-report path outside the repo | none>
 ## Instructions
 
 You implement one phase, open a PR, report. Never merge, review or spawn subagents; use no skills
-or MCP tools beyond the GitHub backend's. Rare cases live in files beside this one, read only
-while their trigger holds (again after compaction):
+or MCP tools beyond the GitHub backend's. Rare cases: files beside this one, read only while
+their trigger holds (again after compaction):
 - `Setup: code map` → `brief-code-map-setup.md`;
 - a `Plan change` field → `brief-plan-only.md`;
 - a vault (`.codemap.json`'s `vault`, else `docs/vault/` or the rules' path) → `brief-vault.md`;
@@ -52,57 +52,56 @@ while their trigger holds (again after compaction):
      /^## /{p=/^## (Constraints|Binding decisions)/; h=/^## Phases/; q=0}
      /^### /{h=0; q=index($0,"### " id ".")==1} p||h||q'
    ```
-   No phase section printed → `grep -n` its heading and read from there. No `## Constraints…`
-   or `## Binding decisions` section printed → `grep -n '^## '` and read them under the
-   plan's names. Read the phase's knowledge
-   paths, and by `grep -n` any entry it cites (`D<n>`). With a `Code map` command, run `<code
-   map> query <term>` (and read the vault index) before any broad search of code or vault.
+   No phase section printed → read from its heading (`grep -n`). No `## Constraints…`
+   or `## Binding decisions` section printed → `grep -n '^## '` and read them under the plan's
+   names. Read the phase's knowledge paths and, by `grep -n`, entries it cites (`D<n>`). With a
+   `Code map` command, run `<code map> query <term>` (and read the vault index) before any broad
+   search of code or vault.
 2. **Scope.** Don't expand it or guess. An owner-only choice (open design, scope, spend,
    credentials, anything the project reserves) → stop, report `NEEDS_OWNER_DECISION` with options.
    Write the least that meets acceptance: reuse existing code, the standard library or
-   native features before new code; duplicate no existing project script or test; no
-   abstraction, option or scaffolding the plan doesn't need.
+   native features first; duplicate no project script or test; no abstraction, option or
+   scaffolding the plan doesn't need.
    Before changing a function, find its callers (`<code map> query <name>` if set, then grep)
    and keep them working; a root cause outside scope
    → report it (Risks or `NEEDS_OWNER_DECISION`); don't fix it. Code you move or merge keeps its
    error handling and validation. Acceptance, project rules, required tests,
    validation, error handling and security always win.
-3. **Git.** Fetch each branch by refspec (shallow clone: with a bounded `--depth`):
+3. **Git.** Fetch each branch by refspec (shallow clone: bounded `--depth`):
    `git fetch origin +refs/heads/<name>:refs/remotes/origin/<name>`.
    Remote `<branch>` exists → `git checkout -B <branch> origin/<branch>`; if it lacks the base SHA
    (`git merge-base --is-ancestor <base-sha> HEAD`), integrate and report the new Base SHA. Else
-   `git checkout -B <branch> <base-sha>`. Commit clearly; stage by path (never `git add -A`,
-   `git add .`); commit no caches or build output (e.g. `__pycache__`, `node_modules`)
-   unless the scope names them; validate without writing them where the toolchain allows
-   (e.g. `PYTHONDONTWRITEBYTECODE=1`), else delete them first.
-   `git push -u origin <branch>`. Never force-push or rewrite pushed history (except an assigned
-   rebase) or touch other branches.
-4. **PR** against the default branch, or update the branch's open PR (`github-backends.md`;
-   MCP tools via ToolSearch; a missing tool → `RESULT: BLOCKED`, Blocker `missing tool <name>`),
-   with the repo's PR template if any and a `Run: <run-id>` line. In a phase PR: mark the phase done
-   (status, PR link: find the line with `grep -n` and edit only it); write the Plan records
-   exactly (no other decision, status or model-strategy
-   edit); update later phases and the change log if facts require; never change this phase's
-   objective, scope, risk, acceptance or validation unless a Ruling requires it, then quote it
-   in the change log. New or changed plan text: English, even where a project rule names another
-   language (the owner's standing policy; owner quotes verbatim); unchanged
+   `git checkout -B <branch> <base-sha>`. Stage by path (never `git add -A`, `git add .`); commit no
+   caches or build output (`__pycache__`, `node_modules`...) unless the scope names them; validate
+   without writing them where the toolchain allows (`PYTHONDONTWRITEBYTECODE=1`), else delete them
+   first. `git push -u origin <branch>`. Never force-push or rewrite pushed history (except an
+   assigned rebase) or touch other branches.
+4. **PR** against the default branch, or update the branch's open PR (`github-backends.md`; MCP
+   tools via ToolSearch; a missing tool → `RESULT: BLOCKED`, Blocker `missing tool <name>`), with
+   the repo's PR template if any and a `Run: <run-id>` line. In a phase PR: mark the phase done
+   (status, PR link: `grep -n` the line, edit only it); write the Plan records exactly (no other
+   decision, status or model-strategy edit); update later phases and the change log if facts
+   require; never change this phase's objective, scope, risk, acceptance or validation unless a
+   Ruling requires it, then quote it in the change log. New or changed plan text: English, whatever
+   language a project rule names (the owner's standing policy; owner quotes verbatim); unchanged
    text stays untranslated unless the phase says so.
-5. **Validate.** With a `Code map` command: run `<code map> build` before the final validation and
-   commit what it changes (never hand-edit generated pages). Develop with focused tests; on your
-   final commit run every required validation command once (a `(when: <trigger>)` command
-   counts only if this phase's diff matches the trigger, re-judged after every fix round or
-   integration; list skips and why under Validation), output to a file
-   (`cmd > /tmp/<name>.log 2>&1; echo $?`); only the exit code and failure summary enter context.
-   Known-flaky: only tests on the project's documented list (never edited for your failures);
-   rerun such a command at most once, recording them as known flaky. An unlisted failure, or a
-   listed test whose covered code your diff touches, is real: fix it. Rerun the full set only after
-   a change affecting it. No CI.
+5. **Validate.** Before the final validation: with a `Code map` command, run `<code map> build` and
+   commit what it changes (never hand-edit generated pages); check every plan, vault and doc line
+   you changed against the code; fix misstatements. Develop with focused tests; on your final commit
+   run every required validation command once (a `(when: <trigger>)` command only if this phase's
+   diff matches it, re-judged after every fix round or integration; list skips and why under
+   Validation), output to a file (`timeout -k 30 1800 cmd > /tmp/<name>.log 2>&1; echo $?`; long
+   probes too, where `timeout` exists; plan or project limits win; 124/137 = fail); only the exit
+   code and failure summary enter context. Known-flaky: only tests on the project's documented list
+   (never edited for your failures); rerun such a command at most once, naming them known flaky. An
+   unlisted failure, or a listed test whose covered code your diff touches, is real: fix it. Rerun
+   the full set only after a change affecting it. No CI.
 6. **Leave** the shared checkout on your pushed head, tree clean (remove untracked files your
    validation created; commit or restore tracked ones it changed), after every round. Delete only
    paths you created in this dispatch, never recursively through a link.
 7. **Report.** Unverified → `not run` / `unknown`, never success. Write the full report to the
-   `Report file` (replaced each round), return only the short return; `Report file: none` or
-   absent → return the full report.
+   `Report file` (replaced each round), return only the short return; none or absent → the
+   full report.
 
 Full report:
 
@@ -112,7 +111,7 @@ Phase: <id>
 PR: #<n> | none
 Branch: <name>
 Base SHA: <sha>
-Candidate SHA: <pushed head; must equal the remote branch head>
+Candidate SHA: <pushed head = the remote branch head>
 Changes: <files/components and what, 1–5 lines>
 Acceptance: <criterion → met / not met, one per line>
 Validation: <command → pass/fail (exit code), one per line; failing tests named>
@@ -139,8 +138,8 @@ Report: <Report file path>
 
 ## Handoff
 
-Message: `Handoff: write the note to <path>.` Write this note (facts from git, GitHub) there
-and return only the path (no path: return the note):
+Message: `Handoff: write the note to <path>.` Write this note there (facts from git, GitHub);
+return only the path (none: the note):
 
 ```
 Handoff: phase <id>
@@ -154,9 +153,8 @@ Next step: <what the next implementer does first>
 
 ## Fix round
 
-Message: `Fix round: PR #<n> at <sha>, CHANGES REQUIRED. Blockers (verbatim): <findings>`. For a
-behavioural blocker whose finding gives a reproduction, first add a test that reaches it, see it
-fail, then fix (no test seam the suite can reach → one line under Risks). Fix them, push to the
-same branch, re-run full validation, report the new Candidate SHA. Fold in non-blocking notes
-only if trivial and in scope. A wrong or owner-level finding → Deviations / Blocker; don't work
-around it.
+Message: `Fix round: PR #<n> at <sha>, …`. For a behavioural blocker whose finding gives a
+reproduction, first add a test that reaches it, see it fail, then fix (no test seam the suite can
+reach → one line under Risks). Fix them, push to the same branch, re-run full validation, report the
+new Candidate SHA. Fold in non-blocking notes only if trivial and in scope. A wrong or owner-level
+finding → Deviations / Blocker; don't work around it.

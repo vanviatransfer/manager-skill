@@ -31,7 +31,13 @@ set -- "$runs"/*
 here=${0%[/\\]*}
 script="$here/../skills/manager/scripts/context_watch.py"
 [ -f "$script" ] || exit 0
-for c in python3 python "py -3"; do
+# A python3 or python under WindowsApps (often a Microsoft Store stub, slow to fail) is
+# tried only last (`+`), after `py -3`.
+for c in python3 python "py -3" +python3 +python; do
+  case "$c:$(command -v "${c#+}" 2>/dev/null)" in
+    +*[/\\][Ww][Ii][Nn][Dd][Oo][Ww][Ss][Aa][Pp][Pp][Ss][/\\]*) c=${c#+} ;;
+    +* | *[/\\][Ww][Ii][Nn][Dd][Oo][Ww][Ss][Aa][Pp][Pp][Ss][/\\]*) continue ;;
+  esac
   out=$(printf '%s' "$input" | PYTHONDONTWRITEBYTECODE=1 $c "$script" "$runs" 2>/dev/null) ||
     continue
   [ -z "$out" ] || printf '%s\n' "$out"
