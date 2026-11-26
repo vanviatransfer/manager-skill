@@ -11,8 +11,8 @@ Usage:
   skilltrain.py stats SKILL_DIR [--root DIR]   records, outcomes and tags since the last
                                                training, and whether training is due
   check and stats also take --stale-days N (90) and --stale-uses M (20): an active lesson
-  whose last-confirmed is more than N days old, or followed by more than M records rows, gets
-  one "stale lesson" line (never retired by the script)
+  whose last-confirmed is more than N days old, or with more than M records rows dated after
+  its last-confirmed, gets one "stale lesson" line (never retired by the script)
   skilltrain.py due REPO_ROOT                  one line per marked skill under .claude/skills/:
                                                its training-due state
   skilltrain.py query REPO_ROOT [--] TERM      one line per line of a marked skill's files
@@ -41,7 +41,10 @@ backticked text with whitespace, ://, * or ?, or starting with <, is no path and
 lesson id a rule cites must be in lessons.md and back it: not a hypothesis, and with a verifier
 outcome in its evidence (a records row cited as "<date> <context>: <outcome>" that the records
 hold, or an owner verdict quoted as owner: "<words>", <date>); a sourced lesson may back a rule
-without one while the changelog has only its first entry. With --triggers-from REF, every quoted
+without one while the changelog has only its first entry. An old five-column lessons table reports
+these evidence gaps as notes, not problems (see references/lessons-format.md). Invisible or
+direction-changing characters (INVISIBLE) in SKILL.md, lessons.md and the records file are one
+problem per file and line; they are reported, never stripped. With --triggers-from REF, every quoted
 phrase ("..." or “...”) of the skill's description at REF, and of the description of the folder
 <name>-trainer beside it at REF (the retired trainer), must still be in the current
 description. A skill missing at REF is new: a note, not a problem; a trainer missing at REF is
@@ -64,6 +67,7 @@ import posixpath
 import re
 import subprocess
 import sys
+import unicodedata
 
 MARKER = "<!-- self-training-skill v1 -->"
 MARKER_RE = re.compile(r"^<!-- self-training-(skill|trainer) v\d+ -->$")
@@ -120,6 +124,17 @@ RULES_TEXT = ("- before searching skill files use `skilltrain.py query`; after c
 RULES_LINE = RULES_TEXT + " " + RULES_MARK
 RULES_LINE_CREATED = RULES_TEXT + " " + RULES_MARK_CREATED
 RULES_TITLE = "# Project instructions"
+# Invisible or direction-changing characters, as (first, last) code points: in a skill's text they
+# can hide words from whoever reviews it. invisible_chars() also serves the plugin's own text test.
+INVISIBLE = ((0x200B, 0x200D), (0x2060, 0x2064), (0xFEFF, 0xFEFF), (0x202A, 0x202E),
+             (0x2066, 0x2069), (0x115F, 0x1160), (0x3164, 0x3164), (0xFFA0, 0xFFA0),
+             (0xFE00, 0xFE0F), (0xE0000, 0xE007F))
+ZWJ = "\u200d"
+# Code points taken as emoji for the ZWJ exception (pictographs, symbols, dingbats, arrows and
+# shapes blocks; skin-tone modifiers and regional indicators are inside the first range).
+EMOJI = ((0x1F000, 0x1FAFF), (0x2600, 0x27BF), (0x2300, 0x23FF), (0x2B00, 0x2BFF),
+         (0x00A9, 0x00A9), (0x00AE, 0x00AE), (0x203C, 0x203C), (0x2049, 0x2049),
+         (0x2122, 0x2122), (0x2139, 0x2139))
 
 
 NEAR_MISS = ("the marker doesn't match: the line right after the frontmatter must be exactly %s"
@@ -169,6 +184,60 @@ def read_rel(root, rel):
         data = fh.read()
     text = data.replace(b"\r\n", b"\n").decode("utf-8", "replace")
     return text[1:] if text.startswith("\ufeff") else text  # a UTF-8 BOM
+
+
+def in_ranges(ch, ranges):
+    cp = ord(ch)
+    return any(lo <= cp <= hi for lo, hi in ranges)
+
+
+def invisible_chars(text):
+    """[(line, column, code point)] of the INVISIBLE characters in a text, 1-based, the column
+    counted in characters (lines split at \\n). Allowed: a BOM (U+FEFF) as the text's first
+    character, and a ZWJ (U+200D) between two emoji: the character after it is in EMOJI, and so is
+    the one before it once variation selectors (U+FE0E, U+FE0F) and skin-tone modifiers are
+    passed over (those selectors are still reported themselves)."""
+    found = []
+    for n, line in enumerate(text.split("\n"), 1):
+        for col, ch in enumerate(line, 1):
+            if not in_ranges(ch, INVISIBLE) or (n == 1 and col == 1 and ch == "\ufeff"):
+                continue
+            if ch == ZWJ:
+                before = col - 2
+                while before >= 0 and (line[before] in "\ufe0e\ufe0f" or
+                                       0x1F3FB <= ord(line[before]) <= 0x1F3FF):
+                    before -= 1
+                if before >= 0 and col < len(line) and in_ranges(line[before], EMOJI) and \
+                        in_ranges(line[col], EMOJI):
+                    continue
+            found.append((n, col, ord(ch)))
+    return found
+
+
+def char_name(cp):
+    """`U+200B ZERO WIDTH SPACE`."""
+    name = unicodedata.name(chr(cp), "")
+    return "U+%04X%s" % (cp, " " + name if name else "")
+
+
+def check_invisible(sk):
+    """One problem per line of SKILL.md, lessons.md and the records file that holds INVISIBLE
+    characters. A file that can't be read is left to the other checks."""
+    rels = [sk.rel_dir + "/SKILL.md", sk.rel_dir + "/lessons.md"]
+    path = section_paths(section(sk.secs, "Record") or []).get("Records")
+    if path and safe_rel(path):
+        rels.append(safe_rel(path))
+    for rel in rels:
+        try:
+            text = read_rel(sk.root, rel)
+        except (ValueError, OSError):
+            continue
+        lines = {}
+        for n, col, cp in invisible_chars(text):
+            lines.setdefault(n, []).append("%s at column %d" % (char_name(cp), col))
+        for n, chars in sorted(lines.items()):
+            sk.problems.append("%s:%d holds invisible characters (%s): they can hide text from a "
+                               "review; remove them by hand" % (rel, n, ", ".join(chars)))
 
 
 def split_frontmatter(text):
@@ -845,6 +914,7 @@ def run_check(root, rel, triggers_from=None, stale=(STALE_DAYS, STALE_USES)):
         if rows is not None and lessons is not None:
             notes.extend("note: " + ln for ln in stale_lines(lessons, rows, *stale))
         check_routing(sk)
+        check_invisible(sk)
         if sha:
             check_triggers(sk, triggers_from, sha, notes)
     for n in notes:
