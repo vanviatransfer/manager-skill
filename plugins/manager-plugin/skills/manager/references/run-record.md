@@ -67,7 +67,7 @@ in the `usage` columns above: `<python> "${CLAUDE_SKILL_DIR}/scripts/usage.py" <
 <agent>[=<model>]... >> <file>`. `<python>` is the Python as the code-map skill's rule picks it
 (none → no `usage` lines; say so in the final report); `<session id>` is the name of the **Run
 marker** file; an `<agent>` is an agent id as the Agent tool returned it, or `orchestrator` for you;
-`=<model>`: the strategy's model for it.
+`=<model>` (subagents only): the strategy's model.
 
 - With a phase's line, in front of the same Bash command: that phase's agents (every implementer
   and every round's reviewer), so an interrupted run still leaves them.

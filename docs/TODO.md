@@ -1145,27 +1145,31 @@ something to say).
   reviewer already writes; no extra call; the orchestrator matches tags instead of judging prose.
   SKILL.md untouched (the definition lives in `review-round.md`, read at every review step).
 - **Model check.** `usage.py` takes `AGENT=MODEL` (several: `a,b`; matched as a case-insensitive
-  part of the model id, so `sonnet` matches a full Sonnet id); when any request it counts ran on
-  a model matching none of them, its `model` field ends in `!=MODEL` (the line keeps its 14
-  fields). `run-record.md` passes the strategy's model with each agent; `manager-retro` counts the
-  marked agents per role and run. Cost: none in context (the line is appended to the record file
-  in a Bash call that already runs). With the retro switch off there is no record and no
-  `usage.py`, so the model is **not checked** in such runs. Tests: `scripts/test_usage.py`
-  (`ExpectedModelTest`).
+  part of the model id, so `sonnet` matches a full Sonnet id; a context suffix such as `[1m]` and a
+  trailing `-YYYYMMDD` date are ignored on both sides, and `inherit` expects nothing; subagents
+  only, not `orchestrator`); when any request it counts ran on a model matching none of them, its
+  `model` field ends in `!=MODEL` (the line keeps its 14 fields). `run-record.md` passes the
+  strategy's model with each agent; `manager-retro` counts the marked agents per role and run. Cost:
+  none in context (the line is appended to the record file in a Bash call that already runs). With
+  the retro switch off there is no record and no `usage.py`, so the model is **not checked** in such
+  runs. Tests: `scripts/test_usage.py` (`ExpectedModelTest`).
 - **Bounded validation.** Implementer step 5 and the reviewer's validation: run commands under
-  `timeout -k 30 1800` where `timeout` exists (the implementer: long probes too), a plan or
-  project limit wins, exit 124 or 137 is a fail. The defaults (30 s grace, 30 min limit) are this
-  change's choice. Cost: four words in each command the agents already run. `timeout` does not
-  kill a Windows process tree reliably (Git Bash's coreutils `timeout` signals the process it
-  started, not necessarily the native children it spawned) [not verified on Windows].
+  `timeout -k 30 1800` where `timeout` exists (the implementer: long probes too), a plan or project
+  limit wins, exit 124 or 137 is a fail. The defaults (30 s grace, 30 min limit) are this change's
+  choice. Without `timeout` the command runs plainly. A slow suite with no stated limit now fails at
+  1800 s (exit 124); a project or plan sets its own limit to allow longer. Cost: four words in each
+  command the agents already run. `timeout` does not kill a Windows process tree reliably (Git
+  Bash's coreutils `timeout` signals the process it started, not necessarily the native children it
+  spawned) [not verified on Windows].
 - **Doc/record self-check** (retro evidence: 27 of 66 real blockers, 41%, were doc or record
   accuracy, in 6 of 7 projects; 49% of phases needed a second review). No equivalent rule existed
-  (step 4 updates later phases "if facts require"; the vault brief covers pages a phase makes
-  false, not lines it writes wrong). Implementer step 5, before the final validation: check every
-  plan, vault and doc line you changed against the code; fix misstatements. Cost: a few reads of
-  lines the implementer just wrote, against a fix round (a cold resume plus a new review) it
-  avoids. Failure signal: in later run records the doc/record share of blocker classes stays at
-  35% or more, or the implementer context median rises more than 10%.
+  (step 4 updates later phases "if facts require"; the vault brief covers pages a phase makes false,
+  not lines it writes wrong). Implementer step 5, its own sentence before the final validation:
+  check every plan, vault and doc line the diff changes against the code (so lines from before a
+  rotation count too); fix misstatements. Cost: a few reads of lines the implementer just wrote,
+  against a fix round (a cold resume plus a new review) it avoids. Failure signal: in later run
+  records the doc/record share of blocker classes stays at 35% or more, or the implementer context
+  median rises more than 10%.
 - **Run-record format** (retro evidence: 3 of 6 records since 0.7.3 drifted: `193k`-style
   values, `?`, `1 fix`, tags with spaces, abbreviated verdicts, phase lines after the last
   summary). `run-record.md`: numbers are integers or `unknown`; `rounds` counts the phase's
@@ -1174,19 +1178,19 @@ something to say).
   pre-0.8.3 column-name note moved out (the retro skill keeps it).
 - **Hook Python lookup on Windows** (measured on a Windows 11 machine, idle: `ls -la` through
   `scan-guard.sh` ~650 ms at 0.9.7 and 0.9.8; `sh` start ~20 ms, `py -3` start ~57 ms; there
-  `python3` and `python` are Microsoft Store stubs under `WindowsApps` that exit 9009).
-  Not re-measured here: timing on Linux says nothing about the stubs; reasoned from the code, the
+  `python3` and `python` are Microsoft Store stubs under `WindowsApps` that exit 9009). Not
+  re-measured here: timing on Linux says nothing about the stubs; reasoned from the code, the
   wrappers ran both stubs before `py -3` [inference: the stubs cost most of the ~570 ms]. All six
-  wrappers with the loop (`agent-paths.sh`, `codemap-commit-check.sh`,
-  `codemap-rules-version.sh`, `codemap-search-nudge.sh`, `manager-context-watch.sh`,
-  `scan-guard.sh`) now try a `python3` or `python` whose `command -v` path has a `WindowsApps`
-  folder (case-insensitive) only after `py -3`, and still try it last: a Microsoft Store Python is
-  a real one there, so skipping it outright would leave such machines without Python. POSIX
-  behaviour unchanged (a Python found elsewhere runs first, as before); the cost is one
-  `command -v` in a subshell per candidate tried. No new files or caches. Tests:
-  `hooks/test_wrapper_paths.py` (`WindowsAppsStubTest`: a sleeping, failing stub under a
-  `WindowsApps` folder is never run when `py` works; a Store-style Python there still runs; a
-  Python elsewhere runs first), POSIX only. [not verified on Windows] the timing gain.
+  wrappers with the loop (`agent-paths.sh`, `codemap-commit-check.sh`, `codemap-rules-version.sh`,
+  `codemap-search-nudge.sh`, `manager-context-watch.sh`, `scan-guard.sh`; their header comments say
+  so) now try a `python3` or `python` whose `command -v` path has a `WindowsApps` folder
+  (case-insensitive) only after `py -3`, and still try it last: a Microsoft Store Python is a real
+  one there, so skipping it outright would leave such machines without Python. POSIX behaviour
+  unchanged (a Python found elsewhere runs first, as before); the cost is one `command -v` in a
+  subshell per candidate tried. No new files or caches. Tests: `hooks/test_wrapper_paths.py`
+  (`WindowsAppsStubTest`: a sleeping, failing stub under a `WindowsApps` folder is never run when
+  `py` works; a Store-style Python there still runs; a Python elsewhere runs first), POSIX only.
+  [not verified on Windows] the timing gain.
 - **Word and character counts** (`wc -w`, and `str.split()` / `len` as
   `hooks/test_manager_compaction.py` counts; before → after): manager SKILL.md 2,721 → 2,721
   words, 17,986 → 17,986 chars (untouched); code-map SKILL.md untouched (19,999 chars);

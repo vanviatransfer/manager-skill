@@ -4,16 +4,16 @@
 # session once (exit 2, one line on stderr: run the code map's `query` first, then repeat the
 # search); every later search is allowed. Plain POSIX sh; the logic is search_nudge.py beside the
 # code-map script, run only when the input names Grep, Glob or a search command. It finds Python
-# as the code-map skill does (python3, python, py -3) and fails open (exit 0) on any error. It
-# passes that Python and the plugin folder (CLAUDE_PLUGIN_ROOT, else this script's own when its
-# path is absolute) so the message can name the runnable `codemap.py query` command.
-# Skills branch (same hook, same fast path): a search that targets skill files (.claude/skills/,
-# SKILL.md, lessons.md, */skills/*, a skill's references/, a marked skill's records) in a
-# repository with a marked self-training skill is blocked once per session the same way (exit 2,
-# one `manager-plugin:` line naming the runnable
-# `skilltrain.py query "<repo root>" -- "<term>"`, `--` since a term may start with -), with
-# its own state: it neither uses up nor gets the code-map block. It needs no .codemap.json or
-# map; `"search_nudge": false` there turns both branches off.
+# much as the code-map skill does (python3, python, py -3; on Windows, a python3 or python under
+# WindowsApps is tried last, after py -3) and fails open (exit 0) on any error. It passes that
+# Python and the plugin folder (CLAUDE_PLUGIN_ROOT, else this script's own when its path is
+# absolute) so the message can name the runnable `codemap.py query` command. Skills branch (same
+# hook, same fast path): a search that targets skill files (.claude/skills/, SKILL.md, lessons.md,
+# */skills/*, a skill's references/, a marked skill's records) in a repository with a marked
+# self-training skill is blocked once per session the same way (exit 2, one `manager-plugin:` line
+# naming the runnable `skilltrain.py query "<repo root>" -- "<term>"`, `--` since a term may start
+# with -), with its own state: it neither uses up nor gets the code-map block. It needs no
+# .codemap.json or map; `"search_nudge": false` there turns both branches off.
 
 input=$(cat) || exit 0
 words='(e?grep|fgrep|rg|ag|ack|find|codemap\.py)'

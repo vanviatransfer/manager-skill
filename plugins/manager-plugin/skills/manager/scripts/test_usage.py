@@ -555,6 +555,21 @@ class ExpectedModelTest(Fixture):
         self.assertEqual(lines(SESSION, "orchestrator=model-c", "--since", marker)[0].split(
             " | ")[3], "model-c")
 
+    def test_a_suffix_a_date_and_inherit_are_no_mismatch(self):
+        self.agent(self.new, "g7", "manager-plugin:implementer", (
+            other(10), request(20, "q1", 1, 0, 100, 10, model="claude-opus-4-6")))
+        plain = lines(SESSION, "g7")[0]
+        for arg in ("g7=opus[1m]", "g7=claude-opus-4-6[1m]", "g7=claude-opus-4-6-20260101",
+                    "g7=inherit", "g7=Opus", "g7=sonnet,inherit"):
+            self.assertEqual(lines(SESSION, arg), [plain], arg)
+        self.assertEqual(lines(SESSION, "g7=sonnet[1m]"),
+                         [plain.replace("| claude-opus-4-6 |", "| claude-opus-4-6!=sonnet |")])
+        self.assertEqual(lines(SESSION, "g7=claude-opus-4-5-20250101"), [plain.replace(
+            "| claude-opus-4-6 |", "| claude-opus-4-6!=claude-opus-4-5 |")])
+        self.agent(self.new, "h8", None, (request(5, "q2", 1, 0, 1, 1,
+                                                  model="claude-opus-4-6-20260101[1m]"),))
+        self.assertNotIn("!=", lines(SESSION, "h8=claude-opus-4-6")[0])
+
     def test_what_is_unknown_is_never_marked(self):
         self.assertEqual(lines(SESSION, "zz=sonnet"), ["usage | zz | unknown" + UNKNOWN])
         self.assertEqual(lines("no-such-session", "orchestrator=sonnet"),

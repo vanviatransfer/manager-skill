@@ -7,9 +7,10 @@ Usage:
 Prints one line for the session's main conversation (`orchestrator`) and one per subagent, oldest
 first; with AGENT names (`orchestrator`, or a subagent's id as the Agent tool returns it) only
 those, in that order. `AGENT=MODEL` names the model the agent should have run on (the model
-strategy's, as dispatched: `sonnet`, a full model id; several: `a,b`): when a request it counts
-ran on a model whose id contains none of them (case-insensitive), its `model` field ends in
-`!=MODEL`. With `--since WHEN` a line counts only the records stamped at or after
+strategy's, as dispatched: `sonnet`, a full model id; several: `a,b`; `inherit`: none): when a
+request it counts ran on a model whose id contains none of them (case-insensitive; a context
+suffix such as `[1m]` and a trailing `-YYYYMMDD` date ignored on both sides), its `model` field
+ends in `!=MODEL`. With `--since WHEN` a line counts only the records stamped at or after
 WHEN, a file's modification time (the manager's run marker: the run, not the whole session) or
 an ISO 8601 time; the first request counted is then no resume. Each line, with ` | ` between its
 fields:
@@ -280,10 +281,20 @@ def age(row):
     return start is None, start or 0, row[0]
 
 
+DATED = re.compile(r"-\d{8}$")  # a full model id's date: `claude-x-1-20250101`
+
+
+def family(model):
+    """A model id or name in lower case, without a context suffix (`[1m]`) or a trailing date."""
+    return DATED.sub("", model.split("[")[0].strip().lower())
+
+
 def off(totals, expected):
-    """True when a request in `totals` ran on a model that matches none of `expected`."""
+    """True when a request in `totals` ran on a model that matches none of `expected`: a name
+    matches a model whose id contains it, both without suffix and date (`opus` and
+    `claude-opus-4-6[1m]` match `claude-opus-4-6-20260101`)."""
     return bool(expected and totals) and any(
-        not any(name in model.lower() for name in expected) for model in totals["models"])
+        not any(name in family(model) for name in expected) for model in totals["models"])
 
 
 def render(agent, kind, totals, expected=()):
@@ -294,9 +305,11 @@ def render(agent, kind, totals, expected=()):
 
 
 def expect(arg):
-    """`AGENT[=MODEL[,MODEL...]]`: (AGENT, the models in lower case)."""
+    """`AGENT[=MODEL[,MODEL...]]`: (AGENT, the models as `family` gives them). `inherit` (the
+    session's model, whatever it is) expects nothing, and makes the agent's line unmarked."""
     name, _, models = arg.partition("=")
-    return name, tuple(m.strip().lower() for m in models.split(",") if m.strip())
+    names = tuple(family(m) for m in models.split(","))
+    return name, () if "inherit" in names else tuple(m for m in names if m)
 
 
 def moment(text):

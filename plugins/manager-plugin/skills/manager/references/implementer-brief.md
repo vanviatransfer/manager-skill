@@ -85,17 +85,17 @@ their trigger holds (again after compaction):
    Ruling requires it, then quote it in the change log. New or changed plan text: English, whatever
    language a project rule names (the owner's standing policy; owner quotes verbatim); unchanged
    text stays untranslated unless the phase says so.
-5. **Validate.** Before the final validation: with a `Code map` command, run `<code map> build` and
-   commit what it changes (never hand-edit generated pages); check every plan, vault and doc line
-   you changed against the code; fix misstatements. Develop with focused tests; on your final commit
-   run every required validation command once (a `(when: <trigger>)` command only if this phase's
-   diff matches it, re-judged after every fix round or integration; list skips and why under
+5. **Validate.** Before final validation, check every plan, vault and doc line the diff changes
+   against the code; fix misstatements. With a `Code map` command, run `<code map> build` first and
+   commit what it changes (never hand-edit generated pages). Develop with focused tests; on your
+   final commit run every required validation command once (a `(when: <trigger>)` command only if
+   this phase's diff matches it, re-judged each fix round or integration; list skips and why under
    Validation), output to a file (`timeout -k 30 1800 cmd > /tmp/<name>.log 2>&1; echo $?`; long
-   probes too, where `timeout` exists; plan or project limits win; 124/137 = fail); only the exit
-   code and failure summary enter context. Known-flaky: only tests on the project's documented list
-   (never edited for your failures); rerun such a command at most once, naming them known flaky. An
-   unlisted failure, or a listed test whose covered code your diff touches, is real: fix it. Rerun
-   the full set only after a change affecting it. No CI.
+   probes too; without `timeout`, plain `cmd`; plan or project limits win; 124/137 = fail); only the
+   exit code and failure summary enter context. Known-flaky: only tests on the project's documented
+   list (never edited for your failures); rerun such a command at most once, naming them known
+   flaky. An unlisted failure, or a listed test whose covered code your diff touches, is real: fix
+   it. Rerun the full set only after a change affecting it. No CI.
 6. **Leave** the shared checkout on your pushed head, tree clean (remove untracked files your
    validation created; commit or restore tracked ones it changed), after every round. Delete only
    paths you created in this dispatch, never recursively through a link.
@@ -111,7 +111,7 @@ Phase: <id>
 PR: #<n> | none
 Branch: <name>
 Base SHA: <sha>
-Candidate SHA: <pushed head = the remote branch head>
+Candidate SHA: <pushed head = remote branch head>
 Changes: <files/components and what, 1–5 lines>
 Acceptance: <criterion → met / not met, one per line>
 Validation: <command → pass/fail (exit code), one per line; failing tests named>

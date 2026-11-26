@@ -2,12 +2,12 @@
 # manager-plugin SessionStart (startup, resume, clear, compact) and SubagentStart hook: in a
 # repository that uses the plugin (a .codemap.json, a manager-plugin rules marker in AGENTS.md or
 # CLAUDE.md, or a marked self-training skill), adds one line to the session's or the subagent's
-# context: the absolute, runnable `codemap.py query` and `skilltrain.py query` commands, and
-# never to search the disk for them (an agent that doesn't know where a plugin script is tends
-# to scan the whole disk for it). JSON `hookSpecificOutput.additionalContext`; silent elsewhere.
-# The argument is the event. Plain POSIX sh; the logic is `scan_guard.py start`. It finds Python
-# as the code-map skill does (python3, python, py -3), writes nothing and fails open (exit 0, no
-# output) on any error.
+# context: the absolute, runnable `codemap.py query` and `skilltrain.py query` commands, and never
+# to search the disk for them (an agent that doesn't know where a plugin script is tends to scan the
+# whole disk for it). JSON `hookSpecificOutput.additionalContext`; silent elsewhere. The argument is
+# the event. Plain POSIX sh; the logic is `scan_guard.py start`. It finds Python much as the
+# code-map skill does (python3, python, py -3; on Windows, a python3 or python under WindowsApps is
+# tried last, after py -3), writes nothing and fails open (exit 0, no output) on any error.
 
 input=$(cat) || exit 0
 # This script's folder: $0 up to its last / or \ (Git Bash on Windows may pass C:\...\x.sh).
