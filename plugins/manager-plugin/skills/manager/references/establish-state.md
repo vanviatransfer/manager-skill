@@ -1,8 +1,8 @@
 # Establishing state
 
 Read by the manager skill at step 0, at the start of every run (a new session included) and again
-after a compaction: the detail of its items 1, 3 and 5. Item 3's rules-files list is read again
-when loop step 1 or step 2 lists the rules files again.
+after a compaction: the detail of its items 1, 3 and 5, and **No plan**. Item 3's rules-files
+list is read again when loop step 1 or step 2 lists the rules files again.
 
 ## Item 1: the plugin copy and the retro switch
 
@@ -81,3 +81,10 @@ phase is scheduled (loop step 1), as on its base SHA. Read the rest only when a 
   resume it like a plan-only PR if step 6 still needs it; else report it, untouched (on a
   designated branch it occupies the branch: stop, as **Sequential phases** says);
 - an open PR that matches no phase → say so; don't touch it.
+
+## No plan
+
+No living plan → the run can't start: hand over to the `living-plan` skill (owner-driven, with its
+own approval), then begin this skill again from step 0.
+Remaining work not split into phases → split it and land the split as a **plan-only PR** before
+any phase starts, so every phase exists at its base SHA.

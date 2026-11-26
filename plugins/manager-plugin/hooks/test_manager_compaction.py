@@ -349,7 +349,18 @@ class SizeCeilingTest(unittest.TestCase):
         self.assertLessEqual(len(read(os.path.join(MANAGER, "SKILL.md"))), 18000)
 
     def test_code_map_skill(self):
-        self.assertLessEqual(len(read(os.path.join(SKILLS, "code-map", "SKILL.md"))), 20000)
+        """9,108 characters at 0.9.10, after its rare paths moved to `references/`."""
+        self.assertLessEqual(len(read(os.path.join(SKILLS, "code-map", "SKILL.md"))), 9500)
+
+    def test_rare_path_pointers_resolve(self):
+        """A rare-path block moved out of a SKILL.md leaves a pointer: every `references/<file>`
+        the skill names exists, and every file in its `references/` is named there."""
+        for skill in ("code-map", "self-training-skills"):
+            folder = os.path.join(SKILLS, skill)
+            text = " ".join(read(os.path.join(folder, "SKILL.md")).split())
+            named = set(re.findall(r"`references/([a-z0-9-]+\.md)`", text))
+            here = set(os.listdir(os.path.join(folder, "references")))
+            self.assertEqual(named, here, skill)
 
     def test_briefs(self):
         for name, words in (("implementer-brief.md", 1327), ("reviewer-brief.md", 1347)):

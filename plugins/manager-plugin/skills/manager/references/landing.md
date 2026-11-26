@@ -2,8 +2,8 @@
 
 Read by the manager skill at loop step 4a: for step 2's landing-method check, when the landing
 keeps the branch's commits (rebase merge, fast-forward push), when no integration method is
-permitted, when the project lands by fast-forward only, or when the landed tree differs from the
-reviewed one.
+permitted, when the project lands by fast-forward only, when the landed tree differs from the
+reviewed one, or when a landing is refused or blocked.
 
 - **Landing method** (step 2): what decides whether it is allowed and usable here: the project
   rules, and on `gh` `gh repo view --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed`
@@ -26,3 +26,7 @@ reviewed one.
   merge commit's first parent, candidate = the merge commit; judge the combined tree, not the plan
   records of the commits that raced in); never fix it silently. A PASS there unblocks the
   dependents; anything else is an owner decision (a revert or fix is the owner's call).
+- **Refused landing.** A landing refused or blocked (branch protection, unexplained ref drift, a
+  project rule) stops that landing only: report it, mark the phase and its dependents blocked,
+  continue independent work. If branch protection refuses a merge over required checks, that's an
+  environment issue for that landing: report it.
