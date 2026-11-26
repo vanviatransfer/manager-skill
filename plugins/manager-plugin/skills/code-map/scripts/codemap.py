@@ -1038,17 +1038,18 @@ def short_list(items, limit=IMPACT_NAMES):
 def impact_lines(root, targets, depth, info, importers, out_rel):
     """The lines `impact` prints: per target file the map knows, its importers (import-based,
     each file once: direct, then each further level up to `depth`), the tests among them and
-    those named after it, and per top-level definition the other source files of its language
-    family whose text (Python: outside strings and comments) holds its name as a whole word,
-    importers first (name-based: anything else of the same name counts too). Targets the map
-    doesn't parse are named on one line at the end. `main` cuts it at MAX_CHANGED_LINES."""
+    those of its language family named after it (`test_<name>` ...), and per top-level
+    definition the other source files of its language family whose text (Python: outside
+    strings and comments) holds its name as a whole word, importers first (name-based: anything
+    else of the same name counts too). Targets the map doesn't parse are named on one line at the
+    end. `main` cuts it at MAX_CHANGED_LINES."""
     paths = sorted(set(targets))
     known = [p for p in paths if p in info]
     tests_by_stem = {}
     for p in sorted(info):
-        if is_test(p):
-            stem = posixpath.splitext(posixpath.basename(p))[0]
-            tests_by_stem.setdefault(TEST_AFFIX.sub("", stem).lower(), []).append(p)
+        stem = posixpath.splitext(posixpath.basename(p))[0]
+        if is_test(p) and TEST_AFFIX.sub("", stem) != stem:  # a test_ / _test ... affix, not
+            tests_by_stem.setdefault(TEST_AFFIX.sub("", stem).lower(), []).append(p)  # __init__
     wanted = {n.rstrip("?!") for p in known for n, _ in info[p]["symbols"][:MAX_CHANGED_NAMES]}
     users_of = {}
     for p in sorted(info) if wanted else ():
@@ -1083,11 +1084,12 @@ def impact_lines(root, targets, depth, info, importers, out_rel):
                                                short_list(rest)))
             if found:
                 lines.append("  tests: %s" % short_list(sorted(found)))
+        names, family = [n for n, _ in info[path]["symbols"]], lang_family(info[path]["lang"])
         stem = posixpath.splitext(posixpath.basename(path).lower())[0]
-        named = [t for t in tests_by_stem.get(stem, []) if t not in found and t != path]
+        named = [t for t in tests_by_stem.get(stem, []) if t not in found and t != path
+                 and lang_family(info[t]["lang"]) == family]
         if named and not is_test(path):
             lines.append("  tests by name: %s" % short_list(named))
-        names, family = [n for n, _ in info[path]["symbols"]], lang_family(info[path]["lang"])
         for name in names[:MAX_CHANGED_NAMES]:
             users = [u for u in users_of.get(name.rstrip("?!"), [])
                      if u != path and lang_family(info[u]["lang"]) == family]
@@ -1104,11 +1106,12 @@ def impact_lines(root, targets, depth, info, importers, out_rel):
 
 
 def query_ranked(term, budget, info, importers, mentions, vault):
-    """The lines of `query --budget`: the same items as `query`, ranked (exact name or path
-    matches first, then by how many files import the file or link to the page, then in `query`'s
-    order) and kept, in rank order, while the output stays within about `budget` tokens
-    (characters / CHARS_PER_TOKEN): one that doesn't fit is skipped, a later smaller one may still
-    go in. The first ranked item is always kept; a cut ends with one line."""
+    """The lines of `query --budget`: the same items as `query` (50 per section at most),
+    ranked (exact name or path matches first, then by how many files import the file or link to
+    the page, then in `query`'s order) and kept, in rank order, while the output stays within
+    about `budget` tokens (characters / CHARS_PER_TOKEN): one that doesn't fit is skipped, a
+    later smaller one may still go in. The first ranked item is always kept; a cut ends with one
+    line."""
     items = []  # (rank, section, lines)
     for p, d in sorted(info.items()):
         for n, ln in d["symbols"]:
@@ -1138,13 +1141,19 @@ def query_ranked(term, budget, info, importers, mentions, vault):
             items.append(((not exact, -vault["inbound"][pg], 2, len(items)), 2, block))
     heads = ["defined:", "paths:", "vault pages:"][:3 if vault else 2]
     present = {s for _, s, _ in items}
+    shown, capped = {}, []  # `query` shows 50 items per section; the budget only cuts further
+    for item in items:  # still in `query`'s order
+        shown[item[1]] = shown.get(item[1], 0) + 1
+        if shown[item[1]] <= 50:
+            capped.append(item)
+    over, items = len(items) - len(capped), capped
     size = sum(len(h) + 7 for s, h in enumerate(heads) if s not in present)  # "<head> none\n"
-    ordered = sorted(items)
+    ordered, total = sorted(items), len(items) + over
     full = size + sum(len(line) + 1 for _, _, block in ordered for line in block) + \
         sum(len(heads[s]) + 1 for s in present)
     limit = budget * CHARS_PER_TOKEN
-    if full > limit:  # room for the line that says how many were cut
-        limit -= len("… %d more (raise --budget)\n" % len(ordered))
+    if full > limit or over:  # room for the line that says how many were cut
+        limit -= len("… %d more (raise --budget)\n" % total)
     kept, count = {}, 0
     for _, s, block in ordered:  # in rank order; one that doesn't fit leaves room for the next
         cost = sum(len(line) + 1 for line in block) + (0 if s in kept else len(heads[s]) + 1)
@@ -1159,8 +1168,8 @@ def query_ranked(term, budget, info, importers, mentions, vault):
             lines.append(h + " none")
         elif s in kept:
             lines += [h] + kept[s]
-    if count < len(ordered):
-        lines.append("… %d more (raise --budget)" % (len(ordered) - count))
+    if count < total:
+        lines.append("… %d more (raise --budget)" % (total - count))
     return lines
 
 
@@ -1954,7 +1963,19 @@ def main(argv=None):
             except (OSError, subprocess.CalledProcessError):
                 ap.error("cannot diff against %s" % args.base)
         if not targets:
+            if args.base:
+                print("no files changed since %s" % args.base)
+                return 0
             ap.error("impact needs PATH... or --base SHA")
+        for n, x in enumerate(targets):
+            if os.path.isabs(x):  # a file under the root; on Windows also a drive path
+                try:
+                    rel = os.path.relpath(os.path.abspath(x), root)
+                except ValueError:  # another drive
+                    rel = None
+                if rel and rel not in (os.curdir, os.pardir) \
+                        and not rel.startswith(os.pardir + os.sep):
+                    targets[n] = rel
         targets = [strip_dot_slash(posixpath.normpath(x.replace("\\", "/"))) for x in targets]
         lines = impact_lines(root, targets, args.depth, info, importers, out_rel)
         cut = lines[MAX_CHANGED_LINES - 1:]

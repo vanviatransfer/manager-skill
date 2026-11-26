@@ -124,6 +124,35 @@ class ImpactTest(unittest.TestCase):
                                       "  depth 2: pkg/a.py"])
         self.refused("impact")  # no paths, no --base
 
+    def test_base_with_no_changes_says_so(self):
+        self.git("commit", "-q", "-m", "fixture")
+        base = self.git("rev-parse", "HEAD")
+        self.assertEqual(run("impact", "--base", base, "--root", self.root),
+                         (0, "no files changed since %s\n" % base))
+
+    def test_absolute_path_inside_the_root(self):
+        absolute = os.path.join(os.path.abspath(self.root), "pkg", "c.py")
+        self.assertEqual(self.impact(absolute), self.impact("pkg/c.py"))
+        self.assertEqual(self.impact(absolute)[1], "pkg/c.py")
+
+    def test_tests_by_name_need_an_affix_and_the_same_language(self):
+        self.write("pkg/__init__.py", "")
+        self.write("tests/sub/__init__.py", "")  # a test folder's __init__ is no test of pkg's
+        self.write("tests/test_score.py", "def test_it():\n    pass\n")
+        self.write("tests/test_score.js", "export function check() {}\n")
+        self.git("add", "-A")
+        self.assertNotIn("tests by name", "\n".join(self.impact("pkg/__init__.py")[1:]))
+        self.assertIn("  tests by name: tests/test_score.py", self.impact("pkg/score.py"))
+
+    def test_budget_keeps_the_50_item_cap(self):
+        self.write("pkg/many.py", "".join("def many_%02d():\n    pass\n" % n for n in range(60)))
+        self.git("add", "-A")
+        plain = run("query", "many_", "--root", self.root)[1]
+        self.assertIn("  (10 more)\n", plain)
+        out = run("query", "many_", "--budget", "100000", "--root", self.root)[1].splitlines()
+        self.assertEqual(len([line for line in out if " many_" in line]), 50)
+        self.assertEqual(out[-1], "\u2026 10 more (raise --budget)")
+
     def test_query_without_budget_is_unchanged(self):
         for term, expected in GOLDEN.items():
             code, out = run("query", term, "--root", self.root)
