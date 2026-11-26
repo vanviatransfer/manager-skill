@@ -1735,9 +1735,10 @@ the 20 base cases or their keys, or any cost ceiling.
   names finding 1, `:16-17` or `:15-17` finding 2, `:9-18` neither); terms count as before. Known
   risk: finding 2's `copy`, `unchanged`, `as it was` and `in place` can credit the sort bug from a
   median-only blocker that suggests sorting a copy with `sorted(values)`; audit.md shows each match,
-  so it can be checked by hand; item 33 lists the wider known limits. The run is `found` when all are,
-  `partial` when some, `missed` when none, right only when found; recall counts findings (so `l2-two-faults` adds 2 to L2), and the
-  audit labels the finding a blocker matched (`finding 2: ...`). Kind `nit`: right (`pass`) with
+  so it can be checked by hand; item 33 lists the wider known limits. The run is `found` when all
+  are, `partial` when some, `missed` when none, right only when found; recall counts findings (so
+  `l2-two-faults` adds 2 to L2), and the audit labels the finding a blocker matched (`finding 2:
+  ...`). Kind `nit`: right (`pass`) with
   PASS or PASS WITH NOTES and no blocker, else `over-blocking`; its own line `over-blocking nit:
   x/y`, printed when a scored tier has a nit, never in the false-alarm rate. A result with runs of
   both tiers also gets each tier's totals (`tier hard: ...`, `tiers` in `--json`); a result of one
