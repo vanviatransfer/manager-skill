@@ -39,7 +39,7 @@ only as **Stop conditions** says.
   (`references/github-backends.md` maps every `gh` command here to MCP).
 - **GitHub CI is not a gate.** Don't trigger, wait for or poll CI. The gate is the project's
   validation, run independently by the reviewer, plus the review. A merge refused over required
-  checks: **Refused landing** (`references/landing.md`).
+  checks → `references/refused-landing.md`.
 - **Sequential phases.** Phases run one at a time on the shared checkout. A blocked phase doesn't
   stop the run: the next ready phase follows. Exception: with a single designated
   push branch, a phase that blocks after pushing unmerged work occupies the only branch, so no
@@ -117,8 +117,7 @@ a run (a new session included) and again after a compaction, read
 6. **Model strategy gate** (above) and **Code map** check (`references/code-map-check.md`, read at
    this step in every run; evaluate it first). Everything before this point is read-only.
 
-No living plan, or remaining work not split into phases → `references/establish-state.md`, **No
-plan**.
+No living plan, or remaining work not split into phases → `references/no-plan.md`.
 
 **Plan-only PR** (the split, or end-of-run bookkeeping): before splitting, dispatching, reviewing
 or resuming one, read `references/plan-only-pr.md`.
@@ -207,7 +206,7 @@ the pin). A fast-forward-only project → `references/landing.md`. Then confirm 
 fetch`, and check `git diff --quiet <reviewed-sha> <merge-commit>`: a different tree → at once
 `references/landing.md`.
 
-A landing refused or blocked → `references/landing.md`, **Refused landing**.
+A landing refused or blocked → `references/refused-landing.md`.
 
 ### 4b. CHANGES REQUIRED → fix, then a fresh review
 Send the blockers **verbatim** to the same implementer (SendMessage: `Fix round: PR #<n> at <sha>,

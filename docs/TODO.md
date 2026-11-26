@@ -1217,7 +1217,7 @@ No rule was reworded, weakened or deleted; no read was added to a normal run.
   | SKILL.md | before | after | saved |
   |---|---|---|---|
   | code-map | 19,999 | 9,108 | 54.5% |
-  | manager | 17,986 | 17,634 | 2.0% |
+  | manager | 17,986 | 17,587 | 2.2% |
   | self-training-skills | 13,720 | 12,935 | 5.7% |
   | create-vault, living-plan, manager-retro | 7,302 / 8,317 / 9,123 | unchanged | 0 |
 
@@ -1230,10 +1230,13 @@ No rule was reworded, weakened or deleted; no read was added to a normal run.
   what counts as broad and known gaps → `references/search-nudge.md` (turning it off, a search it
   blocked or allowed unexpectedly). **Kept:** what the map holds and how it is built, the command
   resolution and every command, the nudge's scope and one-time block, Rules, In the manager.
-- **manager: moved.** "No living plan" / "work not split into phases" → `establish-state.md`,
-  **No plan** (already read at step 0 of every run, so no added read); a refused or blocked
-  landing, with the branch-protection line from **GitHub CI is not a gate** → `landing.md`,
-  **Refused landing** (already read at loop step 4a). **Kept, normal path or a tested invariant:**
+- **manager: moved.** "No living plan" / "work not split into phases" → `references/no-plan.md`
+  (read only at step 0 when there is no plan or the work is unsplit); a refused or blocked landing,
+  with the branch-protection line from **GitHub CI is not a gate** → `references/refused-landing.md`
+  (read only when a landing is refused or blocked). Not into `landing.md` (read at every phase's
+  landing) or `establish-state.md` (read at step 0, after each compaction, and again at loop steps
+  1 and 2 when the default head moved): there the moved text would be paid more than once per run.
+  Both files are byte for byte as at 0.9.9 (`landing.md` 2,192 chars, `establish-state.md` 5,127). **Kept, normal path or a tested invariant:**
   ground rules, subagents, model strategy and run marker, step 0 items, every loop step, brakes,
   owner decisions, talking to the owner, run record, stop conditions. 15% was not reachable: the
   body is already mostly invariants the tests pin to SKILL.md and pointers; the remaining rare
@@ -1242,7 +1245,7 @@ No rule was reworded, weakened or deleted; no read was added to a normal run.
   than their pointer costs.
 - **self-training-skills: moved.** Adopt mode → `references/adopt.md`.
 - **Ceilings.** code-map SKILL.md 20,000 → 9,500 (new size rounded up to the next 500); manager
-  SKILL.md stays 18,000 (17,634 rounds up to 18,000). New test `test_rare_path_pointers_resolve`:
+  SKILL.md stays 18,000 (17,587 rounds up to 18,000). New test `test_rare_path_pointers_resolve`:
   every `references/<file>` code-map and self-training-skills name exists, and every file there is
   named. `test_codemap.py` reads the rules-block template from `references/setup.md`.
   `brief-code-map-setup.md` names the template's new file.
