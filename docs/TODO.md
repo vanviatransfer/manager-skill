@@ -1430,11 +1430,12 @@ zero-tests sentence in both briefs).
 - **Zero tests is not a pass.** What: one sentence in the validation step of both briefs: a test
   command that exits 0 while its log shows zero tests run (`Ran 0 tests`, `no test files`,
   `collected 0 items`, `# tests 0`, `0 passing`) is a fail. Why: a wrong discovery folder or a
-  filter that matches nothing exits 0 and reads as green. Cost: 30 words per brief (implementer
-  1,305 → 1,335, ceiling 1,327 → 1,357; reviewer 1,324 → 1,354, ceiling 1,347 → 1,377), the only
-  ceiling change; no other brief text was reworded. A test pins the sentence in both, once each.
-  No helper script: it would need its own brief text. False positives: a log that prints one of
-  these strings for a sub-suite while others ran (the agent reads the log, so it can tell).
+  filter that matches nothing exits 0 and reads as green. Cost: 30 words per brief (as the test
+  counts them, `str.split()`: implementer 1,325 → 1,355, ceiling 1,327 → 1,357; reviewer 1,346 →
+  1,376, ceiling 1,347 → 1,377), the only ceiling change; no other brief text was reworded. A test
+  pins the sentence in both, once each. No helper script: it would need its own brief text. False
+  positives: a log that prints one of these strings for a sub-suite while others ran (the agent
+  reads the log, so it can tell).
 - **`plan.py check` warnings.** What: after the existing warnings, one line per hit with the phase
   id and the field: a placeholder left in a required field (`<` then `...` or a letter up to the
   next `>`, outside backticks only; anywhere `TODO` / `TBD` as words of their own, not inside a path
@@ -1492,3 +1493,84 @@ zero-tests sentence in both briefs).
   would need a logic change (e.g. accept staged map pages that match a build from the index), so
   the message and `references/commit-hooks.md` are left as they were; for the owner to decide.
 - plugin.json 0.9.14; README names the new warnings, the `references/` scan and `--streaks`.
+
+### 28. Reviewer calibration eval, built, not run (plugin 0.9.15)
+
+Source: the method of cross-review (lploc94): planted bugs, decoys that look wrong but are
+correct, clean diffs, blind grading. Our own synthetic cases and code; nothing copied (its
+license is unclear). Owner rule: built and tested only; the paid run waits for the owner's budget.
+No change to the reviewer, its brief, the manager skill or a hook; nothing runs in a normal run.
+
+- **Where.** `plugins/manager-plugin/evals/reviewer-calibration/`: 20 `claude plugin eval` cases
+  (`case.yaml`, `prompt.md`, `scaffold.sh`, `graders/`, `answer.json`), the shared `fixture.sh`,
+  `score.py` and `run.py`. Each scaffold builds a tiny standard-library Python repository (66-101
+  lines in all): rules, a one-phase plan with acceptance criteria (`plan.py check` passes), the
+  base on `main`, pull request #1's candidate on `phase/P1` (round 2: two commits), a local mirror,
+  the checkout on the candidate. The session sends one `manager-plugin:reviewer` the reviewer
+  brief's dispatch and relays its answer. Validation (`python3 run_tests.py`) exits 0 at every
+  candidate, so no planted bug is caught by the tests alone.
+- **Cases.** Planted, L1 obvious: `rc-l1-off-by-one` (`page_count` = `total // size + 1`),
+  `rc-l1-wrong-operator` (`>` where the acceptance says at least). L2 logic: `rc-l2-empty-input`
+  (`mean([])` divides by zero), `rc-l2-wrong-condition` (a 429 skips the attempt limit). L3
+  cross-file: `rc-l3-caller-not-updated` (`load(paths)`, `cli.py` still passes one string),
+  `rc-l3-contract-change` (`find` raises `KeyError`, `service.record` expects None). L4 doc or
+  record drift: `rc-l4-readme-drift` (README default 20, code 10), `rc-l4-plan-drift` (a change-log
+  line claims accent folding). Guard: `rc-weakened-test` (the failing test skipped as flaky, the
+  0.9.13 flags), `rc-zero-tests` (tests renamed out of discovery: exit 0, `Ran 0 tests`, the
+  0.9.14 rule). Decoys, comment-free: `rc-decoy-fallthrough` (chained `if`s reassigning the role),
+  `rc-decoy-guarded-none` (`match and match.group(1)`), `rc-decoy-for-else`,
+  `rc-decoy-ceil-idiom` (`-(-n // size)`). Clean: `rc-clean-clamp`, `rc-clean-retry`,
+  `rc-clean-readme-option`, `rc-clean-slug-limit` (the last three are the right twins of an L2 and
+  both L4 cases, same base). Round 2, with `Previous blockers`: `rc-round2-fixed` (a real fix),
+  `rc-round2-unfixed` (0 refused, 65536 still accepted).
+- **Graders.** In the run (free, regex and `tool_used`): a reviewer got this candidate, the final
+  message holds a verdict line, the verdict the key expects, no `answer.json` in the trace.
+  `score.py` (deterministic, blind; reads `aggregate-result.json`, each run's trace, and the keys):
+  the reviewer's own answer (the Agent tool result, else the final message), its `VERDICT` and
+  `B<n>.` blockers. Planted: found when a blocker names a key file and a line in the key's range
+  (`file:12`, `file:10-14`) or a key term; decoy or clean: any blocker or CHANGES REQUIRED is a
+  false alarm; round 2: accept the fixed one (PASS, no blocker), refuse the unfixed one. Report:
+  per run, recall per level and overall, false-alarm rate (decoys, clean, both; runs without a
+  verdict apart), round-2 right, no-verdict runs, cost (`costUsd`) and tokens (input, cache read,
+  cache write, output; all agents and the reviewer's share, each message id once).
+- **Runner.** `run.py --max-cost-usd USD` (required) `[--model sonnet|opus] [--runs N] [-j N]
+  [--case GLOB] [--dry-run]`, defaults Sonnet, 1 run, `-j 1`: `claude plugin eval` with `--tag
+  reviewer-calibration --ablation none --scaffold --no-publish --allow-tools Agent Bash ToolSearch
+  --max-cost-usd` (the CLI's hard ceiling, checked before each run), then `score.py`. The
+  README's command for the invariant cases now names their tags, so it leaves this suite out.
+- **Estimated tokens per run** (one run of the 20 cases; not measured, estimated from fixture size
+  and `usage.py` on this repository's local reviewer transcripts): the 33 reviewer subagents of
+  one local session took 6-49 requests, 89k-2.9M cache read, 4-44k output, 22-134k context at
+  return; the smallest diffs (6-10 requests, 89-142k cache read, 14-20k cache write, about 4k
+  output) are the nearest to these fixtures. So per case about 150-250k cache read, 20-30k cache
+  write and 4-8k output for the reviewer, plus 50-100k cache read and about 20k cache write for the
+  session; for the suite about 4-7M cache read, 0.8-1M cache write and 0.1-0.2M output tokens.
+  At Sonnet list prices (assumed: 0.30 / 3.75 / 15 USD per million for cache read, cache write,
+  output) about 0.25-0.5 USD per case, 5-10 USD a run; Opus (assumed 0.50 / 6.25 / 25) about
+  1.7 times that. The one
+  measured manager case (README, Sonnet, 23 turns) cost 0.31 USD. Unknown until the pilot.
+- **Pilot** (1 run, Sonnet, capped; from the repository root):
+  `python3 plugins/manager-plugin/evals/reviewer-calibration/run.py --max-cost-usd 15`
+  (`--dry-run` first prints the exact `claude plugin eval` command). Start smaller with
+  `--case 'rc-l1-*'`.
+- **Tests (free).** `evals/test_reviewer_calibration.py`: the mix, every case valid in the
+  `test_evals.py` format and tagged for this suite only, one prompt apart from its commits and
+  previous blocker and naming no answer, the graders; every scaffold run twice (same SHAs), the
+  prompt's commits, a clean tree, under 150 lines, no key in the workspace, the plan check,
+  validation exit 0 (0 tests only in `rc-zero-tests`), each key's probe failing exactly at the
+  planted and unfixed candidates, each key's lines holding its marker; `score.py` on hand-written
+  answers (found by line and by term, missed, no verdict, false alarm, round 2) and on a result
+  with its trace; `run.py`'s command and its required ceiling. `test_evals.py` leaves the suite out
+  of its invariant checks.
+- **Limits.** The `aggregate-result.json` shape (`cases[].arms.with[]`, `costUsd`, `tracePath`)
+  is read from the 2.1.332 CLI, not from a run. The term match is approximate (a blocker about
+  another fault that names the file and a key term counts as found); the probe and line markers
+  keep the keys true to the fixtures. The answer keys sit in the plugin folder, which the session
+  can read; the `blind` grader fails a run whose trace names `answer.json`.
+- **Also (0.9.14 review follow-ups).** `test_usage.py`: `StreakTest` and its helpers above the
+  `__main__` guard. Item 27: brief word counts as the test counts them. `test_invisible_unicode`
+  `test_reference_files_are_checked_too` routes its files in `## Knowledge`, so the clean skill
+  exits 0 and the exit 1 comes from the payload. `skilltrain.py check` scans nested
+  `references/**/*.md` for invisible characters too (the routing already walks them).
+- plugin.json 0.9.15 (the nested scan changes `skilltrain.py check`; the eval alone would not need
+  it); README: the calibration suite, the tagged invariant command, `references/**/*.md`.

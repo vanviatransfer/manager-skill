@@ -44,7 +44,7 @@ hold, or an owner verdict quoted as owner: "<words>", <date>); a sourced lesson 
 without one while the changelog has only its first entry. An old five-column lessons table reports
 these evidence gaps as notes, not problems (see references/lessons-format.md). Invisible or
 direction-changing characters (INVISIBLE) in SKILL.md, lessons.md, the records file and
-references/*.md give one line per file and line, never stripped: a problem for a bidi control or
+references/**/*.md give one line per file and line, never stripped: a problem for a bidi control or
 a stray tag character, a note for the others; emoji presentation and joiners inside words are
 allowed (invisible_chars, strict=False). With --triggers-from REF, every quoted
 phrase ("..." or “...”) of the skill's description at REF, and of the description of the folder
@@ -309,12 +309,11 @@ def char_name(cp):
 
 def check_invisible(sk):
     """One line per line of SKILL.md, lessons.md, the records file and the skill's
-    references/*.md (agents read them) that holds INVISIBLE characters (invisible_chars, not
-    strict): a problem when one is a bidi control or a tag character, else a note. A file that
-    can't be read is left to the other checks."""
+    references/**/*.md (agents read them; nested folders too, as routing walks them) that holds
+    INVISIBLE characters (invisible_chars, not strict): a problem when one is a bidi control or a
+    tag character, else a note. A file that can't be read is left to the other checks."""
     rels = [sk.rel_dir + "/SKILL.md", sk.rel_dir + "/lessons.md"]
-    rels += [rel for rel in reference_files(sk) if rel.lower().endswith(".md")
-             and posixpath.dirname(rel) == sk.rel_dir + "/references"]
+    rels += [rel for rel in reference_files(sk) if rel.lower().endswith(".md")]
     path = section_paths(section(sk.secs, "Record") or []).get("Records")
     if path and safe_rel(path):
         rels.append(safe_rel(path))

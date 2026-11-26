@@ -1,0 +1,24 @@
+{
+  "case": "rc-l2-empty-input",
+  "kind": "planted",
+  "level": "L2",
+  "summary": "`sum(values) / len(values)` raises ZeroDivisionError for `[]`",
+  "locations": [
+    {
+      "file": "stats.py",
+      "lines": [
+        9,
+        11
+      ],
+      "text": "return sum(values) / len(values)"
+    }
+  ],
+  "terms": [
+    "empty",
+    "ZeroDivision",
+    "division by zero",
+    "divide by zero",
+    "mean([])"
+  ],
+  "probe": "from stats import mean\nassert mean([]) is None"
+}

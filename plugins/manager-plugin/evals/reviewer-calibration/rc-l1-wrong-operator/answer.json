@@ -1,0 +1,25 @@
+{
+  "case": "rc-l1-wrong-operator",
+  "kind": "planted",
+  "level": "L1",
+  "summary": "`total > threshold` makes an order of exactly the threshold ineligible",
+  "locations": [
+    {
+      "file": "discount.py",
+      "lines": [
+        9,
+        11
+      ],
+      "text": "return total > threshold"
+    }
+  ],
+  "terms": [
+    ">=",
+    "at least",
+    "equal",
+    "boundary",
+    "(100, 100)",
+    "strict"
+  ],
+  "probe": "from discount import is_eligible\nassert is_eligible(100, 100)"
+}

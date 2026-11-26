@@ -1,0 +1,21 @@
+{
+  "case": "rc-l4-readme-drift",
+  "kind": "planted",
+  "level": "L4",
+  "summary": "README.md says the default is 20; `top.py` uses 10",
+  "locations": [
+    {
+      "file": "README.md",
+      "lines": [
+        7,
+        7
+      ],
+      "text": "(default: 20)"
+    }
+  ],
+  "terms": [
+    "default",
+    "20"
+  ],
+  "probe": "assert \"(default: 10)\" in open(\"README.md\").read()"
+}

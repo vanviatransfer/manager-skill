@@ -162,24 +162,30 @@ class CheckTest(Fixture):
                           ascii(text))
 
     def test_reference_files_are_checked_too(self):
-        refs = os.path.join(self.dir, "references")
-        os.makedirs(refs)
-        with open(os.path.join(refs, "x.md"), "w", encoding="utf-8") as fh:
-            fh.write("# Notes\n\nPlain text.\n")
+        """references/*.md and nested references/**/*.md, both routed from `## Knowledge` so the
+        clean skill exits 0: exit 1 then comes from the payload alone."""
+        self.edit("- `docs/vault/releases.md`\n",
+                  "- `docs/vault/releases.md`\n- `references/x.md` — read when writing notes\n"
+                  "- `references/deep/y.md` — read when writing notes\n")
+        skill = ".claude/skills/release-notes/"
+        for rel in ("references/x.md", "references/deep/y.md"):
+            self.write(skill + rel, "# Notes\n\nPlain text.\n")
         clean_code, clean = run("check", self.dir)
+        self.assertEqual(clean_code, 0, clean)
         self.assertNotIn("invisible", clean)
-        with open(os.path.join(refs, "x.md"), "w", encoding="utf-8") as fh:
-            fh.write("# Notes\n\nA hidden\U000E0041\U000E0042 payload.\n")
-        code, out = run("check", self.dir)
-        self.assertEqual(code, 1, out)
-        self.assertIn(".claude/skills/release-notes/references/x.md:3 holds invisible characters "
-                      "(U+E0041 TAG LATIN CAPITAL LETTER A at column 9, U+E0042 TAG LATIN CAPITAL "
-                      "LETTER B at column 10): they can hide text from a review", out)
-        with open(os.path.join(refs, "x.md"), "w", encoding="utf-8") as fh:
-            fh.write("# Notes\n\nA\u200bspace.\n")
-        code, out = run("check", self.dir)
-        self.assertEqual(code, clean_code, out)  # a note: the exit code stays what it was
-        self.assertIn("note: .claude/skills/release-notes/references/x.md:3 holds invisible", out)
+        for rel in ("references/x.md", "references/deep/y.md"):
+            with self.subTest(rel=rel):
+                self.write(skill + rel, "# Notes\n\nA hidden\U000E0041\U000E0042 payload.\n")
+                code, out = run("check", self.dir)
+                self.assertEqual(code, 1, out)
+                self.assertIn(skill + rel + ":3 holds invisible characters (U+E0041 TAG LATIN "
+                              "CAPITAL LETTER A at column 9, U+E0042 TAG LATIN CAPITAL LETTER B at "
+                              "column 10): they can hide text from a review", out)
+                self.write(skill + rel, "# Notes\n\nA\u200bspace.\n")
+                code, out = run("check", self.dir)
+                self.assertEqual(code, 0, out)  # a note: the exit code stays 0
+                self.assertIn("note: " + skill + rel + ":3 holds invisible", out)
+                self.write(skill + rel, "# Notes\n\nPlain text.\n")
 
     def test_a_variation_selector_supplement_character_is_a_note(self):
         code, out = self.check("See a\U000E0100b here.")

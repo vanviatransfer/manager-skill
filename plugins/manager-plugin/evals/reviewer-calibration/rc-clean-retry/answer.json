@@ -1,0 +1,9 @@
+{
+  "case": "rc-clean-retry",
+  "kind": "clean",
+  "level": null,
+  "summary": "correct",
+  "locations": [],
+  "terms": [],
+  "probe": "from retry import should_retry as r\nassert r(503, 1, 3) and not r(503, 3, 3) and r(429, 1, 3) and not r(429, 3, 3)\nassert not r(404, 1, 3) and not r(501, 1, 3)"
+}

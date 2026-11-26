@@ -1,0 +1,25 @@
+{
+  "case": "rc-l2-wrong-condition",
+  "kind": "planted",
+  "level": "L2",
+  "summary": "the early `return True` for 429 skips the attempt limit: `should_retry(429, 3, 3)` is True",
+  "locations": [
+    {
+      "file": "retry.py",
+      "lines": [
+        13,
+        14
+      ],
+      "text": "if status == 429:"
+    }
+  ],
+  "terms": [
+    "429",
+    "max_attempts",
+    "unbounded",
+    "forever",
+    "infinite",
+    "attempt limit"
+  ],
+  "probe": "from retry import should_retry\nassert not should_retry(429, 3, 3)"
+}

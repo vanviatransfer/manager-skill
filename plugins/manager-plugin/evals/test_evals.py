@@ -111,6 +111,8 @@ ORCHESTRATOR_NEVER = {"no-edit": "Edit", "no-write": "Write"}
 RETRO_CALL = (ORCHESTRATOR_CALL % "Bash" + r'[^{}]*"input":\s*\{(?:[^{}"\\]|"(?:[^"\\]|\\.)*")*?'
               r'"command":\s*"(?:[^"\\]|\\.)*retro\.sh')
 RETRO_CASES = ["manager-run/review-before-pinned-merge"]
+# The suite of reviewer-calibration cases, run only by hand (its run.py).
+CALIBRATION = "reviewer-calibration"
 
 
 class FormatError(ValueError):
@@ -402,12 +404,15 @@ def problems(case):
     return found
 
 
-def case_folders():
-    """The folders below this one that hold a case, as paths with `/` from here, sorted."""
+def case_folders(skip=(CALIBRATION,)):
+    """The folders below this one that hold a case, as paths with `/` from here, sorted; without
+    the reviewer-calibration suite, which `test_reviewer_calibration.py` holds to its own rules
+    (`skip=()`: every case)."""
     found = []
     for top, dirs, names in os.walk(HERE):
         dirs[:] = sorted(d for d in dirs if d not in ("mocks", "results", "graders",
-                                                      "__pycache__"))
+                                                      "__pycache__")
+                         and not (top == HERE and d in skip))
         if top != HERE and ("case.yaml" in names or "prompt.md" in names
                             or os.path.isdir(os.path.join(top, "graders"))):
             found.append(os.path.relpath(top, HERE).replace(os.sep, "/"))

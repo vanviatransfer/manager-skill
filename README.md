@@ -93,7 +93,7 @@ A Claude Code plugin with six skills:
   `references/` file from `## Knowledge`, cited lesson ids and their verifier outcomes, and with
   `--triggers-from <ref>` the description's quoted trigger phrases, including a retired
   trainer's; invisible or direction-changing Unicode characters in the skill's files and its
-  `references/*.md` are reported), flags stale
+  `references/**/*.md` are reported), flags stale
   lessons for the next training, finds a term in every skill's files (`query`), writes one
   instruction line into `CLAUDE.md` (`rules-hint`), and tells
   the manager which skills are due for training and which fail their check.
@@ -606,9 +606,12 @@ repository root:
 
 ```
 claude plugin eval plugins/manager-plugin --ablation none --scaffold --no-publish \
-  --allow-tools Agent SendMessage ToolSearch Bash Edit Write
+  --tag general-purpose-spawn reviewer-every-round pinned-merge fix-round-brake \
+  orchestrator-no-edit --allow-tools Agent SendMessage ToolSearch Bash Edit Write
 ```
 
+- `--tag`: these three cases (a case runs when it has any of the tags), not the
+  reviewer-calibration suite below, which runs only through its own command.
 - `--ablation none`: run with the plugin only. The default also runs every case with the plugin
   off and scores the difference, which means nothing for a manager run.
 - `--scaffold`: lets the two manager cases build their repository (their `scaffold.sh` runs with
@@ -651,3 +654,38 @@ graders name. Start with one case (`--case plugin-agent-spawn`). Two limits of t
 stand-in: its answers are fixed, so a manager case starts from an open pull request instead of
 an implementer opening one during the run; and its tool list (`_tools.json`) is written by hand
 from the plugin's GitHub operation map, not captured from the real server.
+
+### Reviewer calibration (built, not yet run)
+
+`plugins/manager-plugin/evals/reviewer-calibration/` measures the reviewer agent with its brief
+(`references/reviewer-brief.md`) on recall and false alarms, so a later change to either can be
+judged by data. Each of its 20 cases builds a tiny synthetic Python repository (`scaffold.sh`: a
+base commit on `main`, the candidate of pull request #1 on `phase/P1`, a one-phase living plan
+with acceptance criteria, under 150 lines in all) and has the session send one
+`manager-plugin:reviewer` the reviewer dispatch for it. The cases: 8 planted bugs over four
+levels (L1 obvious: `rc-l1-off-by-one`, `rc-l1-wrong-operator`; L2 logic: `rc-l2-empty-input`,
+`rc-l2-wrong-condition`; L3 cross-file: `rc-l3-caller-not-updated`, `rc-l3-contract-change`; L4
+doc or record drift: `rc-l4-readme-drift`, `rc-l4-plan-drift`), 2 guard cases (`rc-weakened-test`:
+a failing test skipped as flaky; `rc-zero-tests`: the tests renamed out of discovery, so the
+validation exits 0 with 0 tests run), 4 decoys of correct code that looks wrong
+(`rc-decoy-fallthrough`, `rc-decoy-guarded-none`, `rc-decoy-for-else`, `rc-decoy-ceil-idiom`), 4
+clean diffs (`rc-clean-clamp`, `rc-clean-retry`, `rc-clean-readme-option`,
+`rc-clean-slug-limit`) and 2 round-2 cases with a previous blocker (`rc-round2-fixed`,
+`rc-round2-unfixed`: a fix that only looks done). The validation passes at every candidate, so no
+planted bug is caught by the tests alone. Each case's `answer.json` (its kind, level, the bug's
+files and line ranges, key terms and a probe) stays out of the run; the run's graders check that
+the reviewer got the candidate, its verdict and that no `answer.json` was read, and `score.py`
+grades the reviewer's answer from the run's trace: a planted bug is found when a blocker names
+its file and a line in the key's range or a key term; a decoy or clean case with any blocker is a
+false alarm; round 2 must accept the real fix and refuse the other. It reports each run, recall
+per level, the false-alarm rate, round-2 results, cost and tokens. A paid run, by hand only, with
+a required cost ceiling (Sonnet by default, `--model opus` for the other tier, `--runs 1`,
+`-j 1`):
+
+```
+python3 plugins/manager-plugin/evals/reviewer-calibration/run.py --max-cost-usd 15
+```
+
+`--dry-run` prints the `claude plugin eval` and `score.py` commands it would run.
+`python3 -m unittest discover -s plugins/manager-plugin/evals` checks the cases, builds every
+fixture, runs its validation and probe, and scores hand-written answers, all without a paid run.
