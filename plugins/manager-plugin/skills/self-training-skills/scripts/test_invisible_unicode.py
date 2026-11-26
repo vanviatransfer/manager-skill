@@ -142,6 +142,45 @@ class CheckTest(Fixture):
         code, out = self.check("See \u0915\u094d\u200d\u0937 here.")
         self.assertNotIn("invisible", out)
 
+    def test_a_joiner_before_a_mark_or_after_a_final_virama(self):
+        """Sinhala touching form (letter, ZWJ, al-lakuna) and Malayalam old-style chillu (letter,
+        virama, ZWJ at a word's end) pass; ASCII-adjacent joiners stay notes."""
+        for text in ("\u0d9a\u200d\u0dca\u0dc2", "\u0d9a\u200d\u0dca",
+                     "\u0d9a\u200c\u0dca", "\u0d28\u0d4d\u200d", "\u0d28\u0d4d\u200d, \u0d32",
+                     "\u0d23\u0d4d\u200d."):
+            code, out = self.check("See %s here." % text)
+            self.assertEqual(code, 0, (ascii(text), out))
+            self.assertNotIn("invisible", out, ascii(text))
+            self.assertTrue(skilltrain.invisible_chars(text), "strict reports %s" % ascii(text))
+        for text in ("de\u013a\u200d\u0301ete", "a\u200d\u0dca", "\u0d9a\u200d\u0dcax",
+                     "n\u0d4d\u200d", "\u0d28\u0d4d\u200dx",
+                     "\u0d28\u0d4d\u200d1", "\u0d28\u0d4d\u200c", "\u0d28\u200d",
+                     "\u0d28\u0301\u200d"):
+            code, out = self.check("See %s here." % text)
+            self.assertEqual(code, 0, (ascii(text), out))
+            self.assertIn("note: .claude/skills/release-notes/SKILL.md:19 holds invisible", out,
+                          ascii(text))
+
+    def test_reference_files_are_checked_too(self):
+        refs = os.path.join(self.dir, "references")
+        os.makedirs(refs)
+        with open(os.path.join(refs, "x.md"), "w", encoding="utf-8") as fh:
+            fh.write("# Notes\n\nPlain text.\n")
+        clean_code, clean = run("check", self.dir)
+        self.assertNotIn("invisible", clean)
+        with open(os.path.join(refs, "x.md"), "w", encoding="utf-8") as fh:
+            fh.write("# Notes\n\nA hidden\U000E0041\U000E0042 payload.\n")
+        code, out = run("check", self.dir)
+        self.assertEqual(code, 1, out)
+        self.assertIn(".claude/skills/release-notes/references/x.md:3 holds invisible characters "
+                      "(U+E0041 TAG LATIN CAPITAL LETTER A at column 9, U+E0042 TAG LATIN CAPITAL "
+                      "LETTER B at column 10): they can hide text from a review", out)
+        with open(os.path.join(refs, "x.md"), "w", encoding="utf-8") as fh:
+            fh.write("# Notes\n\nA\u200bspace.\n")
+        code, out = run("check", self.dir)
+        self.assertEqual(code, clean_code, out)  # a note: the exit code stays what it was
+        self.assertIn("note: .claude/skills/release-notes/references/x.md:3 holds invisible", out)
+
     def test_a_variation_selector_supplement_character_is_a_note(self):
         code, out = self.check("See a\U000E0100b here.")
         self.assertEqual(code, 0, out)

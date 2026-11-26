@@ -1420,3 +1420,75 @@ Owner rule for this change: no added token cost.
   records rows dated after `last-confirmed`; `stats` stale lines carry the `note:` prefix too. The
   `check` docstring says old five-column tables report evidence gaps as notes. plugin.json 0.9.13;
   README names the weakened-guard section and the Unicode check.
+
+### 27. Zero-test guard, plan and vault checks, trigger-clause test, failure streaks (plugin 0.9.14)
+
+Source: ideas from reading public agent frameworks (MIT / Apache-2.0); our own code, nothing
+copied. Owner rule for this change: no added token cost, with one owner-approved exception (the
+zero-tests sentence in both briefs).
+
+- **Zero tests is not a pass.** What: one sentence in the validation step of both briefs: a test
+  command that exits 0 while its log shows zero tests run (`Ran 0 tests`, `no test files`,
+  `collected 0 items`, `# tests 0`, `0 passing`) is a fail. Why: a wrong discovery folder or a
+  filter that matches nothing exits 0 and reads as green. Cost: 30 words per brief (implementer
+  1,305 → 1,335, ceiling 1,327 → 1,357; reviewer 1,324 → 1,354, ceiling 1,347 → 1,377), the only
+  ceiling change; no other brief text was reworded. A test pins the sentence in both, once each.
+  No helper script: it would need its own brief text. False positives: a log that prints one of
+  these strings for a sub-suite while others ran (the agent reads the log, so it can tell).
+- **`plan.py check` warnings.** What: after the existing warnings, one line per hit with the phase
+  id and the field: a placeholder left in a required field (`<` then `...` or a letter up to the
+  next `>`, outside backticks only; anywhere `TODO` / `TBD` as words of their own, not inside a path
+  such as `docs/TODO.md`, `???`, `NEEDS CLARIFICATION`), and a `Validation` command piped into
+  `tail`, `head`, `grep`, `less` or `tee` while the field names neither `pipefail` nor `PIPESTATUS`.
+  Exit code unchanged. A `<...>` slot inside backticks is a command template (`git show <sha>`), not
+  flagged (review fix: all 9 first-round hits on this repository's plan were such templates; it now
+  prints what 0.9.13 printed); documented in `references/plan-template.md` (SKILL.md unchanged).
+  Why: a plan handed to the manager with a slot still open, or a validation whose failure a pipe
+  turns into exit 0. Cost: output only when found; a plan without hits prints the same bytes. False
+  positives: a bare HTML tag (`<br>`) counts as a slot; a `TODO` word in prose is flagged; a pipe
+  inside a quoted string counts. Misses: a slot left inside backticks.
+- **Dead sources in vault pages.** What: `codemap.py check` (not `--quiet`, not the map) prints
+  `warning: dead source <page>:<line> -> <path> (no such file)` after the broken-link warnings, at
+  most 20, only when any exist. Cited: a markdown link to a non-page file, and a code span with a
+  `/` that ends in `/` or in a file extension, only when the path's first part is an entry of the
+  repository root or a folder name anywhere in the tracked tree (review fix: the first version
+  checked every such path, and 8 of 9 probe hits named other repositories' files). Skipped: fenced
+  code blocks, absolute paths, placeholders (`<`, `>`, `*`, `{`, `$`, `...`, `path/to/`, a part
+  named foo, bar or baz or holding "example"). A path is alive when it is on disk from the root, or
+  a tracked path is it or ends with "/" and it (`scripts/<name>.py`, a path relative to a skill
+  folder), or, for a folder, holds it. Why: vault pages cite their sources, and a moved file leaves
+  a stale citation nobody checked. Cost: a `check` warning only; the map, `build` and `--quiet` are
+  unchanged; a clean vault prints the same bytes (golden test, also run against 0.9.13's script).
+  Probe (`check --vault docs` on this repository, which has no vault): 9 lines with the first
+  version, 1 now, the real one: the retired trainer template under a skill's references folder,
+  cited in item 15 (0 false hits). False positives: another repository's file under a folder name
+  this tree also has; misses: a bare file name, a code span without an extension, a moved file whose
+  name still ends some tracked path.
+- **Trigger-clause test.** `hooks/test_trigger_clauses.py`: every model-invoked skill's description
+  keeps "Use when" / "Use for" (`disable-model-invocation: true` skills are exempt), every agent's
+  its "Use ..." / "Used only when" clause. A test only.
+- **Failure streaks.** What: `usage.py SESSION --streaks` adds after each `usage` line one
+  `streaks | agent | failure streaks | longest | tool` line: runs of 3 or more consecutive tool
+  calls with the same tool and input (compared as sorted JSON), each with an `is_error` result; the
+  tool name only, never the input. Off by default (normal output byte-identical); no run asks for
+  it. Why: a measure of agents retrying the same failing call, for `manager-retro`. Measured on 59
+  local subagent transcripts and one orchestrator: 63 error results, 0 streaks. False positives:
+  none known; misses: an error reported in a result's text without `is_error`, a retry with a
+  slightly changed input. Across a session's several project folders the calls are taken folder
+  by folder, not by time.
+- **Also (0.9.13 review follow-ups).** `NOQA_IMPORT` is matched at the line's first `# noqa` and
+  exempts only when no further code (letters then digits) follows E402 with any separator
+  (`E402 F401`, two spaces, a tab, `F401 # noqa: E402` now count; `(after the path setup)` stays
+  exempt; a remark holding e.g. `py3` counts too: a false mark, never a false pass).
+  `skilltrain.py check` scans the worker skill's `references/*.md` too (same non-strict rules).
+  The joiner rule also allows a ZWNJ / ZWJ before a non-ASCII combining mark on a non-ASCII letter
+  (Sinhala touching form) unless an ASCII letter or digit follows the marks, and a ZWJ after a
+  virama (combining class 9) on a non-ASCII letter at a word's end (Malayalam old-style chillu);
+  ASCII-adjacent joiners stay notes.
+- **Pre-commit `--no-verify` advice: checked, unchanged.** With the git pre-commit hook installed
+  in a sparse checkout missing one map input, the map built in a full clone of the same commit,
+  copied in and staged, a plain `git commit` is still stopped: a staged map page makes the hook
+  rebuild, and the missing input stops it before the build. Dropping the `--no-verify` advice
+  would need a logic change (e.g. accept staged map pages that match a build from the index), so
+  the message and `references/commit-hooks.md` are left as they were; for the owner to decide.
+- plugin.json 0.9.14; README names the new warnings, the `references/` scan and `--streaks`.

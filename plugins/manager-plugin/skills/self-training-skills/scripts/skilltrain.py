@@ -43,10 +43,10 @@ outcome in its evidence (a records row cited as "<date> <context>: <outcome>" th
 hold, or an owner verdict quoted as owner: "<words>", <date>); a sourced lesson may back a rule
 without one while the changelog has only its first entry. An old five-column lessons table reports
 these evidence gaps as notes, not problems (see references/lessons-format.md). Invisible or
-direction-changing characters (INVISIBLE) in SKILL.md, lessons.md and the records file give one
-line per file and line, never stripped: a problem for a bidi control or a stray tag character, a
-note for the others; emoji presentation and joiners inside words are allowed (invisible_chars,
-strict=False). With --triggers-from REF, every quoted
+direction-changing characters (INVISIBLE) in SKILL.md, lessons.md, the records file and
+references/*.md give one line per file and line, never stripped: a problem for a bidi control or
+a stray tag character, a note for the others; emoji presentation and joiners inside words are
+allowed (invisible_chars, strict=False). With --triggers-from REF, every quoted
 phrase ("..." or “...”) of the skill's description at REF, and of the description of the folder
 <name>-trainer beside it at REF (the retired trainer), must still be in the current
 description. A skill missing at REF is new: a note, not a problem; a trainer missing at REF is
@@ -215,6 +215,45 @@ def word_join(line, i):
     return before >= 0 and i + 1 < len(line) and letter(line[before]) and letter(line[i + 1])
 
 
+def base_before(line, i):
+    """The index of the character before line[i] once combining marks are passed over (-1:
+    none)."""
+    before = i - 1
+    while before >= 0 and unicodedata.category(line[before]).startswith("M"):
+        before -= 1
+    return before
+
+
+def ascii_word(ch):
+    return ch.isascii() and ch.isalnum()
+
+
+def mark_join(line, i):
+    """Whether the ZWNJ or ZWJ at line[i] stands between a non-ASCII letter (past any combining
+    marks) and a non-ASCII combining mark (Sinhala touching form: letter, ZWJ, virama), with no
+    ASCII letter or digit right after the marks that follow it."""
+    before, after = base_before(line, i), i + 1
+    if before < 0 or not letter(line[before]) or after >= len(line) \
+            or line[after].isascii() or not unicodedata.category(line[after]).startswith("M"):
+        return False
+    while after < len(line) and unicodedata.category(line[after]).startswith("M"):
+        after += 1
+    return after == len(line) or not ascii_word(line[after])
+
+
+def chillu_join(line, i):
+    """Whether the ZWJ at line[i] follows a virama (combining class 9) on a non-ASCII letter at
+    the end of a word (Malayalam old-style chillu): no letter, mark or ASCII digit after it."""
+    if line[i] != ZWJ or i < 1 or unicodedata.combining(line[i - 1]) != 9:
+        return False
+    before = base_before(line, i)
+    if before < 0 or not letter(line[before]):
+        return False
+    nxt = line[i + 1:i + 2]
+    return not nxt or not (nxt.isalpha() or unicodedata.category(nxt).startswith("M")
+                           or ascii_word(nxt))
+
+
 def emoji_join(line, i):
     """Whether the ZWJ at line[i] joins two emoji: the character after it is in EMOJI, and so is
     the one before it once variation selectors and skin-tone modifiers are passed over."""
@@ -231,8 +270,10 @@ def invisible_chars(text, strict=True):
     first character and a ZWJ between two emoji (emoji_join). Strict (the plugin's own text test)
     allows nothing else. Not strict (`check` on a project's skills) also allows a variation
     selector right after an EMOJI character or a keycap base (0-9 # * then U+20E3), a ZWNJ or
-    ZWJ inside a non-ASCII word (word_join: Persian, Indic scripts), and the tag characters of
-    the three RGI subdivision flags (RGI_FLAGS)."""
+    ZWJ inside a non-ASCII word (word_join: Persian, Indic scripts) or before a non-ASCII
+    combining mark (mark_join: Sinhala touching forms), a ZWJ after a virama at a word's end
+    (chillu_join: Malayalam), and the tag characters of the three RGI subdivision flags
+    (RGI_FLAGS)."""
     found = []
     for n, line in enumerate(text.split("\n"), 1):
         tagged = set()
@@ -253,7 +294,8 @@ def invisible_chars(text, strict=True):
                 if ch in SELECTORS and i > 0 and (in_ranges(line[i - 1], EMOJI) or (
                         line[i - 1] in KEYCAP_BASES and line[i + 1:i + 2] == "\u20e3")):
                     continue
-                if ch in "\u200c\u200d" and word_join(line, i):
+                if ch in "\u200c\u200d" and (word_join(line, i) or mark_join(line, i)
+                                               or chillu_join(line, i)):
                     continue
             found.append((n, i + 1, ord(ch)))
     return found
@@ -266,10 +308,13 @@ def char_name(cp):
 
 
 def check_invisible(sk):
-    """One line per line of SKILL.md, lessons.md and the records file that holds INVISIBLE
-    characters (invisible_chars, not strict): a problem when one is a bidi control or a tag
-    character, else a note. A file that can't be read is left to the other checks."""
+    """One line per line of SKILL.md, lessons.md, the records file and the skill's
+    references/*.md (agents read them) that holds INVISIBLE characters (invisible_chars, not
+    strict): a problem when one is a bidi control or a tag character, else a note. A file that
+    can't be read is left to the other checks."""
     rels = [sk.rel_dir + "/SKILL.md", sk.rel_dir + "/lessons.md"]
+    rels += [rel for rel in reference_files(sk) if rel.lower().endswith(".md")
+             and posixpath.dirname(rel) == sk.rel_dir + "/references"]
     path = section_paths(section(sk.secs, "Record") or []).get("Records")
     if path and safe_rel(path):
         rels.append(safe_rel(path))

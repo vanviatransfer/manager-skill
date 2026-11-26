@@ -22,6 +22,9 @@ ENV = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
 NO_PHASE = "error: no phase: no `### <id>. <title>` heading under `## Phases`\n"
 MISSING = "error: %s: no `%s:` line, or nothing after it\n"
 SAME = "warning: %s and %s name the same path in Scope and neither depends on the other: %s\n"
+LEFT = "warning: %s: %s: placeholder left in: %s\n"
+PIPED = ("warning: %s: Validation: `| %s` hides the exit code of the command before it "
+         "(no `set -o pipefail` or `PIPESTATUS`)\n")
 NO_SECTION = "plan.py: no `### %s.` section in the plan on standard input\n"
 
 
@@ -72,7 +75,10 @@ class TemplateShapeTest(unittest.TestCase):
         second = "### P2. <title>\n...\n"
         for placeholder in (depends, second):
             self.assertEqual(self.template.count(placeholder), 1, placeholder)
-        self.plan = (self.template.replace(depends, "Depends on: none\n")
+        filled = self.template
+        for label in ("Objective", "Scope", "Risk", "Acceptance", "Validation"):
+            filled = re.sub(r"(?m)^%s: <.*$" % label, "%s: filled in" % label, filled, count=1)
+        self.plan = (filled.replace(depends, "Depends on: none\n")
                      .replace(second, phase("P2", "P1") + phase("P10", "P1, P2").rstrip("\n")
                               + "\n"))
 
@@ -90,9 +96,16 @@ class TemplateShapeTest(unittest.TestCase):
             self.assertIn(MISSING % ("P2", label), out)
         self.assertIn('error: P1: no such phase in `Depends on`: <phase, ids, or, "none", —, '
                       'required, the, manager, schedules, by, it>\n', out)
-        self.assertEqual(out.count("\n"), 1 + len(plan.REQUIRED))
-        for line in out.splitlines():
-            self.assertTrue(line.startswith("error: "), line)
+        errors = [line for line in out.splitlines() if line.startswith("error: ")]
+        self.assertEqual(len(errors), 1 + len(plan.REQUIRED))
+        self.assertEqual(out.splitlines()[:len(errors)], errors)  # the warnings come after
+        left = out.splitlines()[len(errors):]
+        self.assertIn("warning: P1: Objective: placeholder left in: <one deliverable>", left)
+        self.assertIn('warning: P1: Validation: placeholder left in: <commands, or "standard">',
+                      left)
+        self.assertNotIn("warning: P1: Validation: placeholder left in: <expensive cmd>", left)
+        for line in left:
+            self.assertTrue(line.startswith("warning: P1: "), line)
 
     def test_phase_prints_the_section_and_what_binds_it(self):
         head = self.part("## Constraints", "### P1.")
@@ -281,13 +294,68 @@ class MalformedPlanTest(unittest.TestCase):
         for scope, same in (("src/a.py", "src/a.py"), ("lib/tools.py", "lib"),
                             ("docs/b.md", "docs/b.md")):
             self.assertEqual(check(more, phase("P2", scope=scope)),
-                             (0, SAME % ("P1", "P2", same) + "ok: 2 phases\n"), scope)
+                             (0, SAME % ("P1", "P2", same) + LEFT % ("P1", "Scope", "TODO")
+                              + "ok: 2 phases\n"), scope)
         for label in ("Notes", "Out of scope"):  # the template's two labels beside the required
             ended = phase("P1", scope="the reader\n%s: src/a.py" % label)
             self.assertEqual(check(ended, phase("P2", scope="src/a.py")), (0, "ok: 2 phases\n"),
                              label)
         self.assertEqual(check(phase("P1"), phase("P2", "P1\nLater: P7")),
                          (1, "error: P2: no such phase in `Depends on`: Later:, P7\n"))
+
+
+class LeftoverTest(unittest.TestCase):
+    """Warnings for placeholders left in a phase's required fields and for a validation command
+    piped into a filter that hides its exit code. They never change the exit code."""
+
+    def test_placeholders(self):
+        for value, hits in (
+                ("<one deliverable>", ["<one deliverable>"]),
+                ("the reader, <...> and <id>", ["<...>", "<id>"]),
+                ("`git show <sha>` and <id>", ["<id>"]),  # a backticked slot is a template
+                ("`TODO`, `make ???` and `NEEDS CLARIFICATION`",
+                 ["TODO", "???", "NEEDS CLARIFICATION"]),  # these count inside backticks too
+                ("TODO", ["TODO"]), ("the reader (TBD).", ["TBD"]), ("which one???", ["???"]),
+                ("NEEDS CLARIFICATION: the format", ["NEEDS CLARIFICATION"])):
+            for label in ("Objective", "Acceptance", "Risk"):
+                one = phase("P1").replace("%s: " % label, "%s: %s " % (label, value), 1)
+                self.assertEqual(check(one), (0, "".join(LEFT % ("P1", label, hit)
+                                                          for hit in hits) + "ok: 1 phase\n"),
+                                 (label, value))
+
+    def test_no_placeholder(self):
+        for value in ("docs/TODO.md and TODO.txt", "a < b and c > d", "todo", "2>&1 <<EOF",
+                      "x->y", "why?", "TODOS", "the TBD_ROOT folder"):
+            one = phase("P1").replace("Objective: ", "Objective: %s " % value, 1)
+            self.assertEqual(check(one), (0, "ok: 1 phase\n"), value)
+        notes = phase("P1") + "Notes: <later> TODO\n"  # not a required field
+        self.assertEqual(check(notes), (0, "ok: 1 phase\n"))
+
+    def test_piped_validation(self):
+        for command, hits in (
+                ("`make test | tail -5`", ["tail"]), ("`make test|head`", ["head"]),
+                ("`make test 2>&1 | grep -v noise | tee /tmp/t.log`", ["grep", "tee"]),
+                ("`pytest | less`", ["less"])):
+            self.assertEqual(check(phase("P1").replace("Validation: standard",
+                                                       "Validation: " + command)),
+                             (0, "".join(PIPED % ("P1", hit) for hit in hits)
+                              + "ok: 1 phase\n"), command)
+        for command in ("`set -o pipefail; make test | tail -5`",
+                        "`make test | tail; exit ${PIPESTATUS[0]}`", "`make test || tail x`",
+                        "`make test | sort`", "`make test > /tmp/t.log 2>&1; echo $?`",
+                        "`make test |& cat`"):
+            self.assertEqual(check(phase("P1").replace("Validation: standard",
+                                                       "Validation: " + command)),
+                             (0, "ok: 1 phase\n"), command)
+        scope = phase("P1", scope="src/a.py (`make x | tail`)")  # only Validation is read for it
+        self.assertEqual(check(scope), (0, "ok: 1 phase\n"))
+
+    def test_after_the_other_warnings_and_errors_unchanged(self):
+        code, out = check(phase("P1", scope="src/a.py <later>"), phase("P2", scope="src/a.py"),
+                          phase("P3", without=("Risk",)))
+        self.assertEqual((code, out), (1, MISSING % ("P3", "Risk")
+                                       + SAME % ("P1", "P2", "src/a.py")
+                                       + LEFT % ("P1", "Scope", "<later>")))
 
 
 class ScopeOverlapTest(unittest.TestCase):
@@ -333,7 +401,9 @@ class ScopeOverlapTest(unittest.TestCase):
                  (phase("P1", scope="e.g. the 0.8.x reader, v1.2 etc. (3.8+) <path> docs"),
                   phase("P2"),
                   phase("P3", scope="e.g. the 0.8.x reader, v1.2 etc. (3.8+) <path> docs")))):
-            self.assertEqual(check(*phases), quiet, label)
+            code, out = check(*phases)  # a `<path>` slot is the other warnings' business
+            self.assertEqual((code, re.sub(r"(?m)^.*: placeholder left in: .*\n", "", out)),
+                             quiet, label)
 
 
 class CommandLineTest(unittest.TestCase):

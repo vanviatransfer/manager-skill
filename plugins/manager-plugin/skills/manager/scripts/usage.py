@@ -2,7 +2,7 @@
 """usage: what a Claude Code session's orchestrator and its subagents spent, from the transcripts.
 
 Usage:
-  usage.py SESSION_ID [AGENT[=MODEL] ...] [--since WHEN]
+  usage.py SESSION_ID [AGENT[=MODEL] ...] [--since WHEN] [--streaks]
 
 Prints one line for the session's main conversation (`orchestrator`) and one per subagent, oldest
 first; with AGENT names (`orchestrator`, or a subagent's id as the Agent tool returns it) only
@@ -44,6 +44,15 @@ then no resume. Each line, with ` | ` between its fields:
   compaction (a `compact_boundary` record between the two) is not counted.
 - seconds: from the transcript's first record to its last (a reviewer's: how long the review
   took; a resumed agent's includes the waits between its rounds).
+
+With `--streaks`, each `usage` line is followed by one more (off by default):
+
+  streaks | agent | failure streaks | longest | tool
+
+- failure streaks: the runs of 3 or more consecutive tool calls with the same tool and the same
+  input, each ending in an error (its tool result has `is_error`); a call without a result ends
+  a run. longest: the calls in the longest run; tool: its tool's name (never the input), `none`
+  without a run; `unknown` for a transcript that can't be read. `--since` bounds them too.
 
 A value that can't be read is `unknown`: every value of a missing transcript, the role without a
 `.meta.json`, the resumes and seconds of a transcript without timestamps.
@@ -221,6 +230,74 @@ def back(path, tail=TAIL, compaction=False):
             yield record, sum(count(found[1], key) for key in PROMPT + ("output_tokens",))
 
 
+STREAK = 3  # identical failing tool calls in a row from which they count as a failure streak
+
+
+def blocks(record, kind):
+    """The content blocks of type `kind` in a record's message."""
+    message = record.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    return [part for part in content if isinstance(part, dict) and part.get("type") == kind] \
+        if isinstance(content, list) else []
+
+
+def streaks(paths, since=None):
+    """(the failure streaks, the calls in the longest, its tool's name) of one conversation's
+    transcript files, or None when no file can be read (see `--streaks`)."""
+    calls, failed, opened = [], set(), False  # calls: (id, tool, its input as JSON), in order
+    for path in paths:
+        try:
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                opened = True
+                for line in fh:
+                    try:
+                        record = json.loads(line)
+                    except (ValueError, RecursionError):
+                        continue
+                    if not isinstance(record, dict):
+                        continue
+                    if since is not None and (when(record) or -1) < since:
+                        continue
+                    for use in blocks(record, "tool_use"):
+                        try:
+                            calls.append((use.get("id"), use.get("name"),
+                                          json.dumps(use.get("input"), sort_keys=True)))
+                        except (TypeError, ValueError, RecursionError):
+                            calls.append((use.get("id"), use.get("name"), None))
+                    for done in blocks(record, "tool_result"):
+                        if done.get("is_error") is True and isinstance(done.get("tool_use_id"),
+                                                                       str):
+                            failed.add(done["tool_use_id"])
+        except OSError:
+            continue
+    if not opened:
+        return None
+    seen, found, longest, tool = set(), 0, 0, None
+    run, before = 0, None
+    for key, name, given in calls + [(None, None, None)]:  # the last one ends the last run
+        if key in seen:
+            continue  # the same call in two files (a session that moved) counts once
+        if key is not None:
+            seen.add(key)
+        same = key in failed and given is not None and (name, given) == before
+        if not same:
+            if run >= STREAK:
+                found += 1
+                if run > longest:
+                    longest, tool = run, before[0]
+            run = 1 if key in failed and given is not None else 0
+        else:
+            run += 1
+        before = (name, given) if run else None
+    return found, longest, tool
+
+
+def streak_line(agent, found):
+    values = ["unknown"] * 3 if found is None else [str(found[0]), str(found[1]),
+                                                     tag(found[2]) if found[2] else "none"]
+    return " | ".join(["streaks", tag(agent)] + values)
+
+
 def last(path, tail=TAIL):
     """The context size at the last request in a transcript's last `tail` bytes (the figure
     `context at return` gives), or None: no request there, or no file that can be read (`back`
@@ -255,6 +332,15 @@ def find(session):
                                                                  ".claude")
     base = os.path.join(glob.escape(config), "projects", "*", session)
     return sorted(glob.glob(base + ".jsonl")), sorted(glob.glob(os.path.join(base, "subagents")))
+
+
+def paths(session, agent):
+    """The transcript files of a session's agent (`orchestrator` or a subagent's id)."""
+    transcripts, folders = find(session)
+    if agent == "orchestrator":
+        return transcripts
+    return [os.path.join(folder, "agent-%s.jsonl" % agent) for folder in folders] \
+        if NAME.fullmatch(agent) else []
 
 
 def rows(session, agents=(), since=None):
@@ -357,10 +443,15 @@ def main(argv=None):
     ap.add_argument("--since", metavar="WHEN", type=moment,
                     help="count only the records stamped at or after WHEN: a file's "
                          "modification time (the run marker's: the run) or an ISO 8601 time")
+    ap.add_argument("--streaks", action="store_true",
+                    help="after each line, one `streaks` line: runs of 3 or more identical tool "
+                         "calls in a row that each ended in an error, and the longest")
     args = ap.parse_intermixed_args(argv)
     expected = dict(args.agents)  # the last =MODEL given for an agent
     for row in rows(args.session, [name for name, _ in args.agents], args.since):
         print(render(*row, expected=expected.get(row[0], ())))
+        if args.streaks:
+            print(streak_line(row[0], streaks(paths(args.session, row[0]), args.since)))
     return 0
 
 

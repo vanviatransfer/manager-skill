@@ -641,3 +641,85 @@ class ExpectedModelTest(Fixture):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def call(at, key, tool="Bash", given=None):
+    """An assistant record holding one tool call."""
+    return [{"type": "assistant", "timestamp": stamp(at), "message": {
+        "id": "msg-" + key, "role": "assistant", "content": [
+            {"type": "tool_use", "id": key, "name": tool,
+             "input": given if given is not None else {"command": "make test"}}]}}]
+
+
+def outcome(at, key, error=True):
+    """The tool result of the call `key`, an error or not."""
+    part = {"type": "tool_result", "tool_use_id": key, "content": "the secret output"}
+    if error is not None:
+        part["is_error"] = error
+    return other(at, message={"role": "user", "content": [part]})
+
+
+def failing(at, key, tool="Bash", given=None, error=True):
+    return call(at, key, tool, given) + outcome(at + 1, key, error)
+
+
+class StreakTest(Fixture):
+    """`--streaks`: runs of 3 or more identical tool calls in a row, each ending in an error."""
+
+    def streak(self, *groups, name="s1"):
+        self.agent(self.new, name, "manager-plugin:worker", groups)
+        return [line for line in lines(SESSION, name, "--streaks")
+                if line.startswith("streaks ")]
+
+    def test_off_by_default_the_lines_are_unchanged(self):
+        self.assertEqual(lines(SESSION), [ORCHESTRATOR, REVIEWER, IMPLEMENTER, UNTIMED])
+        self.assertEqual(lines(SESSION, "--streaks"), [
+            ORCHESTRATOR, "streaks | orchestrator | 0 | 0 | none",
+            REVIEWER, "streaks | b2 | 0 | 0 | none",
+            IMPLEMENTER, "streaks | a1 | 0 | 0 | none",
+            UNTIMED, "streaks | c3 | 0 | 0 | none"])
+        self.assertEqual(lines(SESSION, "zz", "--streaks"),
+                         ["usage | zz | unknown" + UNKNOWN, "streaks | zz | unknown | unknown | "
+                                                            "unknown"])
+
+    def test_three_identical_failures_are_a_streak(self):
+        self.assertEqual(self.streak(failing(10, "t1"), failing(20, "t2"), failing(30, "t3")),
+                         ["streaks | s1 | 1 | 3 | Bash"])
+        self.assertEqual(self.streak(failing(10, "t1"), failing(20, "t2"), name="s2"),
+                         ["streaks | s2 | 0 | 0 | none"])
+
+    def test_count_and_longest(self):
+        grep = {"pattern": "x", "path": "/somewhere/secret"}
+        out = self.streak(
+            failing(10, "t1"), failing(20, "t2"), failing(30, "t3"),
+            failing(40, "t4", error=False),  # a success ends the run
+            failing(50, "g1", "Grep", grep), failing(60, "g2", "Grep", grep),
+            failing(70, "g3", "Grep", grep), failing(80, "g4", "Grep", grep),
+            failing(90, "t5"))  # another call ends it too
+        self.assertEqual(out, ["streaks | s1 | 2 | 4 | Grep"])
+        self.assertNotIn("secret", "".join(out))
+
+    def test_what_breaks_a_run(self):
+        for label, middle in (
+                ("another input", failing(25, "x", given={"command": "make lint"})),
+                ("another tool", failing(25, "x", "Read", {"command": "make test"})),
+                ("no is_error", failing(25, "x", error=None)),
+                ("is_error false", failing(25, "x", error=False)),
+                ("no result", call(25, "x"))):
+            out = self.streak(failing(10, "t1"), failing(20, "t2"), middle, failing(30, "t3"),
+                              failing(40, "t4"), name="b" + str(len(label)))
+            self.assertEqual(out, ["streaks | b%d | 0 | 0 | none" % len(label)], label)
+
+    def test_the_input_is_compared_whatever_its_key_order(self):
+        one, two = {"a": 1, "b": [1, 2]}, {"b": [1, 2], "a": 1}
+        self.assertEqual(self.streak(failing(10, "t1", "Edit", one), failing(20, "t2", "Edit", two),
+                                     failing(30, "t3", "Edit", one)),
+                         ["streaks | s1 | 1 | 3 | Edit"])
+
+    def test_since_bounds_them(self):
+        self.agent(self.new, "s1", None, (failing(10, "t1"), failing(20, "t2"),
+                                          failing(30, "t3"), failing(40, "t4")))
+        for since, expected in ((stamp(0), "1 | 4 | Bash"), (stamp(15), "1 | 3 | Bash"),
+                                (stamp(25), "0 | 0 | none")):
+            self.assertEqual(lines(SESSION, "s1", "--streaks", "--since", since)[1],
+                             "streaks | s1 | " + expected, since)

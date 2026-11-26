@@ -97,7 +97,9 @@ status lines or the model-strategy record that doesn't match Plan records exactl
 candidate (with a `Code map` command, `<code map> check` too, except for a plan-only PR: stale is a
 failure), once each (SKILL.md's retry after an invalid run excepted), under `timeout -k 30 1800`
 where `timeout` exists (plan or project limits win; 124/137 = fail); output to a file outside
-the repo, only the exit code and failure summary into context. A command the plan marks `(when:
+the repo, only the exit code and failure summary into context. A test command that exits 0 while
+its log shows zero tests run (`Ran 0 tests`, `no test files`, `collected 0 items`, `# tests 0`,
+`0 passing`) is a fail. A command the plan marks `(when:
 <trigger>)` is required only if the phase's diff matches the trigger, judged by you against the
 current diff (run it when in doubt); report a skipped one as `not required: <reason from the diff>`.
 Known-flaky list = the project's documented list **at the base SHA** (entries the diff adds or

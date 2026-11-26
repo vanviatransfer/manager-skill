@@ -364,8 +364,16 @@ class SizeCeilingTest(unittest.TestCase):
             self.assertEqual(named, here, skill)
 
     def test_briefs(self):
-        for name, words in (("implementer-brief.md", 1327), ("reviewer-brief.md", 1347)):
+        """0.9.14 added the 30-word zero-tests rule to each brief (1327 -> 1357, 1347 -> 1377)."""
+        for name, words in (("implementer-brief.md", 1357), ("reviewer-brief.md", 1377)):
             self.assertLessEqual(len(read(os.path.join(REFS, name)).split()), words, name)
+
+    def test_briefs_keep_the_zero_tests_rule(self):
+        """A test command that exits 0 but ran no tests is a fail, in both briefs, once each."""
+        for name in ("implementer-brief.md", "reviewer-brief.md"):
+            text = " ".join(read(os.path.join(REFS, name)).split())
+            self.assertEqual(text.count("exits 0 while its log shows zero tests run"), 1, name)
+            self.assertIn("`collected 0 items`, `# tests 0`, `0 passing`) is a fail.", text, name)
 
 
 class ReferencePointerTest(unittest.TestCase):

@@ -4,6 +4,7 @@
 Usage:
   codemap.py build [--root DIR] [--redetect]   write the map (where: see below)
   codemap.py check [--root DIR] [--out PATH]   exit 0 if the map is current, 1 if stale
+                                               (warnings: broken vault links, dead sources)
   codemap.py query TERM [--root DIR]           where TERM is defined, which paths match it,
                                                who imports them, which vault pages mention them
   codemap.py mentions [PATH...] [--base SHA]   vault pages that mention these files (or the
@@ -564,6 +565,13 @@ def command_label():
 # [[wikilinks]] resolve by file name across the vault (a path-qualified link by path suffix,
 # ties to the shallowest, then first path), [text](page.md) links resolve relative to the page,
 # and inline code spans naming a tracked file are recorded as mentions of that file.
+# Dead sources (`check` only, beside the broken links): a cited path that no longer exists. A
+# link to a non-page file counts as cited, and so does a code span with a `/` that ends in `/` or
+# in a file extension, but only when the path's first part is an entry of the repository root or
+# a folder name anywhere in the tracked tree (else it likely names another repository's file);
+# skipped: fenced code blocks, placeholders (`<`, `>`, `*`, `{`, `$`, `...`, `path/to`, a part
+# named foo, bar, baz or holding "example"). A cited path is alive when it is on disk from the
+# root, or a tracked path is it or ends with "/" + it (`scripts/x.py`), or, for a folder, holds it.
 WIKILINK = re.compile(r"\[\[([^\]|#\\]+?)(?:\\?\|[^\]]*|#[^\]]*)?\]\]")
 MD_LINK = re.compile(r"(?<!!)\[[^\]]*\]\(\s*(?:<([^<>\n]+)>|([^)\s]+))(?:\s+[^)]*)?\)")
 CODE_SPAN = re.compile(r"`([^`\n]+)`")
@@ -606,6 +614,32 @@ def page_title(text, page):
 
 
 PATH_LIKE = re.compile(r"^[\w.@-]+(?:/[\w.@-]+)*/?$")
+CITED_FILE = re.compile(r"/(?:$|[^/]*\.[A-Za-z]\w*$)")
+
+
+def placeholder_path(ref):
+    if re.search(r"[<>*{}$]|\.\.\.|(?:^|/)path/to/", ref):
+        return True
+    parts = [posixpath.splitext(part)[0].lower() for part in ref.split("/") if part]
+    return any(part in ("foo", "bar", "baz") or "example" in part for part in parts)
+
+
+def dead_sources(root, cited, known):
+    """[(page, line, path)] of the cited paths that no longer exist (see the rule above)."""
+    tracked = ["/" + f for f in sorted(known)]
+    folders = {f.split("/")[0] for f in known}  # the root's entries, then every folder name
+    folders.update(part for f in known for part in f.split("/")[:-1])
+    dead = []
+    for page, lineno, ref in cited:
+        if ref.split("/")[0] not in folders:
+            continue  # likely another repository's file
+        if placeholder_path(ref) or os.path.lexists(os.path.join(root, *ref.split("/"))):
+            continue
+        if any(("/" + ref) in f if ref.endswith("/") else f.endswith("/" + ref)
+               for f in tracked):
+            continue  # a tracked path is it, or ends with it
+        dead.append((page, lineno, ref))
+    return dead
 
 
 def in_vault(path, vault):
@@ -632,7 +666,7 @@ def scan_vault(root, vault, files, generated):
     for f in sorted(known | set(generated)):
         if in_vault(f, vault):
             by_name.setdefault(nfc(posixpath.basename(f)).lower(), []).append(f)
-    links, broken, mentions, meta = {p: set() for p in pages}, [], {}, {}
+    links, broken, mentions, meta, cited = {p: set() for p in pages}, [], {}, {}, []
     for page in pages:
         text = read_text(root, page) or ""
         meta[page] = (page_title(text, page).replace("|", "/")[:60], len(text.split()))
@@ -662,6 +696,7 @@ def scan_vault(root, vault, files, generated):
                 if not target.lower().endswith(".md"):
                     if not dest.startswith("../") and not is_page(dest, vault):
                         mentions.setdefault(dest, set()).add((page, lineno))
+                        cited.append((page, lineno, dest))
                     continue
                 rooted = posixpath.normpath(posixpath.join("" if vault == "." else vault,
                                                            target.lstrip("/")))
@@ -675,6 +710,8 @@ def scan_vault(root, vault, files, generated):
                 ref = strip_dot_slash(span.strip().split("::")[0].split(":")[0])
                 if PATH_LIKE.match(ref) and ("/" in ref or "." in ref) and not is_page(ref, vault):
                     mentions.setdefault(ref, set()).add((page, lineno))
+                    if CITED_FILE.search(ref) and not ref.startswith("/"):
+                        cited.append((page, lineno, ref))
     inbound = {p: 0 for p in pages}
     for page, dests in links.items():
         for d in dests:
@@ -683,7 +720,8 @@ def scan_vault(root, vault, files, generated):
     entry = {"index.md", "readme.md", "home.md", "_index.md"}
     orphans = [p for p in pages if not inbound[p] and posixpath.basename(p).lower() not in entry]
     return {"dir": vault, "pages": pages, "broken": broken, "orphans": orphans,
-            "mentions": mentions, "meta": meta, "inbound": inbound}
+            "mentions": mentions, "meta": meta, "inbound": inbound,
+            "dead": lambda: dead_sources(root, cited, known | set(generated))}
 
 
 def mentions_of(mentions, path):
@@ -1043,8 +1081,9 @@ SKIP_MARKS = (  # (label, pattern, in test files only, a call); a line counts fo
 # of these opens: the nearest line above it with less indentation.
 CONDITION = re.compile(r"^\s*(?:\}\s*)?(?:if|elif|else|except|catch|case|when|unless)\b")
 IF_BEFORE = re.compile(r"\bif\b")
-# A `noqa` whose only code is E402 (an import after a sys.path setup).
-NOQA_IMPORT = re.compile(r"#\s*noqa:\s*E402\b(?!\s*,)", re.I)
+# A `noqa` whose only code is E402 (an import after a sys.path setup): matched at the line's
+# first `# noqa`, with no further code (letters then digits) after E402, whatever separates them.
+NOQA_IMPORT = re.compile(r"#\s*noqa:\s*E402\b(?![^\n]*[A-Za-z]+\d)", re.I)
 SUPPRESSIONS = (
     ("noqa", re.compile(r"#\s*noqa\b", re.I)),
     ("type: ignore", re.compile(r"#\s*type:\s*ignore\b")),
@@ -1118,8 +1157,9 @@ def guard_marks(text, test):
                     skips[label] = skips.get(label, 0) + 1
                 break
         for label, rx in SUPPRESSIONS:
-            if rx.search(line):
-                if not (label == "noqa" and NOQA_IMPORT.search(line)):
+            found = rx.search(line)
+            if found:
+                if not (label == "noqa" and NOQA_IMPORT.match(line, found.start())):
                     quiet[label] = quiet.get(label, 0) + 1
                 break
         if test and ASSERT_LINE.search(line):
@@ -2217,6 +2257,8 @@ def main(argv=None):
             return 0
         for page, ln, target in (vault or {}).get("broken", [])[:20]:
             print("warning: broken link %s:%d -> %s" % (page, ln, target))
+        for page, ln, path in vault["dead"]()[:20] if vault else ():
+            print("warning: dead source %s:%d -> %s (no such file)" % (page, ln, path))
         if bad:
             print("stale: %s; run build" % ", ".join(bad))
             return 1
