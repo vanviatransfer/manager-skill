@@ -35,7 +35,7 @@ Rules, per valid run of a case:
   blockers are counted as extra.
 - planted with several findings (the key's `findings`, each with its own `locations`, `terms` and
   `alone` in place of the key's): each finding is matched as above, except that a cited line or
-  range counts for a finding only when it lies inside that finding's range and touches no other
+  range counts for a finding only when it overlaps that finding's range and touches no other
   finding's range in the same file (the ranges may be neighbours: `stats.py:9-18` names neither);
   the run is `found` when every finding is, `partial` when some are, `missed` when none is, and
   right only when found. Recall counts findings, so such a case adds one per finding to its level.
@@ -168,9 +168,8 @@ def citations(blocker, path):
 
 
 def cites_lines(blocker, path, lines, others=None):
-    """Whether the blocker cites a line of `path` in the key's range: overlapping it, or (with
-    `others`, the ranges of the other findings in that file) inside it and touching none of
-    them."""
+    """Whether the blocker cites a line of `path` overlapping the key's range and (with
+    `others`, the ranges of the other findings in that file) touching none of them."""
     if not lines:
         return False
     low, high = lines
@@ -178,7 +177,7 @@ def cites_lines(blocker, path, lines, others=None):
         if others is None:
             if start <= high and end >= low:
                 return True
-        elif low <= start and end <= high and not any(
+        elif start <= high and end >= low and not any(
                 start <= top and end >= bottom for bottom, top in others):
             return True
     return False
@@ -220,8 +219,8 @@ def findings_of(key):
 def located(blocker, key, others=None):
     """Why one blocker names the planted bug of the answer key (or of one finding), or None: an
     `alone` term, or a key file with a key term or a cited line in the key's range. `others`,
-    the locations of the other findings, makes a citation count only when it is inside this
-    range and touches none of theirs in the same file."""
+    the locations of the other findings, makes a citation count only when it also touches none
+    of their ranges in the same file."""
     for term in key.get("alone", []):
         if has_term(blocker, term):
             return "term %r" % shown(term)
@@ -241,7 +240,7 @@ def located(blocker, key, others=None):
 def matched(blocker, findings):
     """(why the blocker names a finding or None, the indexes of the findings it names); with
     several findings each reason is labelled `finding <n>: ` and a citation names a finding only
-    when it is inside its range and touches no other finding's range (their ranges may be
+    when it overlaps its range and touches no other finding's range (their ranges may be
     neighbours, so a citation across both could not tell which finding is meant)."""
     several = len(findings) > 1
 

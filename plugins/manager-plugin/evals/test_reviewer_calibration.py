@@ -983,7 +983,7 @@ class HardScoreTest(unittest.TestCase):
                 self.assertEqual((half["outcome"], half["right"], half["findings"]),
                                  ("partial", False, [1, 2]))
         # Natural wordings of one bug credit that finding alone; a citation credits a finding
-        # only inside its range and clear of the other's (stats.py:9-18 names neither).
+        # that it overlaps when it is clear of the other's (stats.py:9-18 names neither).
         for number, blocker in (
                 (1, "B1. stats.py:18 — the median is wrong when len(values) is even"),
                 (1, "B1. stats.py — for even-numbered lists the median ignores the middle pair"),
@@ -998,7 +998,8 @@ class HardScoreTest(unittest.TestCase):
                 (2, "B1. stats.py — `ordered = values` should be `ordered = sorted(values)`"),
                 (2, "B1. stats.py — summary alters the argument list"),
                 (2, "B1. stats.py — the passed-in list gets sorted"),
-                (2, "B1. stats.py:16-17 — wrong")):
+                (2, "B1. stats.py:16-17 — wrong"),
+                (2, "B1. stats.py:15-17 — wrong")):
             with self.subTest(blocker=blocker):
                 half = self.grade("l2-two-faults", blocker)
                 self.assertEqual((half["outcome"], half["findings"]), ("partial", [1, 2]))

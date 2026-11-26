@@ -1730,17 +1730,18 @@ the 20 base cases or their keys, or any cost ceiling.
   holds no two neighbours of one kind and level, and one pair of planted neighbours at most (L4
   then L2). Levels are not sorted.
 - **score.py.** A key may hold `findings` (each with `locations`, `terms`, `alone`) in place of one
-  bug: each is matched as before, except that a cited line or range counts for a finding only inside
-  its range and clear of every other finding's range in that file (`stats.py:18` names finding 1,
-  `:16-17` finding 2, `:9-18` neither); terms count as before. Known risk: finding 2's `copy`,
-  `unchanged`, `as it was` and `in place` can credit the sort bug from a median-only blocker that
-  suggests sorting a copy with `sorted(values)`; audit.md shows each match, so it can be checked by
-  hand. The run is `found` when all are, `partial` when some, `missed` when none, right only when
-  found; recall counts findings (so `l2-two-faults` adds 2 to L2), and the audit labels the finding
-  a blocker matched (`finding 2: ...`). Kind `nit`: right (`pass`) with PASS or PASS WITH NOTES and
-  no blocker, else `over-blocking`; its own line `over-blocking nit: x/y`, printed when a scored
-  tier has a nit, never in the false-alarm rate. A result with runs of both tiers also gets each
-  tier's totals (`tier hard: ...`, `tiers` in `--json`); a result of one tier reports as before.
+  bug: each is matched as before, except that a cited line or range counts for a finding only when
+  it overlaps its range and stays clear of every other finding's range in that file (`stats.py:18`
+  names finding 1, `:16-17` or `:15-17` finding 2, `:9-18` neither); terms count as before. Known
+  risk: finding 2's `copy`, `unchanged`, `as it was` and `in place` can credit the sort bug from a
+  median-only blocker that suggests sorting a copy with `sorted(values)`; audit.md shows each match,
+  so it can be checked by hand. The run is `found` when all are, `partial` when some, `missed` when
+  none, right only when found; recall counts findings (so `l2-two-faults` adds 2 to L2), and the
+  audit labels the finding a blocker matched (`finding 2: ...`). Kind `nit`: right (`pass`) with
+  PASS or PASS WITH NOTES and no blocker, else `over-blocking`; its own line `over-blocking nit:
+  x/y`, printed when a scored tier has a nit, never in the false-alarm rate. A result with runs of
+  both tiers also gets each tier's totals (`tier hard: ...`, `tiers` in `--json`); a result of one
+  tier reports as before.
 - **Runner.** `run.py --tier base|hard` (default base) picks the tag; nothing else changed. From
   the repository root: `python3 plugins/manager-plugin/evals/reviewer-calibration/run.py --tier
   hard --runs 3 --max-cost-usd 17` (`--dry-run` first).
