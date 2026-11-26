@@ -4,10 +4,11 @@
 PreToolUse hook on Bash, PowerShell, Glob and Grep (hooks/scan-guard.sh). A command that
 recursively scans a filesystem root, a drive root or the home folder (`find /`, `ls -R C:\\`,
 `du ~`, `grep -r x /`, `rg x $HOME`, `Get-ChildItem C:\\ -Recurse`, `cmd /c dir /s C:\\`, also in
-`bash -c`, `eval`, a here-document fed to a shell, `powershell -Command`, a decoded
-`-EncodedCommand`, `iex`, pipes, chains, subshells, `$( )` and backticks; a scan with no
-path, or with `.`, when the cwd is such a root; Glob or Grep there) is refused: exit 2, one line
-naming the code map's and skilltrain's runnable commands and a search limited to the repository.
+`bash -c`, `eval`, `powershell -Command`, a decoded `-EncodedCommand`, `iex`, pipes, chains,
+subshells, `$( )` and backticks; here-document bodies are text, whatever they are fed to; a
+scan with no path, or with `.`, when the cwd is such a root; Glob or Grep there) is refused:
+exit 2, one line naming the code map's and skilltrain's runnable commands and a search limited
+to the repository.
 Why: such a scan can run for hours and exhaust memory, and an agent that doesn't know where
 `codemap.py` is tends to look for it with exactly such a scan. It has no off switch, and
 `"search_nudge": false` doesn't touch it. Everything else passes; a command it can't parse (an
@@ -66,14 +67,14 @@ PS_VALUE_ALIASES = {"ep", "ex", "w", "v", "if", "of", "o", "wd"}
 LEAF_FILE = re.compile(r"^(.*[/\\]|[A-Za-z]:)([^/\\]*[*?]|[^/\\.][^/\\]*\.[^/\\]+)$")
 UP_LEVELS = re.compile(r"^(.*?)(?:[/\\]+\.\.)+[/\\]*$")
 TIMED = {"find", "grep", "egrep", "fgrep", "rg", "ls", "du", "tree"}  # for the timeout hint
-HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][\w.-]*)\1")
+# A here-document opener: <<WORD, <<-WORD, <<\WORD, <<'WORD', <<"WORD" (quoted: spaces allowed).
+HEREDOC = re.compile(r"<<(-?)[ \t]*\\?(?:'([^'\n]+)'|\"([^\"\n]+)\"|([A-Za-z_][\w.-]*))")
 HINT = "manager-plugin: long recursive scans: prefix `timeout 120`."
 MAX_DEPTH = 4
 # Longer command text is not scanned (fails open): shlex and the tokenizers grow superlinearly
 # on one long word (a 160 KB base64 -EncodedCommand took about 1 s, 850 KB 24 s), past a hook's
 # time budget, and no hand-written scan is that long.
 MAX_COMMAND = 64 * 1024
-MAX_HEREDOCS = 8  # here-document openers looked at per command (each costs a parse of its line)
 
 
 def norm(path):
@@ -129,7 +130,9 @@ def is_root(path, cwd, posix=True):
 
 
 def drop_heredocs(cmd):
-    """The command without here-document bodies (their lines are text, not commands)."""
+    """The command without here-document bodies: their lines are text, never commands, whatever
+    they are fed to (`bash <<EOF` included: a known gap, see TODO 21). A `<<` (not `<<<`) whose
+    delimiter can't be read fails open: the command ends before it."""
     out, ends = [], []
     for line in cmd.split("\n"):
         if ends:
@@ -137,96 +140,22 @@ def drop_heredocs(cmd):
             if (line.lstrip("\t") if tab else line) == word:
                 ends.pop(0)
             continue
-        out.append(line)
-        for m in HEREDOC.finditer(line):
-            ends.append((m.group(0).startswith("<<-"), m.group(2)))
-    return "\n".join(out)
-
-
-def reads_stdin(args):
-    """True if a shell given these arguments reads its script from stdin (no -c, no file)."""
-    k = 0
-    while k < len(args):
-        a = args[k]
-        if a in ("-s", "--"):
-            return True
-        if a in ("-o", "+o", "-O", "+O"):
-            k += 2
-            continue
-        if not a.startswith(("-", "+")):
-            return False  # a script file
-        if not a.startswith("--") and "c" in a[1:]:
-            return False
-        k += 1
-    return True
-
-
-def heredoc_starts(line, quote):
-    """One pass over a line of shell text that starts with `quote` open: (the offsets of its
-    unquoted `<<`, the quote open at its end), or None when the quote state can't be trusted
-    from here on: a `<<` inside a quote, or `$(` or a backtick inside double quotes (a new
-    context this doesn't model). Single quotes are literal, a backslash escapes outside them,
-    an unquoted # at a word's start comments out the rest of the line; `<<<` is a here-string."""
-    starts, i, n = [], 0, len(line)
-    while i < n:
-        c = line[i]
-        if quote == "'":
-            quote = None if c == "'" else quote
-        elif c == "\\":
-            i += 1
-        elif line.startswith("<<", i):
-            if quote is not None:
-                return None
+        i = 0
+        while True:
+            i = line.find("<<", i)
+            if i < 0:
+                break
             if line.startswith("<<<", i):
                 i += 3
                 continue
-            starts.append(i)
-            i += 1
-        elif quote == '"':
-            if c == "`" or line.startswith("$(", i):
-                return None
-            quote = None if c == '"' else quote
-        elif c in "'\"":
-            quote = c
-        elif c == "#" and (i == 0 or line[i - 1] in " \t;&|()"):
-            break
-        i += 1
-    return starts, quote
-
-
-def heredoc_scripts(cmd):
-    """The bodies of here-documents fed straight to a shell (`bash <<'EOF'`, `sh -s <<EOF`):
-    there they are commands, not text. Quotes are followed across lines, bodies apart. Fails
-    open: once a `<<` sits inside a quote or the quote state is uncertain (see heredoc_starts),
-    or past MAX_HEREDOCS openers, nothing more is collected."""
-    out, ends, quote, seen = [], [], None, 0
-    for line in cmd.split("\n"):
-        if ends:
-            tab, word, body = ends[0]
-            if (line.lstrip("\t") if tab else line) == word:
-                ends.pop(0)
-                if body is not None:
-                    out.append("\n".join(body))
-            elif body is not None:
-                body.append(line)
-            continue
-        found = heredoc_starts(line, quote)
-        if found is None:
-            return out
-        starts, quote = found
-        for k in starts:
-            m = HEREDOC.match(line, k)
+            m = HEREDOC.match(line, i)
             if not m:
-                continue
-            seen += 1
-            if seen > MAX_HEREDOCS:
-                return out
-            before = sn.simple_commands(line[:k])
-            words = strip_wrappers(before[-1][0])[0] if before else []
-            feeds = bool(words) and sn.command_name(words[0]) in SHELLS and \
-                reads_stdin(words[1:])
-            ends.append((m.group(0).startswith("<<-"), m.group(2), [] if feeds else None))
-    return out
+                out.append(line[:i])
+                return "\n".join(out)
+            ends.append((m.group(1) == "-", next(g for g in m.groups()[1:] if g)))
+            i = m.end()
+        out.append(line)
+    return "\n".join(out)
 
 
 def substitutions(cmd):
@@ -538,7 +467,7 @@ def new_cwd(arg, cwd, posix=True):
 def scan_bash(scan, cmd, cwd, depth=0):
     if depth > MAX_DEPTH:
         return
-    original, cmd = cmd, drop_heredocs(cmd)
+    cmd = drop_heredocs(cmd)
     # An unquoted drive root before a space (`find C:\ -name x`): Git Bash would read `\ ` as an
     # escaped space; the model meant the drive.
     cmd = re.sub(r"(?<![\w\\])([A-Za-z]:)\\(?=[\s;|&)\"']|$)", r"\1/", cmd)
@@ -546,7 +475,7 @@ def scan_bash(scan, cmd, cwd, depth=0):
         shlex.split(cmd, comments=True, posix=True)
     except ValueError:
         return fallback(scan, cmd, cwd)
-    for inner in substitutions(cmd) + heredoc_scripts(original):
+    for inner in substitutions(cmd):
         scan_bash(scan, inner, cwd, depth + 1)
     for words, after_pipe in sn.simple_commands(cmd):
         words, timed = strip_wrappers(words)

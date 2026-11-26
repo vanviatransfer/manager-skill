@@ -999,8 +999,8 @@ shipped behaviour, so plugin.json stays 0.9.7.
 The scan guard's tests were hand-picked tables. A data-only corpus now measures both failure
 kinds: a leak (a root scan that passes) and a false block (normal work refused).
 
-- **Corpus.** `hooks/scan_guard_corpus.json`: 316 entries (175 block, 141 pass; Bash 226,
-  PowerShell 57, Glob 20, Grep 13), one entry per line: `cat`, `tool`, `input` (the tool input),
+- **Corpus.** `hooks/scan_guard_corpus.json`: 324 entries (177 block, 147 pass; Bash 233,
+  PowerShell 58, Glob 20, Grep 13), one entry per line: `cat`, `tool`, `input` (the tool input),
   optional `cwd` (default per tool in the file's header, as is the `HOME` it assumes), optional
   `env` (variables set for the entry), optional `dirs` (paths, expanded and with `/`, that the
   test makes `os.path.isdir` report as folders), `expect` (`block`|`pass`), `note`, optional
@@ -1010,19 +1010,21 @@ kinds: a leak (a root scan that passes) and a false block (normal work refused).
   find / -maxdepth 6 -name codemap.py ...` command that ran for hours on Windows),
   root-spelling, scanner, wrapper, composition, quoting, cwd-root, glob-grep, powershell, bait
   (repository, scratchpad and plugin folder scans; listings; text, commit messages and PR bodies
-  in Claude Code's `"$(cat <<'EOF' ... EOF)"` form, here-document bodies, a here-document to a
-  shell inside a quoted argument, dotted folders under a root in every spelling, URLs), gap.
+  in Claude Code's `"$(cat <<'EOF' ... EOF)"` form, here-document bodies with `<<\EOF`, `<<
+  \EOF` and `<<'END TEXT'` delimiters, a here-document to a shell inside a quoted argument or an
+  ANSI-C `$'...'` string, dotted folders under a root in every spelling, URLs), gap.
 - **Test.** `hooks/test_scan_guard_corpus.py` runs every entry through `scan_guard.refused`
   (the predicate) and through the real `sh hooks/scan-guard.sh` (the hook: its grep pre-filter and
   its Python lookup), and prints, per category and for each level, the entries, leaks, false
   blocks and known gaps (stderr). The hook runs for every entry that is to be refused or that the
-  predicate refuses (176 runs, about 5 s on Linux); for the rest it exits 0 whatever the pre-filter
+  predicate refuses (about 180 runs, 5 s on Linux); for the rest it exits 0 whatever the pre-filter
   does, so its result is the predicate's. Entries with `dirs` take the predicate's result (a mock
   can't reach a subprocess). Any mismatch not marked fails, as does a hook result that differs from
   the predicate's without a `hook_gap`, and a marked entry that no longer mismatches (so its mark
   is dropped). Also: a dotted folder in a real temporary home (`dir /s .\my.app` passes,
   `.\codemap.py` and `.\*.py` are refused, predicate and hook); timing (under 1 s each) for 63 KB
-  of `cat <<A <<A ...`, for `echo '` + 9,000 `sh <<B` + `'`, and for a command over the length cap.
+  of `cat <<A <<A ...`, for `echo '` + 9,000 `sh <<B` + `'` (here-document dropping, one pass per
+  line), and for a command over the length cap.
 - **Decisions.** `find -maxdepth 0|1` at a root passes (a listing, as before; GNU find applies
   `-maxdepth` wherever it stands, so `find / -name x -maxdepth 1` passes too), consistent with
   PowerShell `-Depth 0|1`; now also `rg -d|--max-depth 0|1`, `fd -d|--max-depth|--exact-depth
@@ -1033,47 +1035,51 @@ kinds: a leak (a root scan that passes) and a false block (normal work refused).
   base64 argument about 1 s, 850 KB 24 s, measured on the 0.9.8 review), the hook would outlive its
   time budget, and no hand-written scan is that long. The whole scan is skipped, not only the
   decode, because the time goes into tokenizing the word, before any decode.
-- **Here-documents fed to a shell** (`bash <<'EOF'`, `sh -s <<EOF`; no `-c`, no script file):
-  their bodies are scanned as commands; every other here-document body is text. Detection fails
-  open, after two review rounds that each found false blocks from finer quote modelling: one pass
-  per line follows the quote state across lines (bodies apart); the moment a `<<` sits inside a
-  quote, or a `$(` or a backtick opens inside double quotes (a context it doesn't model, as in
-  `git commit -m "$(cat <<'EOF' ... EOF)"`), nothing more is collected for the rest of the
-  command, and the same past 8 openers (`MAX_HEREDOCS`; each costs a parse of its line). A
-  here-document to a shell inside a quoted substitution (`x="$(bash <<EOF ... EOF)"`) is missed;
-  unquoted (`x=$(bash <<EOF ... EOF)`) it is found.
+- **Here-documents: bodies are text, always.** A here-document's body is never scanned as
+  commands, whatever it is fed to: `bash <<'EOF' ... find / ... EOF` and `sh -s <<X ... X` pass
+  (known gaps). Scanning the body of a here-document fed straight to a shell was built in this
+  change and removed again (owner's decision) after three review rounds each found new false
+  blocks from it: a `<<` line inside a quoted commit message, PR body or Python string; the same
+  inside Claude Code's `"$(cat <<'EOF' ... EOF)"` form with an odd quote in the text; and
+  backslash-quoted or spaced delimiters (`<<\EOF`, `<<'END TEXT'`) the opener pattern didn't
+  read. Body lines are dropped before the command is parsed. The opener pattern now reads
+  `<<WORD`, `<<-WORD`, `<<\WORD`, `<< \WORD`, `<<'WORD'` and `<<"WORD"` (quoted: spaces allowed);
+  that fixes a false block since 0.9.6 (`cat > notes.md <<\EOF` with `find / -name x` in the
+  body). A `<<` (not `<<<`) whose delimiter can't be read (`$((1<<2))`, `<<$END`) fails open: the
+  command is cut there and nothing after it is scanned.
 - **Dotted leaves for `dir /s`.** `dir /s <root>\x.y` counts as a search for the file `x.y` over
   the whole root only when `x.y` is not an existing folder. The spelling is expanded first (`~`,
   `%VAR%`, `$env:NAME`, `${NAME}`, `$NAME`; PowerShell's `$HOME` falls back to `USERPROFILE`), and
   one that can't be expanded (an unset variable, `~user`) keeps the leaf: taken for a folder, it
-  passes. Quotes are dropped from the path first. Limitation: where the hook can't see the folder
+  passes, so `dir /s %USERPROFILE%\codemap.py` with `USERPROFILE` unset where the hook runs is
+  a miss. Quotes are dropped from the path first. Limitation: where the hook can't see the folder
   (a Windows path checked on Linux, a variable set only in the target shell), a dotted folder that
   exists on the user's machine is refused as a file search; the corpus makes such folders exist
   with `dirs` and `env`. A wildcard leaf (`C:\*.py`, `gci C:\*.py -Recurse`) is always its folder.
 - **Before and after**, leaks / false blocks, the gaps not counted; predicate | sh hook (they
-  differ only in the hook gap, counted as a gap). f3a720f is 0.9.7; 8b20f4b and 5b0d737 are this
-  change before the first and the second review's fixes (at 5b0d737, 2 of the 9 false blocks
-  come from the corpus's `dirs` now being given with `/`, which that commit's check didn't
-  expand):
+  differ only in the hook gap, counted as a gap). Before is f3a720f (0.9.7), after is this
+  change; the round-by-round numbers at 8b20f4b, 5b0d737 and 8275cc7 are in PR #61:
 
-  | category | entries | f3a720f | 8b20f4b | 5b0d737 | after |
-  | --- | ---: | ---: | ---: | ---: | ---: |
-  | bait | 49 | 0/0 \| 0/0 | 0/10 \| 0/10 | 0/9 \| 0/9 | 0/0 \| 0/0 |
-  | composition | 23 | 2/0 \| 2/0 | 0/0 \| 0/0 | 0/0 \| 0/0 | 0/0 \| 0/0 |
-  | cwd-root | 30 | 0/0 \| 0/0 | 0/0 \| 0/0 | 0/0 \| 0/0 | 0/0 \| 0/0 |
-  | gap | 4 | 0/0 \| 0/0 | 0/0 \| 0/0 | 0/0 \| 0/0 | 0/0 \| 0/0 |
-  | glob-grep | 33 | 0/0 \| 0/0 | 0/0 \| 0/0 | 0/0 \| 0/0 | 0/0 \| 0/0 |
-  | incident | 3 | 0/0 \| 0/0 | 0/0 \| 0/0 | 0/0 \| 0/0 | 0/0 \| 0/0 |
-  | powershell | 48 | 10/1 \| 10/1 | 0/0 \| 0/0 | 0/0 \| 0/0 | 0/0 \| 0/0 |
-  | quoting | 20 | 0/0 \| 0/0 | 0/0 \| 0/0 | 0/0 \| 0/0 | 0/0 \| 0/0 |
-  | root-spelling | 29 | 2/0 \| 2/0 | 0/0 \| 0/0 | 0/0 \| 0/0 | 0/0 \| 0/0 |
-  | scanner | 45 | 5/3 \| 5/3 | 0/0 \| 0/0 | 0/0 \| 0/0 | 0/0 \| 0/0 |
-  | wrapper | 32 | 11/0 \| 11/0 | 0/0 \| 0/0 | 0/0 \| 0/0 | 0/0 \| 0/0 |
-  | total | 316 | 30/4 \| 30/4 | 0/10 \| 0/10 | 0/9 \| 0/9 | 0/0 \| 0/0 |
+  | category | entries | f3a720f | after |
+  | --- | ---: | ---: | ---: |
+  | bait | 55 | 0/1 \| 0/1 | 0/0 \| 0/0 |
+  | composition | 24 | 0/0 \| 0/0 | 0/0 \| 0/0 |
+  | cwd-root | 30 | 0/0 \| 0/0 | 0/0 \| 0/0 |
+  | gap | 4 | 0/0 \| 0/0 | 0/0 \| 0/0 |
+  | glob-grep | 33 | 0/0 \| 0/0 | 0/0 \| 0/0 |
+  | incident | 3 | 0/0 \| 0/0 | 0/0 \| 0/0 |
+  | powershell | 49 | 10/1 \| 10/1 | 0/0 \| 0/0 |
+  | quoting | 20 | 0/0 \| 0/0 | 0/0 \| 0/0 |
+  | root-spelling | 29 | 2/0 \| 2/0 | 0/0 \| 0/0 |
+  | scanner | 45 | 5/3 \| 5/3 | 0/0 \| 0/0 |
+  | wrapper | 32 | 11/0 \| 11/0 | 0/0 \| 0/0 |
+  | total | 324 | 28/5 \| 28/5 | 0/0 \| 0/0 |
 
-  Gaps: 9 for the predicate, 10 for the hook (the hook gap below).
-- **Fixes** (scan_guard.py, local, same design): `eval` arguments scanned as Bash; here-documents
-  fed to a shell, as above; wrappers `time -p`, `command -p` (`command -v|-V` is a lookup),
+  Gaps: 13 for the predicate, 14 for the hook (the hook gap below). f3a720f's bait false block is
+  `cat > notes.md <<\EOF ... find / -name x ... EOF`. One gap is new with this change: f3a720f
+  refused `echo $((1<<2)); find / -name x`, which now fails open.
+- **Fixes** (scan_guard.py, local, same design): `eval` arguments scanned as Bash; the here-document
+  opener pattern, as above; wrappers `time -p`, `command -p` (`command -v|-V` is a lookup),
   `exec -a`, `ionice`, `busybox`; `powershell.exe`'s bare script after its options (`powershell
   gci C:\ -Recurse`, value options such as `-ExecutionPolicy Bypass` skipped; pwsh takes a bare
   word as a file); `-EncodedCommand`; `iex` and `Invoke-Expression` strings scanned as
@@ -1083,19 +1089,23 @@ kinds: a leak (a root scan that passes) and a false block (normal work refused).
   64 KB cap. scan-guard.sh: `forfiles` joins the pre-filter's words, and an `-e...` option
   followed by 16 base64 characters starts Python too (an encoded script names no scan word).
   search_nudge.py: untouched.
-- **Known gaps** (in the corpus as `known_gap`, reported, not failed): text piped into a shell
-  (`echo "find / -name x" | bash`); paths from stdin (`echo / | xargs find`); paths built at run
-  time (`F=/; find $F`, `find $(echo /)`); scans in other languages (`python3 -c
+- **Known gaps** (in the corpus as `known_gap`, reported, not failed). From failing open: a
+  here-document's body, also one fed to a shell (`bash <<'EOF' ... EOF`, `sh -s <<EOF ... EOF`);
+  everything after a `<<` whose delimiter can't be read (`echo $((1<<2)); find / -name x`); a
+  dotted `dir /s` leaf whose variable is unset in the hook's environment
+  (`%USERPROFILE%\codemap.py` with `USERPROFILE` unset); a command over 64 KB. Others: text piped
+  into a shell (`echo "find / -name x" | bash`); paths from stdin (`echo / | xargs find`); paths
+  built at run time (`F=/; find $F`, `find $(echo /)`); scans in other languages (`python3 -c
   "os.walk('/')"`); `robocopy C:\ NUL /L /S`; `Start-Process cmd -ArgumentList '/c dir /s C:\'`;
-  .NET enumeration (`[IO.Directory]::EnumerateFiles('C:\', '*', 'AllDirectories')`); and one
-  false block: Glob with a root `path` and a one-level pattern (`*` in `/`). Each would need the
-  guard to evaluate or interpret more than one command's words. Hook gap (`hook_gap`): `f"in"d /
-  -name x` is refused by the predicate but the sh pre-filter sees no scan word, so Python never
-  runs; catching it would mean a regex with optional quotes between every letter of every word,
-  for a deliberate obfuscation. Not in the corpus: a here-string to a shell (`bash <<< 'find
-  /'`); a here-document to a shell inside or after a quoted `<<` or a `"$(` in the same
-  command (detection stops there); a command over 64 KB (the cap; tested in the corpus test).
+  .NET enumeration (`[IO.Directory]::EnumerateFiles('C:\', '*', 'AllDirectories')`); and one false
+  block: Glob with a root `path` and a one-level pattern (`*` in `/`). Each would need the guard to
+  evaluate or interpret more than one command's words. Hook gap (`hook_gap`): `f"in"d / -name x` is
+  refused by the predicate but the sh pre-filter sees no scan word, so Python never runs; catching
+  it would mean a regex with optional quotes between every letter of every word, for a deliberate
+  obfuscation. Not in the corpus: a here-string to a shell (`bash <<< 'find /'`); a command over
+  64 KB (the cap; tested in the corpus test).
 - **Version.** plugin.json 0.9.8 (the guard refuses more). README: the hook description names
-  `eval`, `-EncodedCommand`, `iex`, `forfiles /s`, the depth rule and the 64 KB cap. Ceilings
+  `eval`, `-EncodedCommand`, `iex`, `forfiles /s`, the depth rule, the 64 KB cap and that a
+  here-document's body is text. Ceilings
   unchanged (no SKILL.md edit). [not verified on Windows] the new paths; synthetic hook input on
   Linux only.

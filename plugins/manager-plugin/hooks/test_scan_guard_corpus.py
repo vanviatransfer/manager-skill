@@ -179,7 +179,7 @@ class CorpusTest(unittest.TestCase):
                 self.assertEqual(self.run_hook(data, env), want, cmd)
 
     def test_many_here_documents_in_time(self):
-        """Here-document detection is one pass per line and looks at MAX_HEREDOCS openers."""
+        """Many here-document openers, in and out of quotes: dropped in one pass per line."""
         for cmd in ("cat " + "<<A " * (63 * 1024 // 4), "echo '" + "sh <<B " * 9000 + "'"):
             self.assertLessEqual(len(cmd), scan_guard.MAX_COMMAND)
             start = time.monotonic()
