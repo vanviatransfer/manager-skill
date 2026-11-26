@@ -158,7 +158,7 @@ def collect(result):
             trace = run.get("tracePath")
             if not trace or not os.path.isabs(trace) or not os.path.isfile(trace):
                 continue
-            copy = os.path.join("traces", "%s-%d.jsonl" % (case.get("name"), number))
+            copy = "traces/%s-%d.jsonl" % (case.get("name"), number)
             os.makedirs(os.path.join(folder, "traces"), exist_ok=True)
             shutil.copyfile(trace, os.path.join(folder, copy))
             run["keptTracePath"], run["tracePath"] = trace, copy
