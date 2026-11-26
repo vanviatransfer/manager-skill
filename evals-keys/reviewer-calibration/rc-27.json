@@ -1,0 +1,43 @@
+{
+  "case": "rc-27",
+  "name": "l4-binding-decision",
+  "kind": "planted",
+  "level": "L4",
+  "tier": "hard",
+  "summary": "`int(data.get(\"port\", ...))` raises ValueError or TypeError for a bad port, against B2 (`load` never raises; None on bad input)",
+  "locations": [
+    {
+      "file": "config.py",
+      "lines": [
+        15,
+        15
+      ],
+      "text": "int(data.get(\"port\""
+    },
+    {
+      "file": "docs/LIVING_PLAN.md",
+      "lines": [
+        15,
+        15
+      ],
+      "text": "never raises"
+    }
+  ],
+  "terms": [
+    "never raises",
+    "never raise",
+    "binding decision",
+    "ValueError",
+    "TypeError",
+    "non-numeric",
+    "not a number",
+    "invalid port",
+    "bad port",
+    "uncaught",
+    "unhandled",
+    "returns None",
+    "return None"
+  ],
+  "alone": [],
+  "probe": "from config import load\nfor text in ('{\"host\": \"a\", \"port\": \"x\"}', '{\"host\": \"a\", \"port\": null}',\n             '{\"host\": \"a\", \"port\": [1]}'):\n    assert load(text) is None, text"
+}

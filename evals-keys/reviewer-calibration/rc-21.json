@@ -1,0 +1,37 @@
+{
+  "case": "rc-21",
+  "name": "l2-mutable-default",
+  "kind": "planted",
+  "level": "L2",
+  "tier": "hard",
+  "summary": "`seen=[]` is one list shared by every call: each call's hashtags are added to the earlier calls' ones",
+  "locations": [
+    {
+      "file": "tags.py",
+      "lines": [
+        9,
+        15
+      ],
+      "text": "seen=[]"
+    }
+  ],
+  "terms": [
+    "mutable default",
+    "default argument",
+    "default list",
+    "seen=[]",
+    "seen=None",
+    "shared list",
+    "same list",
+    "across calls",
+    "between calls",
+    "every call",
+    "accumulates",
+    "accumulate",
+    "second call",
+    "persists",
+    "earlier calls"
+  ],
+  "alone": [],
+  "probe": "from tags import hashtags\nhashtags(\"#a\")\nassert hashtags(\"#b\") == [\"b\"]"
+}

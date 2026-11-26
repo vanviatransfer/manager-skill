@@ -1,0 +1,42 @@
+{
+  "case": "rc-31",
+  "name": "l4-half-up",
+  "kind": "planted",
+  "level": "L4",
+  "tier": "hard",
+  "summary": "the plan says halves round up; built-in `round` rounds half to even (2.5 gives 2), and the new test asserts that",
+  "locations": [
+    {
+      "file": "ratings.py",
+      "lines": [
+        15,
+        15
+      ],
+      "text": "round(rating)"
+    },
+    {
+      "file": "tests/test_ratings.py",
+      "lines": [
+        21,
+        21
+      ],
+      "text": "stars(2.5), 2"
+    }
+  ],
+  "terms": [
+    "half up",
+    "half-up",
+    "halves",
+    "banker",
+    "banker's",
+    "bankers",
+    "half to even",
+    "half-to-even",
+    "half even",
+    "to even",
+    "ROUND_HALF_UP",
+    "2.5"
+  ],
+  "alone": [],
+  "probe": "from ratings import stars\nassert stars(2.5) == 3 and stars(0.5) == 1 and stars(4.5) == 5 and stars(3.5) == 4"
+}
