@@ -34,12 +34,21 @@ Gerekçe: <tek cümle: doğruluk riski, karmaşıklık, tahmini token tüketimi 
 [Bu repoda vault yok. Bu repoda sürekli çalışacaksanız kurmanızı öneririm: projenin mimarisi, modülleri, işletimi, entegrasyonları, terimleri ve alınmış kararlar ile gerekçeleri kalıcı sayfalara yazılır, kod haritası kurulur; oturumlar (ajanlar dahil) her seferinde baştan aramak yerine bunları okur. Kısa süreli bir repoysa gerek yok. Kurayım mı? Evet / Bu sefer hayır / Hayır, bu repoda bir daha sorma]
 [Haritayı commit'te güncel tutayım mı? (Claude Code commit kontrolü; git kancası için komut veririm) Evet / Hayır]
 [Python yok; kurayım mı? (`<komut>`) Hayır: harita kullanılmaz.]
+Sonda Opus iyileştirme turu (tek ajan, salt okunur, öneriler rapora; ~100–200k token): Evet / Hayır
 Model tercihiniz hangisi?
 ```
 
 The bracketed lines only when they apply (unrelated earlier work in this conversation, the session
 check, no vault, a setup PR to make, no Python), with only the items found. An install answer is
 carried out right after the gate.
+
+**Improvement pass** (opt-in, default off): one Opus pass at the end of the run
+(`references/improvement-pass.md`). It is on only when the owner says yes to its line at the gate
+or otherwise in this conversation for this run, when rule 3's `standing` line ends with
+`; improvement pass: on`, or, after a compaction, when the working-notes strategy line (rule 2: the
+plan's `run` line) ends so or a `Run <id>: improvement pass:` line for this run is kept. Anything
+else is off: no answer, a strategy given without that line being
+asked, a line without the suffix. Never inferred.
 
 Guide for the recommendation: Sonnet for bounded code, docs, tests and ordinary reviews; Opus for
 architecture, numerical or financial correctness, concurrency, security-critical code or hard
@@ -56,6 +65,13 @@ of the run: phases, fix rounds, integrations, plan-only PRs, brake retries. Reco
 `Model strategy: <strategy> — scope: run <run-id> — owner: "<quote>" | standing (<date>)`,
 replacing the previous `run` line. A `standing` line (`scope: standing`) is written only when the
 owner says the choice is a policy for all runs, and stays until the owner changes it.
+
+Both lines, and the working-notes line, may end with `; improvement pass: on` or
+`; improvement pass: off`; absent (every older record) means off. The `run` line and the
+working-notes strategy line always carry it; a `standing` line only when the owner's policy words
+cover the pass. Pass on → also keep the
+working-notes line `Run <id>: improvement pass: start <the default head step 0 item 2 recorded>`.
+The pass's own dispatch is outside the strategy: `model: opus`, `effort: high`, by the owner's yes.
 
 **Not enough model.** If a phase needs stronger reasoning than the strategy allows (it is in an
 Opus category, or a brake tripped and a stronger model is the remedy), don't escalate. Run it under

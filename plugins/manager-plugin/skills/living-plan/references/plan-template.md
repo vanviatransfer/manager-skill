@@ -32,8 +32,8 @@ Out (deliberately not doing now): <... and why, one line each>
 
 ## Model strategy
 <Written by the manager: the latest run's line, plus a standing line only if the owner set a policy.>
-Model strategy: <Sonnet | Opus | mixed: role/condition → model> — scope: run R<YYYY-MM-DD-HHMM> — owner: "<quote>" | standing (<date>)
-Model strategy: <...> — scope: standing — owner: "<quote>" (<date>)
+Model strategy: <Sonnet | Opus | mixed: role/condition → model> — scope: run R<YYYY-MM-DD-HHMM> — owner: "<quote>" | standing (<date>); improvement pass: <on | off>
+Model strategy: <...> — scope: standing — owner: "<quote>" (<date>)[; improvement pass: <on | off>]
 
 ## Binding decisions
 - B1. <decision> — <why, one line> (<who, date>)

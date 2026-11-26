@@ -985,6 +985,8 @@ class ScaffoldTest(unittest.TestCase):
                 self.assertEqual((done.returncode, done.stdout.decode("utf-8")),
                                  (0, "ok: 1 phase\n"))
                 self.assertRegex(plan, r"(?m)^Model strategy: .* scope: standing .* owner: \"")
+                # no improvement-pass suffix (absent = off): an eval run starts no Opus pass
+                self.assertNotIn("improvement pass: on", plan)
                 self.assertRegex(plan, r"(?m)^Status: todo$")
                 self.assertIn("No vault and no code map",
                               git(work, "show", "origin/main:CLAUDE.md")[1])

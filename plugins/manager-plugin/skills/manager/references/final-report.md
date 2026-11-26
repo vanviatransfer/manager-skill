@@ -18,8 +18,10 @@ recommendations not already given at the gate; one line on repo-enabled plugins,
 skills found in step 0 (names, "disable for this repo if unneeded") and any fallback dispatch
 (`manager-plugin:fallback` or `general-purpose`); unresolved risks (including validation the
 reviewer could not run); decisions answered but not yet persisted, if any; non-blocking notes
-carried forward; the default branch's final head SHA; then the numbered batch of unresolved owner
-decisions.
+carried forward; the default branch's final head SHA; with the improvement pass on, its
+`İyileştirme önerileri` section or its one line; then the numbered batch of unresolved owner
+decisions. Improvement pass on → read `references/improvement-pass.md` and run the pass before
+writing the report.
 
 End of run, first: a clean shared checkout not at `origin/<default>` → `git switch --detach
 origin/<default>`, if the project rules allow switching it.

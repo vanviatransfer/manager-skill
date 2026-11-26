@@ -243,6 +243,22 @@ picks or escalates a model on its own. The plugin's agents name no model: they r
 model unless a dispatch sets one. Effort is `medium` by default and `high` for the reviewer of a
 `critical` phase, unless the strategy or the owner says otherwise.
 
+The same question also offers an optional **improvement pass**, off by default and on only when
+the owner says yes (a `standing` strategy may carry it too). With it on, once per run, after the
+last phase is closed and only if a phase landed, one read-only Opus reviewer agent (effort `high`;
+it can run validation and probes, as in item 33 of `docs/TODO.md`, but writes nothing) reads
+everything the run landed (the diff and log from the run's start, the plan's goal, constraints and
+binding decisions, the reviewers' carried-forward notes), may run the project's validation and small
+probes in a scratch clone, and reports at most 7 ranked improvements with `file:line`, evidence, an
+action, value and cost, in its answer (it has no Write tool). The final report lists them under
+"İyileştirme önerileri" with the pass's token use; nothing goes into the plan unless the owner picks
+it through the normal plan route, and a failed pass is one line, never retried. Its cost is an
+estimate, not a measurement: about 100-200k tokens at Opus. The pass is purely additive: on or off,
+every strategy (all Opus, all Sonnet or mixed) gives each phase's implementer and reviewer exactly
+the model and effort it gives without it. The setting is recorded as a suffix of the plan's strategy
+line (`; improvement pass: on|off`; an older line without it means off). The per-PR reviewer stays
+the gate, unchanged.
+
 Plan and vault text (the `living-plan` and `create-vault` skills, and what the implementers write
 during a run: status lines, plan records, plan-only PRs, vault pages) is in English when new or
 changed; owner quotes stay verbatim, and unchanged text is not translated unless the phase says so.
