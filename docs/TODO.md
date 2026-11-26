@@ -1730,7 +1730,9 @@ the 20 base cases or their keys, or any cost ceiling.
   holds no two neighbours of one kind and level, and one pair of planted neighbours at most (L4
   then L2). Levels are not sorted.
 - **score.py.** A key may hold `findings` (each with `locations`, `terms`, `alone`) in place of
-  one bug: each is matched as before; the run is `found` when all are, `partial` when some,
+  one bug: each is matched as before, except that a cited line alone matches none (neighbouring
+  ranges could not tell the findings apart), so each needs its file and a term, or an `alone`
+  term; the run is `found` when all are, `partial` when some,
   `missed` when none, right only when found; recall counts findings (so `l2-two-faults` adds 2 to
   L2), and the audit labels the finding a blocker matched (`finding 2: ...`). Kind `nit`: right
   (`pass`) with PASS or PASS WITH NOTES and no blocker, else `over-blocking`; its own line

@@ -6,7 +6,8 @@ rc_base 'measures' 'Summary' '`summary(values)` gives the smallest value, '\
 'the largest and the median of a list of numbers.' \
   '`stats.py`, `tests/`' \
   '`summary(values)` of a non-empty list gives `{"min": ..., "max": ..., '\
-'"median": ...}` and leaves `values` as it was; an empty list raises ValueError'
+'"median": ...}` (the median of an even count is the mean of the two middle values) and '\
+'leaves `values` as it was; an empty list raises ValueError'
 cat > 'stats.py' <<'EOF'
 """Statistics of lists of numbers."""
 

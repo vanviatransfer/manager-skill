@@ -34,7 +34,9 @@ Rules, per valid run of a case:
   inside a line citation (`README.md:20` holds no `20`); a list term needs all its parts. Other
   blockers are counted as extra.
 - planted with several findings (the key's `findings`, each with its own `locations`, `terms`
-  and `alone` in place of the key's): each finding is matched as above; the run is `found` when
+  and `alone` in place of the key's): each finding is matched as above, except that a cited
+  line alone matches none (the findings' ranges may be neighbours), so a finding needs a file
+  and one of its terms, or one of its `alone` terms; the run is `found` when
   every finding is, `partial` when some are, `missed` when none is, and right only when found.
   Recall counts findings, so such a case adds one per finding to its level.
 - decoy, clean: any blocker, or a CHANGES REQUIRED verdict, is a `false alarm`; else `pass`.
@@ -204,9 +206,10 @@ def findings_of(key):
     return key["findings"] if "findings" in key else [key]
 
 
-def located(blocker, key):
+def located(blocker, key, cited=True):
     """Why one blocker names the planted bug of the answer key (or of one finding), or None: an
-    `alone` term, or a key file with a key term or a cited line in the key's range."""
+    `alone` term, or a key file with a key term or (when `cited`) a cited line in the key's
+    range."""
     for term in key.get("alone", []):
         if has_term(blocker, term):
             return "term %r" % shown(term)
@@ -216,17 +219,20 @@ def located(blocker, key):
             continue
         if terms:
             return "%s + term %r" % (place["file"], shown(terms[0]))
-        if cites_lines(blocker, place["file"], place["lines"]):
+        if cited and cites_lines(blocker, place["file"], place["lines"]):
             return "%s:%d-%d cited" % (place["file"], place["lines"][0], place["lines"][1])
     return None
 
 
 def matched(blocker, findings):
     """(why the blocker names a finding or None, the indexes of the findings it names); with
-    several findings each reason is labelled `finding <n>: `."""
-    whys = [(index, located(blocker, finding)) for index, finding in enumerate(findings)]
+    several findings each reason is labelled `finding <n>: ` and a cited line alone names none
+    (their ranges may be neighbours, so a citation could not tell which finding is meant)."""
+    several = len(findings) > 1
+    whys = [(index, located(blocker, finding, cited=not several))
+            for index, finding in enumerate(findings)]
     whys = [(index, why) for index, why in whys if why]
-    if len(findings) > 1:
+    if several:
         text = "; ".join("finding %d: %s" % (index + 1, why) for index, why in whys)
     else:
         text = whys[0][1] if whys else None

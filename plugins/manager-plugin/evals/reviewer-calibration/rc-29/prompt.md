@@ -19,7 +19,7 @@ answer.
    Read and follow <the reviewer brief's absolute path>.
    Project: <this repository's absolute path> (shared checkout), default branch main
    PR: #1, head branch phase/P1
-   Base SHA: 587bab0b853f1ae4f2c68094711a9ccd5ce3d85e   Candidate SHA: 16a818dff3572a062b16e9dd4fbe3e12a86fc501
+   Base SHA: e48b75bbdd2f9c7c7b04da5ff170afdd90c05aa3   Candidate SHA: 51f23fe1649b73be9cadc5361c936c78e0eb1dfd
    Living plan: docs/LIVING_PLAN.md, phase P1
    Project rules: CLAUDE.md
    GitHub backend: none (a practice copy: both branches are in the local mirror `origin`)

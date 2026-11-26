@@ -66,7 +66,8 @@ GRADERS = ("answer-relayed", "blind", "reviewer-dispatched")
 REFUSE = ("planted", "round2-unfixed")
 DISPATCH = re.compile(r"Base SHA: ([0-9a-f]{40})   Candidate SHA: ([0-9a-f]{40})\n")
 HINT = re.compile(r"(?<![A-Za-z0-9])(planted|decoy|clean|guard|round ?-?2|L[1-4]|calibration|"
-                  r"drift|bug|trap|answer key|false alarm|off-by-one|weakened|zero-tests)"
+                  r"drift|bug|trap|answer key|false alarm|off-by-one|weakened|zero-tests|nit|"
+                  r"hard|tier|typo)"
                   r"(?![A-Za-z0-9])", re.I)
 BLIND = ("reviewer-calibration", "evals-keys", "evals-results", "evals/results", "score.py",
          "test_reviewer_calibration", "answer.json")
@@ -971,6 +972,16 @@ class HardScoreTest(unittest.TestCase):
         self.assertEqual((one["outcome"], one["findings"]), ("found", [2, 2]))
         self.assertIn("finding 1: ", one["matches"][0][1])
         self.assertIn("; finding 2: ", one["matches"][0][1])
+        # A cited range spanning both findings, or a loose word, credits only the finding named.
+        for blocker in ("B1. stats.py:9-18 — summary sorts the caller's list in place",
+                        "B1. summary mutates the input list; stats.py sorts it in place even "
+                        "when the median is all that is needed",
+                        "B1. stats.py:18 — for an even count the median is the upper middle "
+                        "value; use sorted(values) and average the two middle values"):
+            with self.subTest(blocker=blocker):
+                half = self.grade("l2-two-faults", blocker)
+                self.assertEqual((half["outcome"], half["right"], half["findings"]),
+                                 ("partial", False, [1, 2]))
         self.assertEqual(self.grade("l1-off-by-one", "B1. off by one (pager.py)")["findings"],
                          [1, 1])
 

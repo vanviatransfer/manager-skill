@@ -28,11 +28,7 @@
         "middle two",
         "middle values",
         "upper middle",
-        "2.5",
-        [
-          "even",
-          "median"
-        ]
+        "2.5"
       ],
       "alone": []
     },
@@ -59,7 +55,6 @@
         "aliases",
         "same list",
         "copy",
-        "sorted(",
         "side effect",
         "side-effect",
         "caller's list",

@@ -693,6 +693,8 @@ class CasesTest(unittest.TestCase):
         self.assertEqual(sorted(set(tags)), sorted(INVARIANTS))
         self.assertFalse(set(tags) & set(CALIBRATION_TAGS))
         self.assertFalse(set(INVARIANTS) & set(CALIBRATION_TAGS))
+        for case in self.cases.values():
+            self.assertTrue(case.get("tags") and case.get("description"), case["name"])
 
     def test_both_calibration_tiers_are_left_out(self):
         """Every case with a reviewer-calibration tag (either tier) is in the suite's folder,
@@ -704,8 +706,6 @@ class CasesTest(unittest.TestCase):
         for folder in tagged:
             self.assertTrue(folder.startswith(CALIBRATION + "/"), folder)
             self.assertNotIn(folder, self.cases)
-        for case in self.cases.values():
-            self.assertTrue(case.get("tags") and case.get("description"), case["name"])
 
     def test_the_tools_a_grader_names_are_the_run_s_to_call(self):
         """A tool the case does not allow is withheld from the model: a grader that wants a call
