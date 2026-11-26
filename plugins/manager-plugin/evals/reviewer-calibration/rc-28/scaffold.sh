@@ -7,7 +7,7 @@ rc_base 'tables' 'One cell format' '`render`, `render_markdown`, `render_csv` '\
 'four copies of each; their output stays the same.' \
   '`table.py`, `tests/`' \
   'each of the four functions gives the same output as before for every '\
-'table; the cell format and the number rule are written once'
+'table (every row as long as the headers); the cell format and the number rule are written once'
 cat > 'table.py' <<'EOF'
 """A table (a list of headers and rows of cells of the same length) as plain text, Markdown,
 CSV or HTML. A cell is None, a bool, an int, a float or anything else, shown as its str."""
