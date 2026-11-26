@@ -578,6 +578,22 @@ class ExpectedModelTest(Fixture):
         self.assertNotIn("!=", lines(SESSION, "h8=vendor-big-4-6")[0])
         self.assertNotIn("!=", lines(SESSION, "h8=big")[0])
         self.assertIn("!=small |", lines(SESSION, "h8=small")[0])  # an alias of another family
+        self.assertIn("!=g-4-6 |", lines(SESSION, "g7=g-4-6")[0])  # only on a `-` boundary
+
+    def test_a_dotted_version_is_not_a_provider_prefix(self):
+        self.agent(self.new, "g7", None, (request(5, "q1", 1, 0, 1, 1,
+                                                  model="vendor-small-4.6"),))
+        self.assertIn("!=big-4.6 |", lines(SESSION, "g7=big-4.6")[0])
+        self.agent(self.new, "h8", None, (request(5, "q2", 1, 0, 1, 1,
+                                                  model="prov.vendor-big-4.6@20260101"),))
+        self.assertNotIn("!=", lines(SESSION, "h8=vendor-big-4.6")[0])
+        self.assertNotIn("!=", lines(SESSION, "h8=big-4.6")[0])
+
+    def test_a_trailing_provider_suffix_is_marked(self):
+        # A false mark is the safe side: `-v1:0` after the version never passes.
+        self.agent(self.new, "g7", None, (request(5, "q1", 1, 0, 1, 1,
+                                                  model="vendor-big-4-6-v1:0"),))
+        self.assertIn("!=vendor-big-4-6 |", lines(SESSION, "g7=vendor-big-4-6")[0])
 
     def test_what_is_unknown_is_never_marked(self):
         self.assertEqual(lines(SESSION, "zz=sonnet"), ["usage | zz | unknown" + UNKNOWN])

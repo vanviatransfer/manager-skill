@@ -286,16 +286,18 @@ DATED = re.compile(r"[-@]\d{8}$")  # a full model id's date: `vendor-x-1-2025010
 
 def family(model):
     """A model id or name in lower case, without a context suffix (`[1m]`), a trailing date or
-    a provider prefix (up to the last `.` or `/`)."""
+    a provider prefix (up to the last `.` or `/` before the first digit, so `4.6` stays)."""
     name = DATED.sub("", model.split("[")[0].strip().lower())
-    return name[max(name.rfind("."), name.rfind("/")) + 1:]
+    head = re.split(r"\d", name, maxsplit=1)[0]
+    return name[max(head.rfind("."), head.rfind("/")) + 1:]
 
 
 def matches(name, model):
-    """A name with a version digit must equal the id or end it; an alias need only be in it."""
+    """A name with a version digit must equal the id or end it after a `-`; an alias need only
+    be in it. Anything after the version (`-v1:0`) is a mismatch: a false mark, never a pass."""
     model = family(model)
     if any(c.isdigit() for c in name):
-        return model.endswith(name)
+        return model == name or model.endswith("-" + name)
     return name in model
 
 
