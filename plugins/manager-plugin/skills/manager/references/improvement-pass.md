@@ -39,7 +39,10 @@ a file. Change the line to `done — <n> items, <t> tokens` (the token use the A
 completion notice gives) or `failed: <one-line reason>`. Failed: the dispatch errored, the agent
 type is unavailable, the agent ended with no answer, or its answer lacks the items list. No retry,
 no second dispatch, no fallback agent: one line in the final report and continue. A verdict line
-in the answer is ignored: the pass gates nothing.
+in the answer is ignored: the pass gates nothing. A line still at `dispatched` with no answer in
+hand (a compaction or a restart lost it) → `failed: result lost`. A phase that lands after the
+pass (the owner's answers continued the run) is not covered: the final report says so in one
+line.
 
 **Output.** The final report gets a section `İyileştirme önerileri`: each item in one line, in the
 owner's language (rank, the problem or action, `file:line`, value and cost), copied from the agent's
