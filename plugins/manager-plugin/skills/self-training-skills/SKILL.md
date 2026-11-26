@@ -8,12 +8,12 @@ description: Write, adopt and train self-training skills for work that repeats i
 A self-training skill standardises work that repeats in a project and gets better from its own
 use. Talk to the owner in Turkish unless they write otherwise; write skill files, lessons and
 records in English, whatever language the project's rules name for them (the owner's standing
-policy; owner quotes stay verbatim, in the owner's words).
+policy; owner quotes stay verbatim).
 
 ## What it is
 
-- A **worker skill** lives in the project at `.claude/skills/<name>/SKILL.md`: the steps for one
-  kind of recurring work, its rules, and the knowledge it relies on.
+- A **worker skill** lives at `.claude/skills/<name>/SKILL.md`: the steps for one kind of
+  recurring work, its rules, and the knowledge it relies on.
 - Its **records** are the per-use evidence: one row per use, with the outcome.
 - Its **lessons** (`lessons.md`) are an append-only, labelled table: `owner-reported` (an owner
   verdict), `observed` (measured here), `sourced` (cited, not tested here) or `hypothesis`.
@@ -56,16 +56,17 @@ through a symlink.
   with one line per problem, 2 for a bad path (or a ref that isn't a commit, or no git). Unmarked
   skills are not checked. Besides the template's shape it checks the routing: every file under
   the skill's `references/` needs its own `## Knowledge` bullet (`` `references/<file>` — read
-  when ...``), every such bullet's path must exist (backticked text with whitespace, `://`, `*`
-  or `?`, or starting with `<`, is a command, URL, glob or placeholder, not a routing), and every
-  lesson id a rule cites must be in `lessons.md`. `--triggers-from <ref>`: every quoted phrase (`"..."`, `“...”`) in the skill's
-  description at that ref, and in the description of the retired `<name>-trainer` folder beside
-  it, must still be in the current description; a dropped one is a problem naming the phrase and
-  its source. A skill not there at the ref is new (a `note:` line, no problem).
+  when ...``), every such bullet's path must exist (a command, URL, glob or placeholder in
+  backticks is no routing), and every lesson a rule cites must be in `lessons.md` with a verifier
+  outcome (`--migrate` adds an old table's columns; `references/lessons-format.md`).
+  `--triggers-from <ref>`: every quoted phrase (`"..."`, `“...”`) in the skill's description at
+  that ref, and in the description of the retired `<name>-trainer` folder beside it, must still
+  be in the current description; a dropped one is a problem naming the phrase and its source. A
+  skill not there at the ref is new (a `note:` line, no problem).
 - `<cmd> query <repo root> [--] <term>`: one line per line of a marked skill's files (`SKILL.md`,
-  `references/`, `lessons.md` with the row's lesson id, the records file) holding the term,
-  case-insensitive, as `<skill>: <file>:<line>[ L<n>]: <text>`; at most 50, then a `(cut: ...)`
-  line. Exit 0 with hits, 1 with none, 2 for a bad path or an empty term (`--` before a term that
+  `references/`, `lessons.md` with the row's lesson id, the records file) holding the term (any
+  case), as `<skill>: <file>:<line>[ L<n>]: <text>`; at most 50, then a `(cut: ...)` line.
+  Exit 0 with hits, 1 with none, 2 for a bad path or an empty term (`--` before a term that
   starts with `-`). It reads the files on every call and writes nothing.
 - `<cmd> rules-hint <repo root>` (`--remove` takes it out): puts the instruction line below into
   `CLAUDE.md` once (created with a title if missing), or updates it in place in `AGENTS.md` or
@@ -73,9 +74,9 @@ through a symlink.
   nothing. The line ends with the marker `<!-- manager-plugin:self-training-skills -->`; in a
   `CLAUDE.md` it created, `--remove` deletes the file when only its title is left.
 - `<cmd> stats <skill dir>`: records, outcomes, tags and owner verdicts since the last training,
-  the phases still `pending-review`, the expected effects, rows that don't parse, and `training
-  due`. "Since the last training" means the rows after the `records: <n>` count of the last
-  changelog entry (for an entry without one, the rows dated strictly after its date).
+  the phases still `pending-review`, the expected effects, rows that don't parse, `training due`
+  and stale lessons. "Since the last training" means the rows after the `records: <n>` count of
+  the last changelog entry (for an entry without one, the rows dated strictly after its date).
 - `<cmd> due <repo root>`: one line per marked skill.
 
 The instruction line, for this skill and for every session in a project with marked skills:
@@ -94,12 +95,12 @@ branch as before), apart from the code map's own one-time block, and `"search_nu
    work that continues after the plan, e.g. one per release, per video, per endpoint), the vault
    and recent git history (`git log --oneline -50`). Propose at most 3 skills. For each, give the
    work, the expected number of uses, what the skill would standardise, and what it would learn
-   from. Ask in Turkish in one numbered batch with a recommendation; also recommend "none" when
-   the repetition doesn't pay for the context cost.
+   from. Ask in Turkish in one numbered batch with a recommendation; recommend "none" when the
+   repetition doesn't pay for the context cost.
 2. **Create.**
    1. First look for what already does this job: the project's own skill-map, trigger-check or
-      routing script, or a test that holds its skills. If there is one, use it and don't write
-      another; replacing it with this script is an owner decision, offered with options. Write
+      routing script, or a test that holds its skills. If there is one, use it, don't write
+      another; replacing it is an owner decision, offered with options. Write
       the worker skill from `references/skill-template.md`, with the steps from the project's
       rules, plan and vault (cite vault pages and route each `references/` file under
       `## Knowledge`).
@@ -110,8 +111,8 @@ branch as before), apart from the code map's own one-time block, and `"search_nu
         owner will use it in conversation, with a short description.
       - Add one line for the records to the vault index when there is a vault.
    3. Run `<cmd> check` on each new folder (it must print `ok:`) and `<cmd> rules-hint <repo
-      root>`. With a code map, run its
-      `build` and commit the result too. Then land through a reviewed PR (as in Train, step 8), or
+      root>`. With a code map, run its `build` and commit the result too. Then land through a
+      reviewed PR (as in Train, step 8), or
       as the living plan's skill phase when the manager runs it.
 3. **Adopt.** For an existing skill made without this plugin: read `references/adopt.md` first.
 4. **Record** (done by whoever uses a worker skill: the owner's session, or a manager implementer).
@@ -139,7 +140,7 @@ branch as before), apart from the code map's own one-time block, and `"search_nu
    3. Read only the lessons and the vault pages the skill cites (the code-map skill's `query` can
       find more).
    4. Measure: outcome counts since the last training, recurring tags and blocker classes, owner
-      verdicts.
+      verdicts, stale lessons.
    5. For each changelog entry since then, check whether its expected effect showed. A change that
       didn't help becomes a revert candidate.
    6. Propose at most 3 changes. For each, give the evidence (record and lesson ids, counts), the

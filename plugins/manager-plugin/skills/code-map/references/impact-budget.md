@@ -21,10 +21,10 @@ map parses, compact and in a fixed order:
   named on one line at the end. It writes nothing.
 
 **`<cmd> query <term> --budget <n>`**: the same items as `query` (50 per section), ranked and
-cut at about `<n>` tokens, estimated as characters / 4. Exact matches first (a definition named `<term>`, a path,
-file name or file stem equal to it, a vault page with that name or title), then by how many files
-import the file (for a definition, its file) or link to the page, then in `query`'s order. The
-first item is always kept; an item that doesn't fit is skipped and later, smaller ones still go
-in; a cut ends with `… <k> more (raise --budget)`. Sections keep their order (definitions, paths,
-vault pages); one whose items were all cut is left out. Without `--budget`, `query` is
+cut at about `<n>` tokens, estimated as characters / 4. Exact matches first (a definition named
+`<term>`, a path, file name or file stem equal to it, a vault page with that name or title), then by
+how many files import the file (for a definition, its file) or link to the page, then in `query`'s
+order. The first item is always kept; an item that doesn't fit is skipped and later, smaller ones
+still go in; a cut ends with `… <k> more (raise --budget)`. Sections keep their order (definitions,
+paths, vault pages); one whose items were all cut is left out. Without `--budget`, `query` is
 unchanged.

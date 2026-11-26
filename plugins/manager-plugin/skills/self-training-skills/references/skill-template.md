@@ -68,7 +68,8 @@ records: <n> — expect: <observable effect> — revert if: <signal>`, with vers
 indented continuation lines.
 
 Each `## Rules` bullet (`-`, `*` or numbered) ends with `(L<n>)` (one or more lesson ids in
-`lessons.md`, none `retired`) or `(owner: "<words>", <date>)`. `skilltrain.py check` enforces
+`lessons.md`, none `retired` or `hypothesis`, each with a verifier outcome in its evidence; see
+`lessons-format.md`) or `(owner: "<words>", <date>)`. `skilltrain.py check` enforces
 this, the sections, the marker, the records path and header, the lessons header and the changelog
 format.
 
