@@ -18,6 +18,7 @@
     "off-by-one",
     "off by one",
     "exact multiple",
+    "exact multiples",
     "divisible",
     "10, 5",
     "0, 5",
@@ -26,5 +27,6 @@
     "one too many",
     "one page too many"
   ],
+  "alone": [],
   "probe": "from pager import page_count\nassert page_count(10, 5) == 2 and page_count(0, 5) == 0"
 }

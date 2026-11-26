@@ -24,13 +24,21 @@
   ],
   "terms": [
     "argv[1]",
-    "a string",
     "one string",
+    "single string",
     "single path",
+    "one path",
+    "str",
+    [
+      "string",
+      "list"
+    ],
     "character",
+    "characters",
     "iterates",
-    "not updated",
+    "iterating",
     "FileNotFoundError"
   ],
+  "alone": [],
   "probe": "import json, os, subprocess, sys, tempfile\nfolder = tempfile.mkdtemp()\npath = os.path.join(folder, \"s.json\")\nwith open(path, \"w\") as fh:\n    json.dump({\"name\": \"x\"}, fh)\nout = subprocess.run([sys.executable, \"-B\", \"cli.py\", path], capture_output=True, text=True)\nassert out.stdout.strip() == \"x\", out.stderr"
 }

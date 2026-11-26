@@ -6,5 +6,6 @@
   "summary": "correct",
   "locations": [],
   "terms": [],
+  "alone": [],
   "probe": "assert \"(default: 10)\" in open(\"README.md\").read()"
 }

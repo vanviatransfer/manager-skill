@@ -6,5 +6,6 @@
   "summary": "correct: the `else` of the loop runs exactly when no `--` was found",
   "locations": [],
   "terms": [],
+  "alone": [],
   "probe": "from args import split_args as s\nassert s([\"-a\", \"--\", \"-b\"]) == ([\"-a\"], [\"-b\"]) and s([]) == ([], [])\nassert s([\"--\", \"--\"]) == ([], [\"--\"]) and s([\"-a\"]) == ([\"-a\"], [])"
 }

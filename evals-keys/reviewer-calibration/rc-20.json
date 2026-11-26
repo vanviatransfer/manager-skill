@@ -16,12 +16,17 @@
   ],
   "terms": [
     "accent",
+    "accents",
+    "accented",
     "ASCII",
     "Café",
     "cafe",
     "fold",
+    "folds",
     "folding",
-    "diacritic"
+    "diacritic",
+    "diacritics"
   ],
+  "alone": [],
   "probe": "from slug import slugify\nassert slugify(\"Café\") == \"cafe\""
 }

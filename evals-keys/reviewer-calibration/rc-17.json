@@ -6,5 +6,6 @@
   "summary": "correct: `mean([])` now returns None, with a test",
   "locations": [],
   "terms": [],
+  "alone": [],
   "probe": "from stats import mean\nassert mean([]) is None and mean([2, 4]) == 3.0"
 }

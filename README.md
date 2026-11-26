@@ -677,15 +677,23 @@ plugin folder, which is all a run's session is pointed at. The run's graders che
 reviewer got the candidate, that the final message relays its answer, and that the trace names
 none of `reviewer-calibration`, `evals-keys`, `evals-results`, `evals/results`, `score.py`,
 `test_reviewer_calibration` or `answer.json`; none grades the verdict, which would tell a reader
-of the case the expected answer. `score.py` grades the reviewer's answer from the run's trace: a
-planted bug is found when a blocker names its file and a line in the key's range or a key term (a
-guard case: a key term alone); a decoy or clean case with any blocker is a false alarm; round 2
-must accept the real fix (PASS or PASS WITH NOTES, no blocker) and refuse the other. It reports
-each run, recall per level, the false-alarm rate, round-2 results, cost and tokens. A paid run,
-by hand only, with a required cost ceiling (Sonnet by default, `--model opus` for the other tier,
-`--runs 1`, `-j 1`); its results go to `evals-results/<UTC time>/` at the repository root, which
-git ignores. run.py passes no `--trust-plugin`, so the first run asks you to trust the plugin
-interactively:
+of the case the expected answer. A run with an error or a failed grader is INVALID: `score.py`
+lists it with the reason, leaves it out of every total and exits non-zero. `score.py` grades the
+reviewer's answer from the run's trace: a planted bug is found when a blocker names its file and
+a line in the key's range or a key term (whole words, never a cited line number; a guard case
+also has a few terms of its own, such as `Ran 0`, that count without a file); a decoy or clean
+case with any blocker is a false alarm; round 2 must accept the real fix (PASS or PASS WITH
+NOTES, no blocker) and refuse the other. It reports each run, recall per level, the false-alarm
+rate, round-2 results, cost and tokens, and writes `audit.md` beside the result: one row per
+blocker of each run with the match decision (the term or line that matched) and any INVALID
+reason. Keyword matching is never exact, so read a run's numbers, the pilot's first, together
+with its audit. A paid run, by hand only, with a required cost ceiling (Sonnet by default,
+`--model opus` for the other tier, `--runs 1`, `-j 1`); its results go to `evals-results/<UTC
+time>/` at the repository root, which git ignores. The eval removes each run's sandbox, trace
+included, when the run ends, so run.py passes `--keep-temp`, copies each trace to `traces/` in
+the result folder, points the result at the copies and removes the kept sandboxes the result
+names. It exits non-zero when the eval or `score.py` does. run.py passes no `--trust-plugin`, so
+the first run asks you to trust the plugin interactively:
 
 ```
 python3 plugins/manager-plugin/evals/reviewer-calibration/run.py --max-cost-usd 15
@@ -694,5 +702,11 @@ python3 plugins/manager-plugin/evals/reviewer-calibration/run.py --max-cost-usd 
 `--dry-run` prints the `claude plugin eval` and `score.py` commands it would run.
 `python3 -m unittest discover -s plugins/manager-plugin/evals` checks the cases, builds every
 fixture, runs its validation and probe, and scores hand-written answers, all without a paid run.
-Limits: a run's session can still read your home folder, so blindness rests on the blind grader
-catching a read of the keys or results, not on the keys being out of reach.
+Limits, from a static reading of the 2.1.332 sandbox builder, not from an observed run: the
+eval's Bash sandbox denies reads of your home folder, the plugin folder's parent, the system temp
+folder and similar, and the Read tool is held to the allowed tools and the eval folder's deny, so
+a checkout under your home keeps `evals-keys/` and `evals-results/` unreadable. The residual risk
+is a checkout outside your home and outside the temp folder: there the repository root, keys
+included, may be readable through Bash, and run.py warns before it launches. The blind strings,
+traced the same way, appear in no honest run; only a checkout or `TMPDIR` path that holds one
+would trip them, and run.py refuses to launch then.

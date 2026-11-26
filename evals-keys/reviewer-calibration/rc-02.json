@@ -6,5 +6,6 @@
   "summary": "correct: `text or \"\"` guards None and `match and ...` gives None without a match",
   "locations": [],
   "terms": [],
+  "alone": [],
   "probe": "from text import first_word as f\nassert f(\"  hi there\") == \"hi\" and f(\"\") is None and f(\"   \") is None and f(None) is None"
 }

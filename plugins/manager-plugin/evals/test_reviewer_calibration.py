@@ -16,8 +16,12 @@ python3 -m unittest discover -s <this folder>
   so no planted bug is caught by the tests alone; each answer key's probe fails at a planted or
   unfixed candidate and passes at the others; each key's line range holds its marker text.
 - score.py grades hand-written answers right (found, missed, false alarm, round 2, no verdict,
-  markdown answers, a wrong fault on the right file), reads a run's result and trace, and run.py
-  builds the command with its defaults, a required cost ceiling and the results folder.
+  markdown answers, a wrong fault on the right file, a right one in other words), reads a run's
+  result and trace, leaves invalid runs (an error, a failed run grader, a missing trace) out of
+  the totals with a non-zero exit, and writes the audit table; run.py builds the command with its
+  defaults, a required cost ceiling, `--keep-temp` and the results folder, copies the traces and
+  removes the kept sandboxes, refuses a path the blind grader would trip on, and exits non-zero
+  when the eval or score.py does.
 Without the key folder (the plugin copied alone) the tests that need the keys are skipped.
 Standard library only, Python 3.8+.
 """
@@ -31,6 +35,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SUITE = os.path.join(HERE, "reviewer-calibration")
@@ -58,6 +63,27 @@ MAX_LINES = 150
 KEYS = score.answer_keys()
 NAMES = {key["name"]: case for case, key in KEYS.items()}
 needs_keys = unittest.skipUnless(KEYS, "no answer keys beside this plugin copy")
+PASSED = [{"name": name, "passed": True, "weight": 1, "explanation": ""} for name in GRADERS]
+
+
+def write_result(folder, runs, name=None):
+    """An aggregate-result.json with one case and the given runs; returns its path."""
+    path = os.path.join(folder, "aggregate-result.json")
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump({"schemaVersion": 1, "cases": [
+            {"name": name or sorted(KEYS or {"rc-01": 1})[0], "arms": {"with": runs}}]}, fh)
+    return path
+
+
+def trace_with(text):
+    """A trace whose reviewer answered `text`."""
+    return "\n".join(json.dumps(event) for event in [
+        {"type": "assistant", "parent_tool_use_id": None, "message": {"id": "m1", "content": [
+            {"type": "tool_use", "id": "t1", "name": "Agent",
+             "input": {"subagent_type": "manager-plugin:reviewer"}}]}},
+        {"type": "user", "parent_tool_use_id": None, "message": {"content": [
+            {"type": "tool_result", "tool_use_id": "t1", "content": text}]}},
+        {"type": "result", "result": text}]) + "\n"
 
 
 def suite_cases():
@@ -259,8 +285,9 @@ class KeyTest(unittest.TestCase):
     def test_the_answer_keys(self):
         for case, key in KEYS.items():
             with self.subTest(case=case):
-                self.assertEqual(sorted(key), ["case", "kind", "level", "locations", "name",
-                                               "probe", "summary", "terms"])
+                self.assertEqual(sorted(key), ["alone", "case", "kind", "level", "locations",
+                                               "name", "probe", "summary", "terms"])
+                self.assertEqual(bool(key["alone"]), key["level"] == "guard")
                 self.assertEqual(key["case"], case)
                 self.assertIn(key["kind"], score.KINDS)
                 self.assertTrue(key["summary"] and key["probe"])
@@ -275,7 +302,7 @@ class KeyTest(unittest.TestCase):
                         continue
                     low, high = place["lines"]
                     self.assertTrue(1 <= low <= high, place)
-                for term in key["terms"]:
+                for term in key["terms"] + key["alone"]:
                     for part in term if isinstance(term, list) else [term]:
                         self.assertFalse(re.search(r"^[\w/]+\.(py|md)$", part), part)
                         self.assertNotIn(part.lower(), ("test", "tests", "bug", "wrong",
@@ -567,6 +594,113 @@ class ScoreTest(unittest.TestCase):
         fooled = self.grade("round2-unfixed", answer("PASS"))
         self.assertEqual((fooled["outcome"], fooled["right"]), ("accepted", False))
 
+    def test_parse_headings_without_a_colon(self):
+        for heading in ("**Blockers**", "## Blockers", "### Blockers", "#### **Blockers**"):
+            text = ("VERDICT: CHANGES REQUIRED\n%s\n\n1. bad — a.py:2\n\n## Notes "
+                    "(non-blocking)\n- N1. fine — b.py:1\n" % heading)
+            with self.subTest(heading=heading):
+                self.assertEqual(score.parse(text)["blockers"], ["1. bad — a.py:2"])
+        for none in ("No blockers.", "n/a", "N/A", "none.", "- No blockers", "**N/A**"):
+            text = "**VERDICT: PASS**\n## Blockers\n%s\n## Notes\nnone\n" % none
+            with self.subTest(none=none):
+                self.assertEqual(score.parse(text), {"verdict": "PASS", "blockers": []})
+            self.assertEqual(score.parse("VERDICT: PASS\nBlockers: %s\n" % none)["blockers"], [])
+
+    def test_loose_wrong_blockers_are_missed(self):
+        for name, blocker in (
+                ("l3-contract-change", "B1. store.py:13 — KeyError carries no message"),
+                ("l3-caller-not-updated", "B1. cli.py:2 — usage help not updated; it is a "
+                                          "string constant"),
+                ("l4-plan-drift", "B1. docs/LIVING_PLAN.md:3 — the plan folder is not named"),
+                ("l4-readme-drift", "B1. README.md:20 — a typo in the install heading"),
+                ("l1-wrong-operator", "B1. discount.py:3 — the boundary values are not "
+                                      "documented"),
+                ("weakened-test", "B1. phone.py:3 — an unreachable branch in format()"),
+                ("zero-tests", "B1. no tests cover the new length option"),
+                ("l2-empty-input", "B1. stats.py:3 — empty docstring on the module")):
+            with self.subTest(case=name):
+                self.assertEqual(self.outcome(name, blocker), "missed")
+
+    def test_right_blockers_in_other_words_are_found(self):
+        for name, blocker in (
+                ("l3-contract-change", "B1. service.py record() relies on find returning None "
+                                       "for a new page; it now raises"),
+                ("l1-wrong-operator", "B1. discount.py uses a strict comparison, so a total of "
+                                      "exactly 100 gets no discount"),
+                ("zero-tests", "B1. the tests were renamed to tests/slug_test.py, which "
+                               "run_tests.py does not discover"),
+                ("l4-plan-drift", "B1. docs/LIVING_PLAN.md claims folding, the code keeps "
+                                  "accents"),
+                ("weakened-test", "B1. the failing test is skipped instead of fixed")):
+            with self.subTest(case=name):
+                self.assertEqual(self.outcome(name, blocker), "found")
+
+    def test_invalid_runs_are_left_out_and_fail_the_score(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        name = case_of("l1-off-by-one")
+        with open(os.path.join(tmp, "t.jsonl"), "w", encoding="utf-8") as fh:
+            fh.write(trace_with(answer("CHANGES REQUIRED", "B1. off by one (pager.py)")))
+        good = {"tracePath": "t.jsonl", "error": None, "graders": PASSED, "costUsd": 0.1}
+        cases = {"an error": dict(good, error="session crashed"),
+                 "grader blind failed": dict(good, graders=[dict(g, passed=g["name"] != "blind")
+                                                            for g in PASSED]),
+                 "grader reviewer-dispatched failed": dict(good, graders=[
+                     dict(g, passed=g["name"] != "reviewer-dispatched") for g in PASSED]),
+                 "grader answer-relayed failed": dict(good, graders=[
+                     dict(g, passed=g["name"] != "answer-relayed") for g in PASSED]),
+                 "trace missing": dict(good, tracePath=os.path.join(tmp, "gone.jsonl"))}
+        for reason, run in cases.items():
+            with self.subTest(reason=reason):
+                path = write_result(tmp, [good, run], name)
+                runs = score.runs_from_result(path, KEYS)
+                self.assertEqual(runs[0][5], [])
+                self.assertTrue(any(r.startswith(reason.replace("an error", "error"))
+                                    for r in runs[1][5]), runs[1][5])
+                lines, totals = score.report(runs, KEYS)
+                self.assertEqual((totals["runs"], totals["invalid"], totals["recall"]["all"]),
+                                 (1, 1, [1, 1]))
+                self.assertTrue([line for line in lines if line.startswith("INVALID %s run 2"
+                                                                           % name)])
+                done = subprocess.run([sys.executable, os.path.join(SUITE, "score.py"), path],
+                                      capture_output=True,
+                                      env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+                self.assertEqual(done.returncode, 1, done.stderr)
+                self.assertIn(b"invalid run", done.stderr)
+        path = write_result(tmp, [good], name)
+        done = subprocess.run([sys.executable, os.path.join(SUITE, "score.py"), path],
+                              capture_output=True, env=dict(os.environ,
+                                                            PYTHONDONTWRITEBYTECODE="1"))
+        self.assertEqual(done.returncode, 0, done.stderr)
+
+    def test_the_audit(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        name = case_of("l1-off-by-one")
+        line = KEYS[name]["locations"][0]["lines"][0]
+        with open(os.path.join(tmp, "t.jsonl"), "w", encoding="utf-8") as fh:
+            fh.write(trace_with(answer("CHANGES REQUIRED", "B1. page count — pager.py:%d — " %
+                                       line + "x" * 300, "B2. naming | style — README.md:1")))
+        path = write_result(tmp, [{"tracePath": "t.jsonl", "error": None, "graders": PASSED},
+                                  {"tracePath": "lost.jsonl", "error": None,
+                                   "graders": PASSED}], name)
+        done = subprocess.run([sys.executable, os.path.join(SUITE, "score.py"), path],
+                              capture_output=True, env=dict(os.environ,
+                                                            PYTHONDONTWRITEBYTECODE="1"))
+        self.assertEqual(done.returncode, 1)
+        rows = read(os.path.join(tmp, "audit.md")).split("\n")
+        self.assertIn("| case | run | kind | verdict | blocker | match | invalid |", rows)
+        first = [row for row in rows if row.startswith("| %s | 1 |" % name)]
+        self.assertEqual(len(first), 2)
+        self.assertIn("pager.py:%d-%d cited" % (line, line), first[0])
+        self.assertIn("...", first[0])
+        self.assertLess(len(first[0].split(" | ")[4]), 201)
+        self.assertIn("naming \\| style", first[1])
+        self.assertIn("| no match | - |", first[1])
+        second = [row for row in rows if row.startswith("| %s | 2 |" % name)]
+        self.assertEqual(len(second), 1)
+        self.assertIn("trace missing", second[0])
+
     def test_report_from_a_folder(self):
         tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, tmp)
@@ -632,13 +766,15 @@ class ScoreTest(unittest.TestCase):
             fh.write("\n".join(json.dumps(event) for event in events) + "\nnot json\n")
         result = {"schemaVersion": 1, "costUsd": 0.5, "cases": [
             {"name": case_of("l1-off-by-one"), "arms": {"with": [
-                {"score": 1, "costUsd": 0.41, "tracePath": "trace.jsonl", "graders": []}]}},
+                {"score": 1, "costUsd": 0.41, "tracePath": "trace.jsonl", "error": None,
+                 "graders": PASSED}]}},
             {"name": "plugin-agent-spawn", "arms": {"with": [{"costUsd": 9}]}}]}
         path = os.path.join(tmp, "aggregate-result.json")
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(result, fh)
         runs = score.runs_from_result(path, KEYS)
-        self.assertEqual([(r[0], r[1], r[3]) for r in runs], [(case_of("l1-off-by-one"), 1, 0.41)])
+        self.assertEqual([(r[0], r[1], r[3], r[5]) for r in runs],
+                         [(case_of("l1-off-by-one"), 1, 0.41, [])])
         self.assertEqual(runs[0][2], review)
         self.assertEqual(runs[0][4], {
             "all": {"input": 103, "cache read": 1030, "cache write": 206, "output": 103},
@@ -670,7 +806,8 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual(run[:4], ["claude", "plugin", "eval", os.path.dirname(HERE)])
         text = " ".join(run)
         for part in ("--tag reviewer-calibration", "--ablation none", "--scaffold",
-                     "--no-publish", "--allow-tools Agent Bash ToolSearch --model sonnet",
+                     "--no-publish", "--keep-temp",
+                     "--allow-tools Agent Bash ToolSearch --model sonnet",
                      "--runs 1", "-j 1", "--max-cost-usd 15", "--output-dir "):
             self.assertIn(part, text)
         self.assertNotIn("--case", run)
@@ -698,6 +835,84 @@ class RunnerTest(unittest.TestCase):
                     runner.parser().parse_args(argv)
         with self.assertRaises(SystemExit):
             self.command("--max-cost-usd", "5", "-j", "9")
+
+    def test_collect_copies_the_traces_and_removes_only_the_named_sandboxes(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(portability.rmtree, tmp, True)
+        out = os.path.join(tmp, "results")
+        os.makedirs(out)
+        roots = []
+        for number in (1, 2):
+            root = os.path.join(tmp, "claude-eval-AB%d" % number)
+            os.makedirs(os.path.join(root, "out"))
+            os.makedirs(os.path.join(root, "work", "closed"))
+            with open(os.path.join(root, "out", "trace.jsonl"), "w", encoding="utf-8") as fh:
+                fh.write("trace %d\n" % number)
+            os.chmod(os.path.join(root, "work", "closed"), 0o500)
+            roots.append(root)
+        other = os.path.join(tmp, "claude-eval-OTHER")
+        os.makedirs(os.path.join(other, "out"))
+        plain = os.path.join(tmp, "plain", "out")
+        os.makedirs(plain)
+        with open(os.path.join(plain, "trace.jsonl"), "w", encoding="utf-8") as fh:
+            fh.write("plain\n")
+        runs = [{"tracePath": os.path.join(roots[0], "out", "trace.jsonl")},
+                {"tracePath": os.path.join(roots[1], "out", "trace.jsonl")},
+                {"tracePath": os.path.join(plain, "trace.jsonl")},
+                {"tracePath": os.path.join(tmp, "claude-eval-GONE", "out", "trace.jsonl")}]
+        path = write_result(out, runs, "rc-01")
+        self.assertEqual(runner.collect(path), roots)
+        data = json.loads(read(path))["cases"][0]["arms"]["with"]
+        self.assertEqual([run["tracePath"] for run in data[:3]],
+                         ["traces/rc-01-1.jsonl", "traces/rc-01-2.jsonl", "traces/rc-01-3.jsonl"])
+        self.assertEqual(data[0]["keptTracePath"], runs[0]["tracePath"])
+        self.assertEqual(data[3]["tracePath"], runs[3]["tracePath"])
+        self.assertEqual(read(os.path.join(out, "traces", "rc-01-2.jsonl")), "trace 2\n")
+        self.assertFalse([root for root in roots if os.path.exists(root)])
+        self.assertTrue(os.path.isdir(other), "a sandbox the result does not name stays")
+        self.assertTrue(os.path.isfile(os.path.join(plain, "trace.jsonl")),
+                        "a folder not named like a sandbox stays")
+
+    def test_preflight(self):
+        blind = runner.blind_pattern()
+        self.assertTrue(blind.search("/x/evals-keys/y"))
+        home = os.path.join(os.sep, "home", "me")
+        self.assertEqual(runner.preflight(os.path.join(home, "repo"), os.path.join(os.sep, "tmp"),
+                                          home), ([], []))
+        errors, warnings = runner.preflight(os.path.join(os.sep, "srv", "repo"),
+                                            os.path.join(os.sep, "tmp"), home)
+        self.assertEqual(errors, [])
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("not under $HOME", warnings[0])
+        for repo, temp in ((os.path.join(home, "reviewer-calibration"), "/tmp"),
+                           (os.path.join(home, "repo"), "/tmp/evals-results")):
+            errors = runner.preflight(repo, temp, home)[0]
+            self.assertEqual(len(errors), 1, (repo, temp))
+            self.assertIn("blind grader", errors[0])
+
+    def test_the_exit_code_is_the_eval_s_or_score_s(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        for eval_code, score_code, expected in ((0, 0, 0), (1, 0, 1), (0, 1, 1), (2, 1, 1)):
+            def call(command, eval_code=eval_code, score_code=score_code):
+                if command[0] == "claude":
+                    out = command[command.index("--output-dir") + 1]
+                    os.makedirs(out)
+                    write_result(out, [])
+                    return eval_code
+                return score_code
+            with self.subTest(eval=eval_code, score=score_code), \
+                    mock.patch.object(runner, "REPO", os.path.join(tmp, str(expected),
+                                                                   str(eval_code))), \
+                    mock.patch.object(runner.subprocess, "call", side_effect=call), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(runner.main(["--max-cost-usd", "1"]), expected)
+        with mock.patch.object(runner, "REPO", os.path.join(tmp, "evals-keys")), \
+                mock.patch.object(runner.subprocess, "call") as call, \
+                contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(runner.main(["--max-cost-usd", "1"]), 2)
+        call.assert_not_called()
+        self.assertIn("refused", err.getvalue())
 
     def test_dry_run_runs_nothing(self):
         done = subprocess.run([sys.executable, os.path.join(SUITE, "run.py"), "--dry-run",
@@ -732,7 +947,13 @@ class ReadmeTest(unittest.TestCase):
     def test_trust_and_the_residual_risk(self):
         self.assertIn("run.py passes no `--trust-plugin`, so the first run asks you to trust the "
                       "plugin interactively", self.text)
-        self.assertIn("Limits: a run's session can still read your home folder", self.text)
+        self.assertIn("Limits, from a static reading of the 2.1.332 sandbox builder, not from an "
+                      "observed run", self.text)
+        self.assertIn("The residual risk is a checkout outside your home and outside the temp "
+                      "folder", self.text)
+        self.assertIn("run.py passes `--keep-temp`", self.text)
+        self.assertIn("read a run's numbers, the pilot's first, together with its audit",
+                      self.text)
 
     def test_no_mapping_in_the_readme(self):
         section = self.text.split("### Reviewer calibration")[1]

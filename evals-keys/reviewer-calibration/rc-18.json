@@ -32,5 +32,6 @@
     "infinite",
     "never stops"
   ],
+  "alone": [],
   "probe": "from retry import should_retry\nassert not should_retry(429, 3, 3)"
 }

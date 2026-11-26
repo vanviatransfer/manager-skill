@@ -20,5 +20,6 @@
     "default 10",
     "uses 10"
   ],
+  "alone": [],
   "probe": "assert \"(default: 10)\" in open(\"README.md\").read()"
 }

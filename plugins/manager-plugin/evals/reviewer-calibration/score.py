@@ -13,30 +13,39 @@ plugin folder (KEYS: `evals-keys/reviewer-calibration/` at the repository root, 
 file's path), so the run's session does not find them beside the cases; the case names (`rc-01`
 ...) say nothing of the kind, which only the keys hold.
 
-Rules, per run of a case:
-- The answer's `VERDICT:` line and its `Blockers:` entries are parsed. An entry starts with
+Invalid runs: a run of the result whose `error` is set, whose `blind`, `reviewer-dispatched` or
+`answer-relayed` grader did not pass, or whose trace is missing is INVALID: listed with its
+reasons, left out of every total, and the exit code is 1.
+
+Rules, per valid run of a case:
+- The answer's `VERDICT:` line and its Blockers section are parsed. The section starts at
+  `Blockers:` or a heading without a colon (`## Blockers`, `**Blockers**`); an entry starts with
   `B<n>.`, `- `, `* ` or `<n>.` / `<n>)` and runs to the next entry or section; markdown emphasis
   (`*`, `_`, backticks) and code fences are ignored, and an entry or section remainder that is
-  then `none`, `-` or an em dash is no blocker. No verdict line: `no verdict`.
-- planted: `found` when a blocker names one of the key's files (its path or file name) and either
-  cites a line of that file inside the key's line range (`file:12` or `file:10-14`) or holds one
-  of the key's terms; a guard case's term counts without a file too. Otherwise `missed`. A term is
-  bug-specific (a wrong blocker on the right file must not match it): case-insensitive, not inside
-  a longer word or number at its start, not followed by a digit when it ends in one (`20` is not
-  `2026`), a stem when it ends in a letter (`skip` holds `skipped`); a list term needs all its
-  parts. Other blockers are counted as extra.
+  then `none`, `no blockers`, `n/a`, `-` or an em dash is no blocker. No verdict line:
+  `no verdict`.
+- planted: `found` when a blocker holds one of the key's `alone` terms (a guard case's own
+  words, such as `Ran 0`), or names one of the key's files (its path or file name) and either
+  holds one of the key's `terms` or cites a line of that file inside the key's line range
+  (`file:12` or `file:10-14`). Otherwise `missed`. Terms are bug-specific, so a wrong blocker on
+  the right file does not match: case-insensitive whole words (`fold` is not in `folder`), never
+  inside a line citation (`README.md:20` holds no `20`); a list term needs all its parts. Other
+  blockers are counted as extra.
 - decoy, clean: any blocker, or a CHANGES REQUIRED verdict, is a `false alarm`; else `pass`.
   A run without a verdict counts against recall but is left out of the false-alarm rate.
-- round2-fixed: `accepted` (right) with a PASS or PASS WITH NOTES verdict and no blocker, else
-  `rejected` (wrong).
-- round2-unfixed: `rejected` (right) with a CHANGES REQUIRED verdict, else `accepted` (wrong);
-  whether a blocker names the bug is shown as for a planted case.
+- round2-fixed: right (`accepted`) when the verdict is PASS or PASS WITH NOTES and there is no
+  blocker; anything else is `rejected` (wrong).
+- round2-unfixed: right (`rejected`) when the verdict is CHANGES REQUIRED; anything else is
+  `accepted` (wrong). Whether a blocker names the bug is shown as for a planted case.
 
 Totals: recall per level (L1-L4, guard) and overall, the false-alarm rate (decoys and clean
-diffs, apart and together), round-2 correctness, runs without a verdict, and per run the cost
-(the result's `costUsd`) and tokens (input, cache read, cache write, output; summed over the
-trace's assistant messages, each message id once; `reviewer` is the reviewer agent's share).
-Exit 0 when it could score; 2 on a usage or input error. Standard library only, Python 3.8+.
+diffs, apart and together), round-2 correctness, runs without a verdict, invalid runs, and per
+run the cost (the result's `costUsd`) and tokens (input, cache read, cache write, output; summed
+over the trace's assistant messages, each message id once; `reviewer` is the reviewer agent's
+share). It also writes `audit.md` beside the result (in the answer folder for a folder): one row
+per blocker of each run with the match decision (the term or line that matched) and the invalid
+reasons, so a person can check the numbers by hand. Exit 0 when every run was scored; 1 when a
+run is invalid; 2 on a usage or input error. Standard library only, Python 3.8+.
 """
 import json
 import os
@@ -57,9 +66,16 @@ VERDICT = re.compile(r"^[\s>*_`#]*VERDICT:[*_`\s]*(PASS WITH NOTES|PASS|CHANGES 
 SECTION = re.compile(r"^[\s>*_`#-]*(Blockers|Notes|Acceptance|Validation|Not checked|"
                      r"Previous blockers|Checkout untouched|Reviewed SHA|Base SHA)\b[^:\n]*:",
                      re.I)
+# A heading without a colon: `## Blockers`, `### Notes (non-blocking)`, `**Blockers**`.
+HEADING = re.compile(r"^\s*(?:#+\s*[*_`]*|[*_]{1,2})(Blockers|Notes|Acceptance|Validation|"
+                     r"Not checked|Previous blockers|Checkout untouched)\b[^:\n]*$", re.I)
 ENTRY = re.compile(r"^\s*[*_`]*(?:B[0-9]+\s*[.):]|[-*](?:\s+|(?=[*_`]*B[0-9]))|[0-9]+[.)]\s+)",
                    re.I)
-NONE = re.compile(r"(?:\(?none\b.*|[-–—]+)$", re.I | re.S)
+NONE = re.compile(r"(?:\(?none\b.*|no blockers?\b.*|n/?a\b\.?|[-–—]+)$", re.I | re.S)
+# A line citation (`file.py:12`, `file.py:L3-L5`, `line 12`, `lines 3-5`), which no term matches.
+CITATION = re.compile(r"(?<=[\w)]):L?[0-9]+(?:\s*[-–]\s*L?[0-9]+)?|\blines?\s+[0-9]+"
+                      r"(?:\s*[-–]\s*[0-9]+)?", re.I)
+GRADERS = ("blind", "reviewer-dispatched", "answer-relayed")
 
 
 def clean(text):
@@ -92,7 +108,7 @@ def parse(text):
         if line.strip().startswith("```"):
             continue
         entry = inside and ENTRY.match(line)
-        section = None if entry else SECTION.match(line)
+        section = None if entry else SECTION.match(line) or HEADING.match(line)
         if section:
             if current is not None:
                 blockers.append(current)
@@ -143,36 +159,49 @@ def names_file(blocker, path):
 
 
 def has_term(text, term):
-    """Whether `text` holds the term (a string, or a list whose parts must all be there)."""
+    """Whether `text` holds the term as whole words (a string, or a list whose parts must all
+    be there); a line citation in `text` never matches (`README.md:20` holds no `20`)."""
     if isinstance(term, list):
         return all(has_term(text, part) for part in term)
+    text = CITATION.sub(" ", text)
     pattern = re.escape(term)
     if re.match(r"\w", term):
         pattern = r"(?<![A-Za-z0-9_])" + pattern
-    if re.search(r"[0-9]$", term):
-        pattern += r"(?![0-9])"
+    if re.search(r"\w$", term):
+        pattern += r"(?![A-Za-z0-9_])"
     return bool(re.search(pattern, text, re.I))
 
 
+def shown(term):
+    return " + ".join(term) if isinstance(term, list) else term
+
+
 def located(blocker, key):
-    """Whether one blocker names the planted bug of the answer key."""
-    term = any(has_term(blocker, t) for t in key.get("terms", []))
-    if term and key.get("level") == "guard":
-        return True
+    """Why one blocker names the planted bug of the answer key, or None: an `alone` term, or a
+    key file with a key term or a cited line in the key's range."""
+    for term in key.get("alone", []):
+        if has_term(blocker, term):
+            return "term %r" % shown(term)
+    terms = [t for t in key.get("terms", []) if has_term(blocker, t)]
     for place in key.get("locations", []):
-        if names_file(blocker, place["file"]) and (
-                term or cites_lines(blocker, place["file"], place["lines"])):
-            return True
-    return False
+        if not names_file(blocker, place["file"]):
+            continue
+        if terms:
+            return "%s + term %r" % (place["file"], shown(terms[0]))
+        if cites_lines(blocker, place["file"], place["lines"]):
+            return "%s:%d-%d cited" % (place["file"], place["lines"][0], place["lines"][1])
+    return None
 
 
 def grade(key, text):
-    """One run of a case: {"outcome", "right", "verdict", "blockers", "extra", "named"}."""
+    """One run of a case: {"outcome", "right", "verdict", "blockers", "extra", "named",
+    "matches": [(blocker, why it names the bug or None)]}."""
     review = parse(text)
     verdict, blockers = review["verdict"], review["blockers"]
-    named = [b for b in blockers if located(b, key)]
+    matches = [(b, located(b, key)) for b in blockers]
+    named = [b for b, why in matches if why]
     out = {"verdict": verdict, "blockers": len(blockers), "named": bool(named),
-           "extra": len(blockers) - len(named)}
+           "extra": len(blockers) - len(named), "matches": matches}
     kind = key["kind"]
     if verdict is None:
         out.update(outcome="no verdict", right=False)
@@ -252,8 +281,27 @@ def from_trace(events):
     return (answer if answer is not None and VERDICT.search(answer) else final or answer), tokens
 
 
+def invalid_reasons(run, trace):
+    """Why a run of the result cannot be scored: an error, a failed run grader, no trace."""
+    reasons = []
+    if run.get("error"):
+        reasons.append("error: %s" % str(run["error"])[:200])
+    graders = {g.get("name"): g for g in run.get("graders") or [] if isinstance(g, dict)}
+    for name in GRADERS:
+        if name not in graders:
+            reasons.append("grader %s not in the result" % name)
+        elif graders[name].get("passed") is not True:
+            reasons.append("grader %s failed" % name)
+    if not trace:
+        reasons.append("no tracePath")
+    elif not os.path.isfile(trace):
+        reasons.append("trace missing: %s" % trace)
+    return reasons
+
+
 def runs_from_result(path, keys):
-    """[(case, run number, answer text, cost or None, tokens)] of an aggregate-result.json."""
+    """[(case, run number, answer text, cost or None, tokens, invalid reasons)] of an
+    aggregate-result.json; a relative `tracePath` is read from the result's folder."""
     with open(path, encoding="utf-8") as fh:
         data = json.load(fh)
     base, runs = os.path.dirname(os.path.abspath(path)), []
@@ -266,9 +314,10 @@ def runs_from_result(path, keys):
             trace = run.get("tracePath")
             if trace:
                 trace = trace if os.path.isabs(trace) else os.path.join(base, trace)
-                if os.path.isfile(trace):
-                    text, tokens = from_trace(read_trace(trace))
-            runs.append((name, number, text, run.get("costUsd"), tokens))
+            reasons = invalid_reasons(run, trace)
+            if trace and os.path.isfile(trace):
+                text, tokens = from_trace(read_trace(trace))
+            runs.append((name, number, text, run.get("costUsd"), tokens, reasons))
     return runs
 
 
@@ -279,7 +328,7 @@ def runs_from_folder(folder, keys):
         if match and match.group(1) in keys:
             with open(os.path.join(folder, name), encoding="utf-8") as fh:
                 runs.append((match.group(1), int(match.group(2) or 1), fh.read(), None,
-                             {"all": {}, "reviewer": {}}))
+                             {"all": {}, "reviewer": {}}, []))
     return runs
 
 
@@ -291,8 +340,12 @@ def report(runs, keys):
     """(the report's lines, its totals as a dict)."""
     lines, graded = ["case | run | kind | level | verdict | blockers | outcome | cost USD | "
                      "tokens all (in/cache read/cache write/out) | reviewer"], []
-    for name, number, text, cost, tokens in sorted(runs, key=lambda r: (r[0], r[1])):
+    invalid = []
+    for name, number, text, cost, tokens, reasons in sorted(runs, key=lambda r: (r[0], r[1])):
         key = keys[name]
+        if reasons:
+            invalid.append((name, number, reasons))
+            continue
         result = grade(key, text)
         graded.append((key, result, cost, tokens))
         lines.append(" | ".join([
@@ -305,7 +358,7 @@ def report(runs, keys):
             if tokens["all"] else "unknown",
             "/".join(str(tokens["reviewer"].get(label, "?")) for label, _ in TOKEN_KEYS)
             if tokens["reviewer"] else "unknown"]))
-    totals = {"runs": len(graded), "recall": {}, "no verdict": 0}
+    totals = {"runs": len(graded), "recall": {}, "no verdict": 0, "invalid": len(invalid)}
     planted = [(k, r) for k, r, _, _ in graded if k["kind"] == "planted"]
     for level in LEVELS:
         rows = [r for k, r in planted if k.get("level") == level]
@@ -328,6 +381,10 @@ def report(runs, keys):
                 summed[label] = summed.get(label, 0) + value
         totals["tokens " + agent] = summed or None
     lines.append("")
+    for name, number, reasons in invalid:
+        lines.append("INVALID %s run %d (left out of every total): %s" % (name, number,
+                                                                         "; ".join(reasons)))
+    lines.append("invalid runs: %d" % len(invalid))
     lines.append("recall: " + ", ".join("%s %s" % (level, ratio(*totals["recall"][level]))
                                         for level in LEVELS + ("all",)))
     lines.append("false alarms: decoys %s, clean %s, together %s" % (
@@ -342,6 +399,31 @@ def report(runs, keys):
         lines.append("tokens %s: %s" % (agent, "unknown" if not summed else ", ".join(
             "%s %d" % (label, summed.get(label, 0)) for label, _ in TOKEN_KEYS)))
     return lines, totals
+
+
+def cell(text, limit=200):
+    text = " ".join((text or "").split()).replace("|", "\\|")
+    return text if len(text) <= limit else text[:limit - 3] + "..."
+
+
+def audit(runs, keys):
+    """The audit table (markdown): per run its verdict, each blocker and why it matched or not,
+    and the reasons a run is invalid, for checking the numbers by hand."""
+    lines = ["# Reviewer calibration audit", "",
+             "Keyword matching is approximate: read the totals together with this table.", "",
+             "| case | run | kind | verdict | blocker | match | invalid |",
+             "|---|---|---|---|---|---|---|"]
+    for name, number, text, _, _, reasons in sorted(runs, key=lambda r: (r[0], r[1])):
+        key = keys[name]
+        result = grade(key, text)
+        rows = result["matches"] or [(None, None)]
+        for blocker, why in rows:
+            lines.append("| %s | %d | %s | %s | %s | %s | %s |" % (
+                name, number, key["kind"], result["verdict"] or "none",
+                cell(blocker) if blocker else "(no blocker)",
+                cell(why) if why else ("no match" if blocker else "-"),
+                cell("; ".join(reasons)) if reasons else "-"))
+    return lines
 
 
 def main(argv):
@@ -362,10 +444,17 @@ def main(argv):
         sys.stderr.write("score: no run of a reviewer-calibration case in %s\n" % args[0])
         return 2
     lines, totals = report(runs, keys)
+    folder = args[0] if os.path.isdir(args[0]) else os.path.dirname(os.path.abspath(args[0]))
+    with open(os.path.join(folder, "audit.md"), "w", encoding="utf-8") as fh:
+        fh.write("\n".join(audit(runs, keys)) + "\n")
     if "--json" in argv:
         print(json.dumps(totals, indent=2, sort_keys=True))
     else:
         print("\n".join(lines))
+    if totals["invalid"]:
+        sys.stderr.write("score: %d invalid run(s), left out of the totals; see above\n"
+                         % totals["invalid"])
+        return 1
     return 0
 
 

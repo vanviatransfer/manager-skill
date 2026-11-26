@@ -17,10 +17,15 @@
   "terms": [
     ">=",
     "100, 100",
+    "exactly 100",
     "exactly the threshold",
     "equal to the threshold",
-    "boundary",
-    "inclusive"
+    "equal to 100",
+    "strict",
+    "strictly",
+    "inclusive",
+    "at least"
   ],
+  "alone": [],
   "probe": "from discount import is_eligible\nassert is_eligible(100, 100)"
 }

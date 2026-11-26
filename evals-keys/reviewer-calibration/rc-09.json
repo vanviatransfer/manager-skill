@@ -23,13 +23,16 @@
     }
   ],
   "terms": [
-    "skip",
-    "skipped",
     "flaky",
     "0044",
     "international",
-    "unreachable",
-    "never reached"
+    "leading 0"
+  ],
+  "alone": [
+    "skip",
+    "skips",
+    "skipped",
+    "@unittest.skip"
   ],
   "probe": "from phone import normalize\nassert normalize(\"0044 20 7946 0000\") == \"+442079460000\""
 }

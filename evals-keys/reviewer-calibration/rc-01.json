@@ -15,18 +15,34 @@
     },
     {
       "file": "store.py",
-      "lines": [
-        13,
-        13
-      ],
-      "text": "return self._items[key]"
+      "lines": null,
+      "text": null
     }
   ],
   "terms": [
-    "KeyError",
     "is None",
     "None check",
-    "first visit"
+    "first visit",
+    [
+      "KeyError",
+      "record"
+    ],
+    [
+      "KeyError",
+      "caller"
+    ],
+    [
+      "KeyError",
+      "service"
+    ],
+    [
+      "raises",
+      "record"
+    ],
+    "returning None",
+    "returns None",
+    "expects None"
   ],
+  "alone": [],
   "probe": "import service\nassert service.record(\"home\") == 1"
 }

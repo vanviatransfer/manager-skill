@@ -15,11 +15,25 @@
     }
   ],
   "terms": [
-    "empty",
     "ZeroDivisionError",
     "division by zero",
     "divide by zero",
-    "mean([])"
+    "divides by zero",
+    "mean([])",
+    [
+      "empty",
+      "zero"
+    ],
+    [
+      "empty",
+      "crash"
+    ],
+    [
+      "empty",
+      "raises"
+    ],
+    "no values"
   ],
+  "alone": [],
   "probe": "from stats import mean\nassert mean([]) is None"
 }

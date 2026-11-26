@@ -6,5 +6,6 @@
   "summary": "correct",
   "locations": [],
   "terms": [],
+  "alone": [],
   "probe": "from slug import slugify as s\nassert s(\"abc def\", max_length=4) == \"abc\" and len(s(\"x\" * 80)) == 50\nassert not any(s(\"ab \" * k, max_length=m).endswith(\"-\") for k in range(1, 9) for m in range(1, 12))"
 }

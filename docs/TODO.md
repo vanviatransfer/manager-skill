@@ -1514,42 +1514,59 @@ No change to the reviewer, its brief, the manager skill or a hook; nothing runs 
   line to find it from. The session sends one `manager-plugin:reviewer` the reviewer
   brief's dispatch and relays its answer. Validation (`python3 run_tests.py`) exits 0 at every
   candidate, so no planted bug is caught by the tests alone.
-- **Cases** (key labels; the id of each is in its key). Planted, L1 obvious: `rc-l1-off-by-one` (`page_count` = `total // size + 1`),
-  `rc-l1-wrong-operator` (`>` where the acceptance says at least). L2 logic: `rc-l2-empty-input`
-  (`mean([])` divides by zero), `rc-l2-wrong-condition` (a 429 skips the attempt limit). L3
-  cross-file: `rc-l3-caller-not-updated` (`load(paths)`, `cli.py` still passes one string),
-  `rc-l3-contract-change` (`find` raises `KeyError`, `service.record` expects None). L4 doc or
-  record drift: `rc-l4-readme-drift` (README default 20, code 10), `rc-l4-plan-drift` (a change-log
-  line claims accent folding). Guard: `rc-weakened-test` (the failing test skipped as flaky, the
-  0.9.13 flags), `rc-zero-tests` (tests renamed out of discovery: exit 0, `Ran 0 tests`, the
-  0.9.14 rule). Decoys, comment-free: `rc-decoy-fallthrough` (chained `if`s reassigning the role),
-  `rc-decoy-guarded-none` (`match and match.group(1)`), `rc-decoy-for-else`,
-  `rc-decoy-ceil-idiom` (`-(-n // size)`). Clean: `rc-clean-clamp`, `rc-clean-retry`,
-  `rc-clean-readme-option`, `rc-clean-slug-limit` (the last three are the right twins of an L2 and
-  both L4 cases, same base). Round 2, with `Previous blockers`: `rc-round2-fixed` (a real fix),
-  `rc-round2-unfixed` (0 refused, 65536 still accepted).
+- **Cases** (key labels; the id of each is in its key). Planted, L1 obvious: `l1-off-by-one` (`page_count` = `total // size + 1`),
+  `l1-wrong-operator` (`>` where the acceptance says at least). L2 logic: `l2-empty-input`
+  (`mean([])` divides by zero), `l2-wrong-condition` (a 429 skips the attempt limit). L3
+  cross-file: `l3-caller-not-updated` (`load(paths)`, `cli.py` still passes one string),
+  `l3-contract-change` (`find` raises `KeyError`, `service.record` expects None). L4 doc or
+  record drift: `l4-readme-drift` (README default 20, code 10), `l4-plan-drift` (a change-log
+  line claims accent folding). Guard: `weakened-test` (the failing test skipped as flaky, the
+  0.9.13 flags), `zero-tests` (tests renamed out of discovery: exit 0, `Ran 0 tests`, the
+  0.9.14 rule). Decoys, comment-free: `decoy-fallthrough` (chained `if`s reassigning the role),
+  `decoy-guarded-none` (`match and match.group(1)`), `decoy-for-else`,
+  `decoy-ceil-idiom` (`-(-n // size)`). Clean: `clean-clamp`, `clean-retry`,
+  `clean-readme-option`, `clean-slug-limit` (the last three are the right twins of an L2 and
+  both L4 cases, same base). Round 2, with `Previous blockers`: `round2-fixed` (a real fix),
+  `round2-unfixed` (0 refused, 65536 still accepted).
 - **Graders.** In the run (free, regex and `tool_used`): a reviewer got this candidate, the final
   message holds a verdict line, and the trace names none of `reviewer-calibration`, `evals-keys`,
   `evals-results`, `evals/results`, `score.py`, `test_reviewer_calibration`, `answer.json` (the
   brief, the reviewer agent and the workspace hold none of them; a test checks it). No grader on
   the expected verdict: a case's graders would tell it.
   `score.py` (deterministic, blind; reads `aggregate-result.json`, each run's trace, and the keys):
-  the reviewer's own answer (the Agent tool result, else the final message), its `VERDICT` and
-  blockers (`B<n>.`, `-`, `1.` entries; markdown bold, `none` on the heading or the next line, or
-  a lone dash, is no blocker). Planted: found when a blocker names a key file and a line in the
-  key's range (`file:12`, `file:10-14`) or a key term (tight terms: no file names or generic
-  words; a guard case's term counts without a file); decoy or clean: any blocker or CHANGES REQUIRED is a
-  false alarm; round 2: accept the fixed one (PASS, no blocker), refuse the unfixed one (PASS or PASS WITH NOTES with no blocker is accept). Report:
-  per run, recall per level and overall, false-alarm rate (decoys, clean, both; runs without a
-  verdict apart), round-2 right, no-verdict runs, cost (`costUsd`) and tokens (input, cache read,
-  cache write, output; all agents and the reviewer's share, each message id once).
+  a run with an `error`, a failed `blind`, `reviewer-dispatched` or `answer-relayed` grader, or a
+  missing trace is INVALID, listed with its reasons, left out of every total, and the exit is 1.
+  Of a valid run it reads the reviewer's own answer (the Agent tool result, else the final
+  message), its `VERDICT` and blockers (`B<n>.`, `-`, `1.` entries; `Blockers:` or a heading
+  without a colon, `## Blockers`, `**Blockers**`; markdown bold, `none`, `no blockers`, `n/a` or a
+  lone dash on the heading or the next line is no blocker). Planted: found when a blocker holds
+  one of the key's `alone` terms (guard cases only: `Ran 0`, `0 tests`, `skip`, ...), or names a
+  key file and a line in the key's range (`file:12`, `file:10-14`) or a key term. Terms are whole
+  words, never a cited line number (`README.md:20` holds no `20`), and specific to the bug, so a
+  wrong fault on the right file is missed; the tests hold a wrong and a right blocker for each
+  loose or strict term found in review. Decoy or clean: any blocker or CHANGES REQUIRED is a false
+  alarm. Round 2: the fixed case is right when it is accepted (PASS or PASS WITH NOTES, with no
+  blocker); the unfixed case is right when it is refused (CHANGES REQUIRED). Report: per run,
+  recall per level and overall, false-alarm rate (decoys, clean, both; runs without a verdict
+  apart), round-2 right, no-verdict and invalid runs, cost (`costUsd`) and tokens (input, cache
+  read, cache write, output; all agents and the reviewer's share, each message id once). It also
+  writes `audit.md` beside the result: per run and blocker, the case, kind, verdict, the blocker
+  (200 characters at most), the match decision with the term or line that matched, and the
+  INVALID reasons. Keyword matching is never exact: the pilot's numbers are to be read with it.
 - **Runner.** `run.py --max-cost-usd USD` (required) `[--model sonnet|opus] [--runs N] [-j N]
   [--case GLOB] [--dry-run]`, defaults Sonnet, 1 run, `-j 1`: `claude plugin eval` with `--tag
-  reviewer-calibration --ablation none --scaffold --no-publish --allow-tools Agent Bash ToolSearch
-  --max-cost-usd` (the CLI's hard ceiling, checked before each run) `--output-dir
-  evals-results/<UTC time>` (repository root, git-ignored), then `score.py`. No `--trust-plugin`:
-  the first run asks to trust the plugin interactively. The
-  README's command for the invariant cases now names their tags, so it leaves this suite out.
+  reviewer-calibration --ablation none --scaffold --no-publish --keep-temp --allow-tools Agent
+  Bash ToolSearch --max-cost-usd` (the CLI's hard ceiling, checked before each run) `--output-dir
+  evals-results/<UTC time>` (repository root, git-ignored), then `score.py`. `--keep-temp`: in
+  2.1.332 each run's `finally` removes its sandbox (`claude-eval-XXXXXX/`, `out/trace.jsonl`
+  included) unless the run errored, so without it every run would be scored without a trace. After
+  the eval run.py copies each trace to `traces/<case>-<n>.jsonl` in the result folder, points the
+  result's `tracePath` there (the old path kept as `keptTracePath`) and removes the kept sandbox
+  roots the result names (never by glob, without running git inside them). Before launching it
+  refuses (exit 2) a repository or `TMPDIR` path holding a blind string, and warns when the
+  repository is not under `$HOME`. It exits non-zero when the eval or `score.py` does. No
+  `--trust-plugin`: the first run asks to trust the plugin interactively. The README's command
+  for the invariant cases now names their tags, so it leaves this suite out.
 - **Estimated tokens per run** (one run of the 20 cases; not measured, estimated from fixture size
   and `usage.py` on this repository's local reviewer transcripts): the 33 reviewer subagents of
   one local session took 6-49 requests, 89k-2.9M cache read, 4-44k output, 22-134k context at
@@ -1563,27 +1580,34 @@ No change to the reviewer, its brief, the manager skill or a hook; nothing runs 
   measured manager case (README, Sonnet, 23 turns) cost 0.31 USD. Unknown until the pilot.
 - **Pilot** (1 run, Sonnet, capped; from the repository root):
   `python3 plugins/manager-plugin/evals/reviewer-calibration/run.py --max-cost-usd 15`
-  (`--dry-run` first prints the exact `claude plugin eval` command). Start smaller with
+  (`--dry-run` first prints the exact `claude plugin eval` command; read the numbers with
+  the result's `audit.md`). Start smaller with
   `--case rc-01` (one case; the CLI's glob takes `*` and `?`; pick ids from the keys).
 - **Tests (free).** `evals/test_reviewer_calibration.py`: the mix, the keys outside the plugin,
   no kind hint in any case and a shuffled order, the blind pattern absent from the prompt, the
-  briefs, the reviewer agent and every workspace, every case valid in the
-  `test_evals.py` format and tagged for this suite only, one prompt apart from its commits and
-  previous blocker and naming no answer, the graders; every scaffold run twice (same SHAs), the
-  prompt's commits, a clean tree, under 150 lines, no key in the workspace, the plan check,
-  validation exit 0 (0 tests only in the zero-tests case), each key's probe failing exactly at the
-  planted and unfixed candidates, each key's lines holding its marker; `score.py` on hand-written
-  answers (found by line and by term, markdown answers, wrong faults on the right file missed,
-  missed, no verdict, false alarm, round 2) and on a result
-  with its trace; `run.py`'s command and its required ceiling. `test_evals.py` leaves the suite out
-  of its invariant checks.
-- **Limits.** The `aggregate-result.json` shape (`cases[].arms.with[]`, `costUsd`, `tracePath`)
-  is read from the 2.1.332 CLI, not from a run. The term match is approximate (a blocker about
-  another fault that names the file and a key term counts as found); the probe and line markers
-  keep the keys true to the fixtures. Residual risk: the session can still read the home folder,
-  keys and results included; only the `blind` grader catches it. Not checked from a run: how the
-  CLI names a case's scaffold folder and whether a trace shows the output folder (either holding
-  `reviewer-calibration` or `evals-results` would fail an honest run's blind grader).
+  briefs, the reviewer agent and every workspace, every case valid in the `test_evals.py` format
+  and tagged for this suite only, one prompt apart from its commits and previous blocker and
+  naming no answer, the graders; every scaffold run twice (same SHAs), the prompt's commits, a
+  clean tree, under 150 lines, no key in the workspace, the plan check, validation exit 0 (0 tests
+  only in the zero-tests case), each key's probe failing exactly at the planted and unfixed
+  candidates, each key's lines holding its marker; `score.py` on hand-written answers (found by
+  line and by term, markdown answers and headings, wrong faults on the right file missed, right
+  blockers in other words found, missed, no verdict, false alarm, round 2), on a result with its
+  trace, on invalid runs (each reason, exit 1) and the audit table; `run.py`'s command with
+  `--keep-temp` and its required ceiling, the trace copy and sandbox removal on a fake result
+  tree, the path checks, and its exit code. `test_evals.py` leaves the suite out of its invariant
+  checks.
+- **Limits.** The `aggregate-result.json` shape (`cases[].arms.with[]`, `costUsd`, `tracePath`,
+  `error`, `graders[].passed`) and the sandbox clean-up are read from the 2.1.332 CLI, not from a
+  run. The term match is approximate; the audit table is there to check it by hand, and the probe
+  and line markers keep the keys true to the fixtures. Residual risk, from a static reading of
+  the 2.1.332 sandbox builder (not an observed run): Bash's `denyRead` covers the operator's home,
+  the plugin folder's parent, the system temp folder and similar, and the Read tool is held to the
+  allowed tools and the eval folder's deny, so a checkout under home keeps `evals-keys/` and
+  `evals-results/` unreadable. The real risk is a checkout outside home and outside the temp
+  folder, where the repository root, keys included, may be readable through Bash; run.py warns
+  then. The blind strings, traced statically the same way, do not appear in an honest run; only a
+  checkout or `TMPDIR` path holding one would trip them, and run.py refuses to launch then.
 - **Also (0.9.14 review follow-ups).** `test_usage.py`: `StreakTest` and its helpers above the
   `__main__` guard. Item 27: brief word counts as the test counts them. `test_invisible_unicode`
   `test_reference_files_are_checked_too` routes its files in `## Knowledge`, so the clean skill
