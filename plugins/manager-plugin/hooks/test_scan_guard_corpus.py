@@ -36,6 +36,17 @@ def load():
 
 
 CORPUS_DATA = load()
+# Git Bash converts a POSIX-looking HOME for the Windows Python it starts (/home/tester becomes
+# C:\Program Files\Git\home\tester), so on Windows the hook gets a Windows-form home (its
+# parent a root, as /home/tester's is) and the hook input spells the corpus home that way.
+HOOK_HOME = "C:\\Users\\tester" if os.name == "nt" else CORPUS_DATA["home"]
+
+
+def for_hook(data):
+    """The hook input with the corpus home spelled as HOOK_HOME (unchanged off Windows)."""
+    if HOOK_HOME == CORPUS_DATA["home"]:
+        return data
+    return json.loads(json.dumps(data).replace(CORPUS_DATA["home"], HOOK_HOME.replace("\\", "/")))
 
 
 def hook_input(entry):
@@ -143,14 +154,14 @@ class CorpusTest(unittest.TestCase):
         """The real wrapper (its grep pre-filter, its Python lookup). Run for every entry that
         is to be refused or that the predicate refuses; for the rest the hook exits 0 whatever
         the pre-filter does. Entries with `dirs` need a mocked folder: the predicate's result."""
-        env = self.hook_env(CORPUS_DATA["home"])
+        env = self.hook_env(HOOK_HOME)
         results, bad = [], []
         for e in self.entries:
             pred = predicate(e)
             if e.get("dirs") or not (pred or e["expect"] == "block"):
                 results.append(pred)
                 continue
-            blocked = self.run_hook(hook_input(e), dict(env, **e.get("env", {}))) == 2
+            blocked = self.run_hook(for_hook(hook_input(e)), dict(env, **e.get("env", {}))) == 2
             results.append(blocked)
             if blocked != pred and not e.get("hook_gap"):
                 bad.append("hook and predicate differ: " + label(e))

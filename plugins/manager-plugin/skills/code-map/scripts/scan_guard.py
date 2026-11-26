@@ -90,9 +90,10 @@ def norm(path):
     return "" if s == "/" else s.rstrip("/")
 
 
-def home_values():
+def home_values(posix=True):
     """The literal HOME and USERPROFILE paths, unless one is itself a repository's top (a
-    container with HOME=/app holding the repository: scanning it is scanning the repository)."""
+    container with HOME=/app holding the repository: scanning it is scanning the repository).
+    posix: a Windows-form home in its Git Bash, Cygwin and WSL spellings too (`/c/Users/x`)."""
     out = set()
     for var in ("HOME", "USERPROFILE"):
         v = os.environ.get(var)
@@ -100,13 +101,18 @@ def home_values():
             top = sn.find_top(v) if os.path.isdir(v) else None
             if top and os.path.normcase(top) == os.path.normcase(os.path.abspath(v)):
                 continue
-            out.add(norm(v))
+            n = norm(v)
+            out.add(n)
+            drive = re.match(r"^([a-z]):(/.*)?$", n)
+            if posix and drive:
+                out.update(p + "/" + drive.group(1) + (drive.group(2) or "")
+                           for p in ("", "/cygdrive", "/mnt"))
     return out
 
 
 def is_root_norm(s, posix=True):
     return s in HOME_WORDS or any(r.fullmatch(s) for r in ROOT_RES) or \
-        (posix and any(r.fullmatch(s) for r in POSIX_RES)) or s in home_values()
+        (posix and any(r.fullmatch(s) for r in POSIX_RES)) or s in home_values(posix)
 
 
 def absolute(path):
