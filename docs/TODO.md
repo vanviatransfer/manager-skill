@@ -999,7 +999,7 @@ shipped behaviour, so plugin.json stays 0.9.7.
 The scan guard's tests were hand-picked tables. A data-only corpus now measures both failure
 kinds: a leak (a root scan that passes) and a false block (normal work refused).
 
-- **Corpus.** `hooks/scan_guard_corpus.json`: 334 entries (181 block, 153 pass; Bash 243,
+- **Corpus.** `hooks/scan_guard_corpus.json`: 335 entries (182 block, 153 pass; Bash 244,
   PowerShell 58, Glob 20, Grep 13), one entry per line: `cat`, `tool`, `input` (the tool input),
   optional `cwd` (default per tool in the file's header, as is the `HOME` it assumes), optional
   `env` (variables set for the entry), optional `dirs` (paths, expanded and with `/`, that the test
@@ -1051,9 +1051,11 @@ kinds: a leak (a root scan that passes) and a false block (normal work refused).
   0.9.6 (`cat > notes.md <<\EOF` with `find / -name x` in the body). A `<<` (not `<<<`) whose
   delimiter can't be read (`$((1<<2))`, `<< ""`) stays text, as in f3a720f, and the rest of the
   command is scanned. A `<<WORD` inside quotes is still taken for an opener and drops the lines
-  after it up to `WORD` (as in f3a720f); when that leaves text shlex can't split (an opener inside
-  a quoted commit message), the command passes: no refusal, and the token fallback is not run on it
-  (fail open).
+  after it up to `WORD` (as in f3a720f). When that leaves text shlex can't split but the command
+  as written splits (an opener inside a quoted commit message), the command passes: no refusal,
+  and the token fallback is not run on it (fail open). When the command as written doesn't split
+  either (`cat <<EOF ... EOF` then `echo $'it\'s'; find / -name x`), the token fallback runs on
+  the text without the bodies, as in f3a720f.
 - **Dotted leaves for `dir /s`.** `dir /s <root>\x.y` counts as a search for the file `x.y` over
   the whole root only when `x.y` is not an existing folder. The spelling is expanded first (`~`,
   `%VAR%`, `$env:NAME`, `${NAME}`, `$NAME`; PowerShell's `$HOME` falls back to `USERPROFILE`), and
@@ -1070,7 +1072,7 @@ kinds: a leak (a root scan that passes) and a false block (normal work refused).
   | category | entries | f3a720f | after |
   | --- | ---: | ---: | ---: |
   | bait | 60 | 0/2 \| 0/2 | 0/0 \| 0/0 |
-  | composition | 25 | 0/0 \| 0/0 | 0/0 \| 0/0 |
+  | composition | 26 | 0/0 \| 0/0 | 0/0 \| 0/0 |
   | cwd-root | 30 | 0/0 \| 0/0 | 0/0 \| 0/0 |
   | gap | 4 | 0/0 \| 0/0 | 0/0 \| 0/0 |
   | glob-grep | 33 | 0/0 \| 0/0 | 0/0 \| 0/0 |
@@ -1080,7 +1082,7 @@ kinds: a leak (a root scan that passes) and a false block (normal work refused).
   | root-spelling | 33 | 4/0 \| 4/0 | 0/0 \| 0/0 |
   | scanner | 45 | 5/3 \| 5/3 | 0/0 \| 0/0 |
   | wrapper | 32 | 11/0 \| 11/0 | 0/0 \| 0/0 |
-  | total | 334 | 30/6 \| 30/6 | 0/0 \| 0/0 |
+  | total | 335 | 30/6 \| 30/6 | 0/0 \| 0/0 |
 
   Gaps: 14 for the predicate, 15 for the hook (the hook gap below), the same entries at f3a720f.
   f3a720f's bait false blocks are `cat > notes.md <<\EOF ... find / -name x ... EOF` and a

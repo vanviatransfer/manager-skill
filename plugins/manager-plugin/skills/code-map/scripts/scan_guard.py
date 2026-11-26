@@ -470,20 +470,29 @@ def new_cwd(arg, cwd, posix=True):
     return None if cwd is None and not absolute(arg) else sn.join(cwd or "/", arg)
 
 
+def drive_roots(cmd):
+    """An unquoted drive root before a space (`find C:\\ -name x`): Git Bash would read `\\ ` as
+    an escaped space; the model meant the drive."""
+    return re.sub(r"(?<![\w\\])([A-Za-z]:)\\(?=[\s;|&)\"']|$)", r"\1/", cmd)
+
+
+def splits(cmd):
+    try:
+        shlex.split(drive_roots(cmd), comments=True, posix=True)
+    except ValueError:
+        return False
+    return True
+
+
 def scan_bash(scan, cmd, cwd, depth=0):
     if depth > MAX_DEPTH:
         return
-    dropped = drop_heredocs(cmd)
-    changed, cmd = dropped != cmd, dropped
-    # An unquoted drive root before a space (`find C:\ -name x`): Git Bash would read `\ ` as an
-    # escaped space; the model meant the drive.
-    cmd = re.sub(r"(?<![\w\\])([A-Za-z]:)\\(?=[\s;|&)\"']|$)", r"\1/", cmd)
-    try:
-        shlex.split(cmd, comments=True, posix=True)
-    except ValueError:
-        if changed:  # a here-document opener inside a quote ate lines: fail open
-            return
-        return fallback(scan, cmd, cwd)
+    original, cmd = cmd, drop_heredocs(cmd)
+    if not splits(cmd):
+        if cmd != original and splits(original):
+            return  # a here-document opener inside a quote ate lines: fail open
+        return fallback(scan, drive_roots(cmd), cwd)
+    cmd = drive_roots(cmd)
     for inner in substitutions(cmd):
         scan_bash(scan, inner, cwd, depth + 1)
     for words, after_pipe in sn.simple_commands(cmd):

@@ -141,6 +141,7 @@
     {"cat": "composition", "tool": "Bash", "input": {"command": "echo / | xargs find"}, "expect": "block", "note": "xargs takes the path from stdin", "known_gap": "paths from stdin are unknown"},
     {"cat": "composition", "tool": "Bash", "input": {"command": "echo $((1<<2)); find / -name x"}, "expect": "block", "note": "an arithmetic shift is no here-document: the rest is still scanned"},
     {"cat": "composition", "tool": "Bash", "input": {"command": "grep -n '<<EOF' notes.md\nfind / -name x"}, "expect": "block", "note": "a quoted <<WORD is taken for a here-document opener", "known_gap": "a quoted <<WORD drops the lines after it up to the delimiter (as in 0.9.7)"},
+    {"cat": "composition", "tool": "Bash", "input": {"command": "cat <<EOF\nx\nEOF\necho $'it\\'s'; find / -name x"}, "expect": "block", "note": "unparseable before the here-document body is dropped too: the token fallback still runs"},
     {"cat": "quoting", "tool": "Bash", "input": {"command": "find \"/\" -name x"}, "expect": "block", "note": "double-quoted root"},
     {"cat": "quoting", "tool": "Bash", "input": {"command": "find '/' -name x"}, "expect": "block", "note": "single-quoted root"},
     {"cat": "quoting", "tool": "Bash", "input": {"command": "FIND / -name x"}, "expect": "block", "note": "upper case"},
