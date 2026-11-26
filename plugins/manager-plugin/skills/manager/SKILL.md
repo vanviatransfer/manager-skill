@@ -71,8 +71,7 @@ A **run** is one owner request to execute the plan, within one session, until it
 Compaction does not end it, and the owner's answers to the final decision batch continue it. Each
 run gets an id at the gate, `R<YYYY-MM-DD-HHMM>`, whichever rule settles its strategy; it goes into
 every PR body the run opens (`Run:` dispatch field) and every review-ledger comment. Working-notes
-line: `Run <id>: model strategy <strategy> (owner: "<quote>" | standing)`, then
-`; improvement pass: on|off`.
+line: `Run <id>: model strategy <strategy> (owner: "<quote>" | standing)`.
 
 At the gate (step 0 item 6), again after a compaction, and when a phase needs more model than the
 strategy allows, read `references/model-strategy.md`: **Which strategy applies**, **Asking**,
@@ -274,5 +273,4 @@ question, the plan's location, a new plan's approval), or when no ready phase is
   uncommitted or unpushed work after an agent ended with no report.
 
 Before the final report, read `references/final-report.md`; with it, the **Run marker** rule.
-Improvement pass on → also read `references/improvement-pass.md`.
 Self-training skills: before the decision batch, follow `references/self-training-due.md`.

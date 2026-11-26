@@ -1,10 +1,11 @@
 # Improvement pass
 
 Read by the manager skill before the final report when the run's improvement pass is on
-(`references/model-strategy.md`, **Applying**), and again after a compaction until that report:
-when the pass runs, its dispatch, where its output goes.
+(`references/model-strategy.md`, **Applying**; pointed to by `references/final-report.md`), and
+again after a compaction until that report: when the pass runs, its dispatch, where its output
+goes. The pass's suffix on the strategy lines is defined in `references/model-strategy.md`.
 
-The pass is one read-only Opus researcher that looks at everything the run landed and suggests
+The pass is one read-only Opus reviewer agent that looks at everything the run landed and suggests
 improvements. It is opt-in and off by default; off → nothing here applies, and the final report
 says nothing about it. It is purely additive: on or off, every strategy (all Opus, all Sonnet or
 mixed) gives each phase's implementer and reviewer exactly the model and effort it gives without
@@ -23,10 +24,10 @@ batch continued the run) → never dispatch it again.
 the default branch whose PR body carries this run's `Run:` id; neither found → don't dispatch, say
 so in one line.
 
-**Dispatch.** Change the line to `Run <id>: improvement pass: dispatched — <start>..<final>,
-report <path>`, with a new `Report file` path outside every repository. Measure the
+**Dispatch.** Change the line to `Run <id>: improvement pass: dispatched — <start>..<final>`.
+Measure the
 **Ignored-data guard** before and after (`references/dispatch.md`). One Agent call:
-`subagent_type: manager-plugin:researcher`, `model: opus`, `effort: high`,
+`subagent_type: manager-plugin:reviewer`, `model: opus`, `effort: high`,
 `run_in_background: false`, the prompt `Read and follow <the resolved path of
 ${CLAUDE_SKILL_DIR}/references/brief-improvement.md>.` and that brief's dispatch fields:
 `Notes carried forward` are the run's non-blocking review notes (the working-notes line), never a
@@ -34,14 +35,16 @@ reviewer's whole review or an implementer's report. Before and after the call, n
 rev-parse HEAD` and `git status --short --untracked-files=no` of the shared checkout: a change is
 an unresolved risk in the final report (never restore anything yourself).
 
-**Result.** Change the line to `done — report <path>, <n> tokens` (the token use the Agent
-tool's completion notice gives) or `failed: <one-line reason>`. Failed: the dispatch errored, the
-agent type is unavailable, the agent ended with no report, or its return and the report file both
-lack the items list. No retry, no second dispatch, no fallback agent: one line in the final report
-and continue. Read from the report file only its items list, and only when the return lacks it.
+**Result.** The reviewer agent has no Write tool, so the items come in its final answer, not in
+a file. Change the line to `done — <n> items, <t> tokens` (the token use the Agent tool's
+completion notice gives) or `failed: <one-line reason>`. Failed: the dispatch errored, the agent
+type is unavailable, the agent ended with no answer, or its answer lacks the items list. No retry,
+no second dispatch, no fallback agent: one line in the final report and continue. A verdict line
+in the answer is ignored: the pass gates nothing.
 
-**Output.** The final report gets a section `İyileştirme önerileri`: each item in one line, in
-the owner's language (rank, the problem or action, `file:line`, value and cost), then the report
-file's path and the pass's token use. Nothing goes into the plan automatically and nothing blocks
-or changes merged work: the owner picks items, and a picked item becomes a phase only through the
-normal plan route (a plan-only PR from the owner's words, or the `living-plan` skill).
+**Output.** The final report gets a section `İyileştirme önerileri`: each item in one line, in the
+owner's language (rank, the problem or action, `file:line`, value and cost), copied from the agent's
+answer, then what it did not check and the pass's token use. Nothing goes into the plan
+automatically and nothing blocks or changes merged work: the owner picks items, and a picked item
+becomes a phase only through the normal plan route (a plan-only PR from the owner's words, or the
+`living-plan` skill).

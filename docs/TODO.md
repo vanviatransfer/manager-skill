@@ -1827,19 +1827,22 @@ rules, the eval suites, any cost ceiling, or any strategy's per-phase models and
   as before, and only the pass's own rules name `model: opus`.
 - **When and what.** After the last ready phase is closed and any bookkeeping PR has landed,
   before the final report, once per run (a working-notes state line stops a second dispatch after
-  a compaction), only when a phase PR landed. One `manager-plugin:researcher`, `model: opus`,
-  effort `high`, from `references/brief-improvement.md`: the run's range diff and log, the
+  a compaction), only when a phase PR landed. One `manager-plugin:reviewer`, `model: opus`,
+  effort `high`, from `references/brief-improvement.md`, not `reviewer-brief.md` (the agent only
+  follows the brief it is named; it forces no verdict format): the reviewer agent is read-only
+  but runs validation and probes, the setup of item 33's Opus result, while the researcher agent
+  forbids execution. Inputs: the run's range diff and log, the
   plan's goal, constraints and binding decisions, the carried-forward notes; read-only on the
   project, validation and probes only in a scratch clone, the ignored-data guard around it.
 - **Output.** At most 7 ranked items (problem, `file:line`, evidence, action, value, cost; no
-  "for awareness" or cosmetic items), then what it did not check. The final report's
-  "İyileştirme önerileri" lists them with the report path and token use. Nothing enters the plan
+  "for awareness" or cosmetic items), then what it did not check, all in the agent's answer (it
+  has no Write tool, so no report file). The final report's "İyileştirme önerileri" lists them
+  with the token use. Nothing enters the plan
   automatically; a failure is one line, no retry.
-- **Size.** The manager skill's character ceiling rises from 17,600 to 17,700 (the suffix and the
-  pointer add 101 characters); the rules live in `references/improvement-pass.md`. The step-0
-  listing now holds seven `brief-*.md` files.
+- **Size.** The manager skill is unchanged (17,587 characters, ceiling 17,600 kept: no room for
+  a pointer). `references/final-report.md`, which the skill names, points to
+  `references/improvement-pass.md`; the pointer test accepts that one step. The suffix is defined
+  in `references/model-strategy.md`. The step-0 listing now holds seven `brief-*.md` files.
 - **Limits.** Not run live; the token estimate (100-200k) is a guess from item 33's single 81k
-  sample. The researcher agent's own rule forbids executing the code it researches; the brief
-  makes the one exception for validation and probes in a scratch clone, which an agent may still
-  decline.
+  sample. The items exist only in the agent's answer and the final report, not in a file.
 - plugin.json 0.9.20; README: the option, default off, its estimated cost.

@@ -361,8 +361,7 @@ class SizeCeilingTest(unittest.TestCase):
     ceiling by what it adds. Words are counted as `str.split()` does (`wc -w` in a UTF-8 locale)."""
 
     def test_manager_skill_fits_the_reattach_budget(self):
-        """17,587 characters at 0.9.19; 0.9.20's improvement-pass suffix and pointer add 101."""
-        self.assertLessEqual(len(read(os.path.join(MANAGER, "SKILL.md"))), 17700)
+        self.assertLessEqual(len(read(os.path.join(MANAGER, "SKILL.md"))), 17600)
 
     def test_code_map_skill(self):
         """9,108 characters at 0.9.10, after its rare paths moved to `references/`; 9,347 at
@@ -406,6 +405,10 @@ class ReferencePointerTest(unittest.TestCase):
                       "`reviewer-brief.md`", self.skill)
         named.update(("implementer-brief.md", "reviewer-brief.md"))
         briefs = self.texts["implementer-brief.md"] + self.texts["reviewer-brief.md"]
+        # Reached through final-report.md, which the skill names: the ceiling has no room for
+        # its own pointer.
+        self.assertIn("`references/improvement-pass.md`", self.texts["final-report.md"])
+        named.add("improvement-pass.md")
         for name in self.texts:
             if name == "SKILL.md":
                 continue
@@ -739,8 +742,7 @@ class ImprovementPassTest(unittest.TestCase):
                      "Anything else is off: no answer, a strategy given without that line being "
                      "asked, a line without the suffix."):
             self.assertIn(line, self.strategy, line)
-        self.assertIn('Working-notes line: `Run <id>: model strategy <strategy> (owner: "<quote>" '
-                      '| standing)`, then `; improvement pass: on|off`.', self.texts["SKILL.md"])
+        self.assertIn("Both lines, and the working-notes line, may end with", self.strategy)
 
     def test_the_fixtures_strategy_lines_leave_the_pass_off(self):
         """The eval fixtures record standing strategies without the suffix: no eval run starts a
@@ -756,14 +758,15 @@ class ImprovementPassTest(unittest.TestCase):
     def test_the_gate_asks_it_and_the_skill_points_to_it(self):
         self.assertIn("Sonda Opus iyileştirme turu (tek ajan, salt okunur, öneriler rapora; "
                       "~100–200k token): Evet / Hayır Model tercihiniz hangisi?", self.strategy)
-        self.assertIn("Improvement pass on → also read `references/improvement-pass.md`.",
-                      self.texts["SKILL.md"])
+        self.assertNotIn("improvement", self.texts["SKILL.md"].lower())  # no room under 17,600
         self.assertIn("`İyileştirme önerileri` section or its one line "
-                      "(`references/improvement-pass.md`)", self.texts["final-report.md"])
+                      "(read `references/improvement-pass.md` first)",
+                      self.texts["final-report.md"])
 
     def test_the_pass_rules(self):
         rules = self.texts["improvement-pass.md"]
-        for words in ("`subagent_type: manager-plugin:researcher`, `model: opus`, `effort: high`",
+        for words in ("`subagent_type: manager-plugin:reviewer`, `model: opus`, `effort: high`",
+                      "the items come in its final answer, not in a file",
                       "**Ignored-data guard** before and after",
                       "only when at least one phase PR (not a setup or plan-only PR) landed",
                       "never dispatch it again",
@@ -774,7 +777,8 @@ class ImprovementPassTest(unittest.TestCase):
         brief = self.texts["brief-improvement.md"]
         for words in ("at most 7 items, ranked by value", "End with what you did not check.",
                       "Never copy, link or read the checkout's git-ignored data",
-                      "You write only the report file.", "No \"for awareness\" items",
+                      "You write nothing else.", "No \"for awareness\" items",
+                      "you have no Write tool; write no file", "no verdict line",
                       "Range: <default head at the run's step 0>..<default head now>",
                       "Notes carried forward: <the run's non-blocking review notes | none>"):
             self.assertIn(words, brief, words)
