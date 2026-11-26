@@ -113,6 +113,8 @@ RETRO_CALL = (ORCHESTRATOR_CALL % "Bash" + r'[^{}]*"input":\s*\{(?:[^{}"\\]|"(?:
 RETRO_CASES = ["manager-run/review-before-pinned-merge"]
 # The suite of reviewer-calibration cases, run only by hand (its run.py).
 CALIBRATION = "reviewer-calibration"
+# Its tags, one per tier (`run.py --tier base|hard`); every case of both is in its folder.
+CALIBRATION_TAGS = (CALIBRATION, CALIBRATION + "-hard")
 
 
 class FormatError(ValueError):
@@ -689,8 +691,21 @@ class CasesTest(unittest.TestCase):
     def test_every_invariant_has_a_case(self):
         tags = [tag for case in self.cases.values() for tag in case.get("tags", [])]
         self.assertEqual(sorted(set(tags)), sorted(INVARIANTS))
+        self.assertFalse(set(tags) & set(CALIBRATION_TAGS))
+        self.assertFalse(set(INVARIANTS) & set(CALIBRATION_TAGS))
         for case in self.cases.values():
             self.assertTrue(case.get("tags") and case.get("description"), case["name"])
+
+    def test_both_calibration_tiers_are_left_out(self):
+        """Every case with a reviewer-calibration tag (either tier) is in the suite's folder,
+        which these checks skip."""
+        tagged = {folder: load(folder)["tags"] for folder in case_folders(skip=())
+                  if set(load(folder).get("tags", [])) & set(CALIBRATION_TAGS)}
+        self.assertEqual(sorted({tag for tags in tagged.values() for tag in tags}),
+                         sorted(CALIBRATION_TAGS))
+        for folder in tagged:
+            self.assertTrue(folder.startswith(CALIBRATION + "/"), folder)
+            self.assertNotIn(folder, self.cases)
 
     def test_the_tools_a_grader_names_are_the_run_s_to_call(self):
         """A tool the case does not allow is withheld from the model: a grader that wants a call

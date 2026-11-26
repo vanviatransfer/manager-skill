@@ -1,0 +1,39 @@
+{
+  "case": "rc-26",
+  "name": "round2-unfixed-leap-year",
+  "kind": "round2-unfixed",
+  "level": null,
+  "tier": "hard",
+  "summary": "`year % 4 == 0` makes 1900 and 2100 leap years, and the 1900 test was changed to expect 29",
+  "locations": [
+    {
+      "file": "months.py",
+      "lines": [
+        19,
+        19
+      ],
+      "text": "year % 4 == 0"
+    },
+    {
+      "file": "tests/test_months.py",
+      "lines": [
+        21,
+        21
+      ],
+      "text": "days_in_month(1900, 2), 29"
+    }
+  ],
+  "terms": [
+    "1900",
+    "2100",
+    "century",
+    "centuries",
+    "400",
+    "% 100",
+    "% 400",
+    "divisible by 100",
+    "Gregorian"
+  ],
+  "alone": [],
+  "probe": "from months import days_in_month as d\nassert d(1900, 2) == 28 and d(2100, 2) == 28 and d(2000, 2) == 29 and d(2024, 2) == 29"
+}

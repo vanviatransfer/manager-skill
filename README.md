@@ -671,6 +671,25 @@ previous blocker (a real fix, and a fix that only looks done). The cases are nam
 messages or branches) tells its kind; which case is which lives only in the answer keys. The
 validation passes at every candidate, so no planted bug is caught by the tests alone.
 
+A second, harder tier of 12 cases, `rc-21` to `rc-32` (tag `reviewer-calibration-hard`), runs
+apart from these 20, which stay the cheap regression set (`run.py --tier hard`; the default
+`--tier base` runs the 20). Its repositories are larger (under 600 lines; one has about 20
+files) and its faults subtler: 7 planted bugs (1 L1, a condition dropped in a move of about 200
+lines; 3 L2, one of them a diff with two independent faults; 1 L3; 2 L4, code and test that agree
+with each other against the plan), 1 round-2 case whose fix covers the reported example but not
+its kind, 2 decoys, 1 clean refactor of about 200 lines, and 1 nit: correct code with only a minor
+flaw, where PASS or PASS WITH NOTES without a blocker is right and any blocker or CHANGES REQUIRED
+is over-blocking. Every rule above holds for it, tier included: nothing in a case tells it. A key
+of the hard tier says `"tier": "hard"` (none: the base tier) and may hold several `findings`, each
+matched like a single bug except that a cited line counts for a finding only when it overlaps its
+range and stays clear of the other findings' ranges in that file: the run is `found` when all are,
+`partial` when some are, and recall counts each finding. `score.py` reports over-blocking of the nit
+on its own line, apart from the false-alarm rate, and gives the totals of each tier when a result
+holds both. Built and tested, not run. Estimated cost (an estimate from the base tier's 0.12-0.14
+USD a case and the larger repositories, not a measurement): 0.25-0.45 USD a case at Sonnet, so 3-5.5
+USD a run of the 12.
+One run per case says little; a meaningful read needs `--runs 3`.
+
 The answer keys (`evals-keys/reviewer-calibration/<case>.json` at the repository root: the
 case's kind, level, the bug's files and line ranges, key terms and a probe) stay outside the
 plugin folder, which is all a run's session is pointed at. The run's graders check that the
@@ -700,6 +719,8 @@ or a WSL2 distribution such as Ubuntu:
 
 ```
 python3 plugins/manager-plugin/evals/reviewer-calibration/run.py --max-cost-usd 15
+python3 plugins/manager-plugin/evals/reviewer-calibration/run.py --tier hard --runs 3 \
+  --max-cost-usd 17
 ```
 
 `--dry-run` prints the `claude plugin eval` and `score.py` commands it would run.

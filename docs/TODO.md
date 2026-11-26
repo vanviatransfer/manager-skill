@@ -1691,3 +1691,75 @@ No change to the reviewer, its brief, the manager skill or a hook; nothing runs 
   designed first and approved by the owner. Opus or `--runs 3` (about 4-7.5 USD) only after
   that, since at the ceiling they would teach little.
 - **Cost.** None for normal runs; this entry records a by-hand run.
+
+### 32. Reviewer calibration hard tier, built, not run (plugin 0.9.18)
+
+Why: item 31 left every measure of the 20 cases at the ceiling, so they cannot tell a better
+reviewer from a worse one. The owner approved this design, including a repository limit of 600
+lines for this tier only. Built and tested only; the paid run waits for the owner's budget. No
+change to the reviewer, its brief, the manager skill, a hook, `retro.sh`, the run record rules,
+the 20 base cases or their keys, or any cost ceiling.
+
+- **Where.** `plugins/manager-plugin/evals/reviewer-calibration/rc-21` to `rc-32`, in the same
+  format and folder as the base tier (`case.yaml`, `prompt.md`, `scaffold.sh` on the shared
+  `fixture.sh`, the same three graders), tagged `reviewer-calibration-hard` only. Keys in
+  `evals-keys/reviewer-calibration/rc-21.json` to `rc-32.json` with `"tier": "hard"` (a key
+  without `tier` is base, so the base keys are unchanged). The prompt is the base tier's, apart
+  from the commits (and round 2's previous blocker); nothing in a case, its tag aside, tells its
+  kind or tier. The CLI (2.1.332, read from its code) picks a case when one of its tags equals
+  one of `--tag`'s, so the base tag does not take the hard cases. The hard tag holds the blind
+  string `reviewer-calibration`, as the base tag does; no run reads a case's tags (the 20 base
+  runs of item 31 passed the blind grader with theirs).
+- **Cases** (key labels; the id of each is in its key; 78-298 lines in all). Planted, L1:
+  `l1-condition-dropped-in-move` (price rules moved from `orders.py` to `pricing.py` under new
+  names, a 190-line diff; the free-shipping rule lost its home-country condition). L2:
+  `l2-mutable-default` (`seen=[]` collects every call's hashtags), `l2-late-binding` (lambdas made
+  in a loop all read the last maximum), `l2-two-faults` (one diff, two findings: the median of an
+  even count is the upper middle value, and `ordered = values` sorts the caller's list in place).
+  L3: `l3-tuple-to-dict` (19 files; `parse_version` returns a dict, its tests and one caller are
+  updated, the untested `release.bump` still reads `parsed[0]`). L4: `l4-half-up` (the acceptance
+  says halves round up; `round()` and the new test agree on 2.5 giving 2), `l4-binding-decision`
+  (the base plan's B2 says `config.load` never raises; `int(port)` raises on a bad port, an
+  untested path). Round 2: `round2-unfixed-leap-year` (the fix makes 2024 a leap year by `year % 4`
+  and changes the 1900 test to expect 29). Decoys: `decoy-memo-default` (a shared default list used
+  on purpose as a documented memo), `decoy-sentinel-reraise` (a sentinel compared with `is`; an
+  `except Exception` that logs and re-raises). Clean: `clean-refactor` (four renderers share one
+  cell format, a 171-line diff; checked equal to the old code on 30000 random tables). Nit
+  (new kind): `nit-docstring-typo` (correct and tested; "seperated" in a docstring).
+- **Order.** Shuffled as the base tier, but 7 planted cases of 12 cannot all be apart: the test
+  holds no two neighbours of one kind and level, and one pair of planted neighbours at most (L4
+  then L2). Levels are not sorted.
+- **score.py.** A key may hold `findings` (each with `locations`, `terms`, `alone`) in place of one
+  bug: each is matched as before, except that a cited line or range counts for a finding only when
+  it overlaps its range and stays clear of every other finding's range in that file (`stats.py:18`
+  names finding 1, `:16-17` or `:15-17` finding 2, `:9-18` neither); terms count as before. Known
+  risk: finding 2's `copy`, `unchanged`, `as it was` and `in place` can credit the sort bug from a
+  median-only blocker that suggests sorting a copy with `sorted(values)`; audit.md shows each match,
+  so it can be checked by hand. The run is `found` when all are, `partial` when some, `missed` when
+  none, right only when found; recall counts findings (so `l2-two-faults` adds 2 to L2), and the
+  audit labels the finding a blocker matched (`finding 2: ...`). Kind `nit`: right (`pass`) with
+  PASS or PASS WITH NOTES and no blocker, else `over-blocking`; its own line `over-blocking nit:
+  x/y`, printed when a scored tier has a nit, never in the false-alarm rate. A result with runs of
+  both tiers also gets each tier's totals (`tier hard: ...`, `tiers` in `--json`); a result of one
+  tier reports as before.
+- **Runner.** `run.py --tier base|hard` (default base) picks the tag; nothing else changed. From
+  the repository root: `python3 plugins/manager-plugin/evals/reviewer-calibration/run.py --tier
+  hard --runs 3 --max-cost-usd 17` (`--dry-run` first).
+- **Estimated cost** (an estimate, not a measurement): 0.25-0.45 USD a case at Sonnet, from the
+  base tier's measured 0.12-0.14 USD a case (item 31) and repositories up to three times larger,
+  so 3-5.5 USD per run of the 12 and 9-16 USD for `--runs 3`. One run per case reads little: a
+  meaningful read needs `--runs 3`.
+- **Tests (free).** `test_reviewer_calibration.py`: the mix per tier (base as before; hard:
+  planted 7 over L1 1, L2 3, L3 1, L4 2, round2-unfixed 1, decoy 2, clean 1, nit 1), one tag per
+  tier matching `run.py`'s, the line limit per tier (150, 600), the key fields per tier and per
+  finding, and every per-case check of the base tier on the hard cases too (SHAs, prompt, blind
+  pattern, plan check, validation exit 0, probe failing exactly at planted and unfixed candidates,
+  markers of each finding). `score.py`: right and wrong blockers for each hard planted key, two
+  findings found, partial and missed, the nit passed and over-blocked, totals per tier and one
+  tier as before; `run.py --tier`. `test_evals.py` checks that every case with either tag is in
+  the suite's folder, which its invariant checks leave out.
+- **Limits.** Keyword matching stays approximate; read the audit. The decoys, the clean diff and
+  the nit were written to be correct, but a reviewer may still argue a point: the memo list of
+  `decoy-memo-default` is not safe across threads (the plan names none), and `initials` of a word
+  that starts with `ß` gives two letters.
+- plugin.json 0.9.18; README: the hard tier and its command.

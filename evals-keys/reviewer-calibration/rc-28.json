@@ -1,0 +1,12 @@
+{
+  "case": "rc-28",
+  "name": "clean-refactor",
+  "kind": "clean",
+  "level": null,
+  "tier": "hard",
+  "summary": "correct: the four renderings give the same output as before",
+  "locations": [],
+  "terms": [],
+  "alone": [],
+  "probe": "from table import render, render_csv, render_html, render_markdown\nh = [\"x\", \"n\", \"f\", \"z\", \"b\"]\nrows = [[\"a|b\", 1, 2.5, None, True], [\"<c>,d\", -20, 0.25, \"\", False]]\nassert render(h, rows) == (\"x      n    f     z  b\\n-----  ---  ----  -  ---\\n\"\n                           \"a|b      1  2.50     yes\\n<c>,d  -20  0.25     no\")\nassert render_markdown(h, rows).split(\"\\n\")[1] == \"|---|--:|--:|---|---|\"\nassert render_csv(h, rows) == 'x,n,f,z,b\\r\\na|b,1,2.50,,yes\\r\\n\"<c>,d\",-20,0.25,,no\\r\\n'\nassert '<td>&lt;c&gt;,d</td><td class=\"num\">-20</td>' in render_html(h, rows)"
+}

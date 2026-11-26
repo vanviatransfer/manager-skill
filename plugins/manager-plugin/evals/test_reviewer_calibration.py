@@ -2,26 +2,31 @@
 python3 -m unittest discover -s <this folder>
 
 - Every case is a valid `claude plugin eval` case (the format of `test_evals.py`), named `rc-01`
-  to `rc-20` in a shuffled order and tagged `reviewer-calibration` only, with the same prompt and
-  graders; nothing in a case tells its kind; the answer keys (`evals-keys/reviewer-calibration/`
-  at the repository root, outside the plugin folder) hold the mix the suite promises (8 planted
-  bugs over L1-L4, 2 guard cases, 4 decoys, 4 clean diffs, 2 round-2 cases).
+  to `rc-32` in a shuffled order per tier, with the same prompt and graders. The base tier,
+  `rc-01` to `rc-20`, is tagged `reviewer-calibration` only; the hard tier, `rc-21` to `rc-32`,
+  `reviewer-calibration-hard` only (`run.py --tier hard`). Nothing in a case tells its kind or
+  tier; the answer keys (`evals-keys/reviewer-calibration/` at the repository root, outside the
+  plugin folder) hold the mix each tier promises (base: 8 planted bugs over L1-L4, 2 guard cases,
+  4 decoys, 4 clean diffs, 2 round-2 cases; hard: 7 planted over L1-L4, one of them with two
+  findings, 1 round-2 case, 2 decoys, 1 clean diff, 1 nit).
 - The blind grader's pattern is in none of what a run reads: the prompt, the manager's briefs,
   the reviewer agent, the workspace (files, commit messages, branches, git config) and the plan's
   phase section.
 - Every scaffold builds the same two (round 2: three) commits every time, leaves the checkout on
   the candidate with a clean tree, refuses a folder that holds a repository and keeps its
-  repository small; the base plan passes `plan.py check`; the commits the prompt names are the
-  ones it builds; validation exits 0 at every candidate (the zero-tests case: with 0 tests run),
-  so no planted bug is caught by the tests alone; each answer key's probe fails at a planted or
-  unfixed candidate and passes at the others; each key's line range holds its marker text.
+  repository small (base: 150 lines, hard: 600); the base plan passes `plan.py check`; the
+  commits the prompt names are the ones it builds; validation exits 0 at every candidate (the
+  zero-tests case: with 0 tests run), so no planted bug is caught by the tests alone; each answer
+  key's probe fails at a planted or unfixed candidate and passes at the others (a nit's too);
+  each line range of a key (of each finding) holds its marker text.
 - score.py grades hand-written answers right (found, missed, false alarm, round 2, no verdict,
-  markdown answers, a wrong fault on the right file, a right one in other words), reads a run's
-  result and trace, leaves invalid runs (an error, a failed run grader, a missing trace) out of
-  the totals with a non-zero exit, and writes the audit table; run.py builds the command with its
-  defaults, a required cost ceiling, `--keep-temp` and the results folder, copies the traces and
-  removes the kept sandboxes, refuses a path the blind grader would trip on, and exits non-zero
-  when the eval or score.py does.
+  markdown answers, a wrong fault on the right file, a right one in other words, a key with two
+  findings found, partial or missed, a nit passed or over-blocked), reads a run's result and
+  trace, leaves invalid runs (an error, a failed run grader, a missing trace) out of the totals
+  with a non-zero exit, writes the audit table and gives per-tier totals for a result of both
+  tiers; run.py builds the command with its defaults, a required cost ceiling, the tier's tag,
+  `--keep-temp` and the results folder, copies the traces and removes the kept sandboxes, refuses
+  a path the blind grader would trip on, and exits non-zero when the eval or score.py does.
 Without the key folder (the plugin copied alone) the tests that need the keys are skipped.
 Standard library only, Python 3.8+.
 """
@@ -46,20 +51,27 @@ sys.path.insert(0, PLUGIN)  # portability.py, in the plugin folder
 import portability  # noqa: E402
 import run as runner  # noqa: E402
 import score  # noqa: E402
-from test_evals import (CALIBRATION, INVARIANTS, PLAN_PY, README, case_folders, load,  # noqa: E402
-                        problems, read)
+from test_evals import (CALIBRATION, CALIBRATION_TAGS, INVARIANTS, PLAN_PY, README,  # noqa: E402
+                        case_folders, load, problems, read)
 
 KINDS = {"planted": 10, "decoy": 4, "clean": 4, "round2-fixed": 1, "round2-unfixed": 1}
 LEVELS = {"L1": 2, "L2": 2, "L3": 2, "L4": 2, "guard": 2}
+HARD_KINDS = {"planted": 7, "round2-unfixed": 1, "decoy": 2, "clean": 1, "nit": 1}
+HARD_LEVELS = {"L1": 1, "L2": 3, "L3": 1, "L4": 2}
+MIX = {"base": (KINDS, LEVELS), "hard": (HARD_KINDS, HARD_LEVELS)}
+IDS = {"base": ["rc-%02d" % n for n in range(1, 21)],
+       "hard": ["rc-%02d" % n for n in range(21, 33)]}
+TAGS = {"base": CALIBRATION, "hard": CALIBRATION + "-hard"}
 GRADERS = ("answer-relayed", "blind", "reviewer-dispatched")
 REFUSE = ("planted", "round2-unfixed")
 DISPATCH = re.compile(r"Base SHA: ([0-9a-f]{40})   Candidate SHA: ([0-9a-f]{40})\n")
 HINT = re.compile(r"(?<![A-Za-z0-9])(planted|decoy|clean|guard|round ?-?2|L[1-4]|calibration|"
-                  r"drift|bug|trap|answer key|false alarm|off-by-one|weakened|zero-tests)"
+                  r"drift|bug|trap|answer key|false alarm|off-by-one|weakened|zero-tests|nit|"
+                  r"hard|tier|typo)"
                   r"(?![A-Za-z0-9])", re.I)
 BLIND = ("reviewer-calibration", "evals-keys", "evals-results", "evals/results", "score.py",
          "test_reviewer_calibration", "answer.json")
-MAX_LINES = 150
+MAX_LINES = {"base": 150, "hard": 600}
 KEYS = score.answer_keys()
 NAMES = {key["name"]: case for case, key in KEYS.items()}
 needs_keys = unittest.skipUnless(KEYS, "no answer keys beside this plugin copy")
@@ -92,6 +104,16 @@ def suite_cases():
 
 def key_of(folder):
     return KEYS[folder.split("/")[-1]]
+
+
+def tier_of(folder):
+    """The tier of a case folder, from its id."""
+    return [tier for tier, ids in IDS.items() if folder.split("/")[-1] in ids][0]
+
+
+def places(key):
+    """Every location of a key, over all its findings."""
+    return [place for finding in score.findings_of(key) for place in finding["locations"]]
 
 
 def case_of(name):
@@ -150,15 +172,26 @@ class CaseTest(unittest.TestCase):
 
     def test_neutral_ids(self):
         names = sorted(folder.split("/")[-1] for folder in self.folders)
-        self.assertEqual(names, ["rc-%02d" % n for n in range(1, 21)])
+        self.assertEqual(names, ["rc-%02d" % n for n in range(1, 33)])
+        self.assertEqual(IDS["base"] + IDS["hard"], names)
+
+    def test_one_tag_per_tier(self):
+        self.assertEqual(TAGS, runner.TIER_TAGS)
+        self.assertEqual(sorted(TAGS.values()), sorted(CALIBRATION_TAGS))
+        for folder, case in self.cases.items():
+            with self.subTest(case=folder):
+                self.assertEqual(case["tags"], [TAGS[tier_of(folder)]])
+                for text in (case["description"], case["execution"]["prompt"]):
+                    self.assertNotIn("hard", text.lower())
+                    self.assertNotIn("tier", text.lower())
 
     def test_every_case_is_a_valid_case_of_this_suite_only(self):
         for folder, case in self.cases.items():
             with self.subTest(case=folder):
                 self.assertEqual(problems(case), [])
                 self.assertEqual(case["name"], folder.split("/")[-1])
-                self.assertEqual(case["tags"], [CALIBRATION])
-                self.assertNotIn(CALIBRATION, INVARIANTS)
+                self.assertIn(case["tags"], [[tag] for tag in CALIBRATION_TAGS])
+                self.assertFalse(set(CALIBRATION_TAGS) & set(INVARIANTS))
                 self.assertEqual((case["runs"], case["execution"]["model"]), (1, "sonnet"))
                 self.assertEqual(case["context"], {"scaffold_script": "scaffold.sh"})
                 self.assertEqual(sorted(case["execution"]["allowed_tools"]),
@@ -246,6 +279,7 @@ class CaseTest(unittest.TestCase):
         for folder, case in self.cases.items():
             with self.subTest(case=folder):
                 self.assertIsNone(blind.search(case["execution"]["prompt"]))
+                self.assertIsNone(blind.search(case["description"]))
         self.assertIsNone(blind.search(read(os.path.join(SUITE, "fixture.sh"))))
 
 
@@ -267,46 +301,77 @@ class KeyTest(unittest.TestCase):
         self.assertEqual(sorted(KEYS), sorted(f.split("/")[-1] for f in suite_cases()))
 
     def test_the_mix(self):
-        kinds = [key["kind"] for key in KEYS.values()]
-        self.assertEqual({kind: kinds.count(kind) for kind in set(kinds)}, KINDS)
-        levels = [key["level"] for key in KEYS.values() if key["kind"] == "planted"]
-        self.assertEqual({level: levels.count(level) for level in set(levels)}, LEVELS)
-        self.assertTrue(all(key["level"] is None for key in KEYS.values()
-                            if key["kind"] != "planted"))
+        for tier, (mix, mix_levels) in MIX.items():
+            keys = [KEYS[case] for case in IDS[tier]]
+            with self.subTest(tier=tier):
+                self.assertEqual(sorted(score.tier_of(key) for key in keys), [tier] * len(keys))
+                kinds = [key["kind"] for key in keys]
+                self.assertEqual({kind: kinds.count(kind) for kind in set(kinds)}, mix)
+                levels = [key["level"] for key in keys if key["kind"] == "planted"]
+                self.assertEqual({level: levels.count(level) for level in set(levels)},
+                                 mix_levels)
+                self.assertTrue(all(key["level"] is None for key in keys
+                                    if key["kind"] != "planted"))
+        self.assertTrue(all("tier" not in KEYS[case] for case in IDS["base"]))
+        self.assertTrue(all(KEYS[case]["tier"] == "hard" for case in IDS["hard"]))
+        self.assertEqual([len(score.findings_of(KEYS[case])) for case in IDS["hard"]
+                          if "findings" in KEYS[case]], [2])
         self.assertLessEqual({"weakened-test", "zero-tests", "l1-off-by-one"}, set(NAMES))
         self.assertEqual(len(NAMES), len(KEYS))
+        self.assertEqual(set(score.TIERS), set(MIX))
 
     def test_a_shuffled_order(self):
-        kinds = [KEYS[case]["kind"] for case in sorted(KEYS)]
-        self.assertFalse([n for n in range(1, len(kinds)) if kinds[n] == kinds[n - 1]], kinds)
-        levels = [KEYS[case]["level"] for case in sorted(KEYS) if KEYS[case]["level"]]
-        self.assertNotEqual(levels, sorted(levels))
+        """Base: no two neighbours of one kind. Hard: 7 planted cases of 12 cannot all be apart,
+        so no two neighbours of one kind and level, and one planted pair at most."""
+        for tier, ids in IDS.items():
+            kinds = [KEYS[case]["kind"] for case in ids]
+            levels = [KEYS[case]["level"] for case in ids]
+            same = [n for n in range(1, len(kinds)) if kinds[n] == kinds[n - 1]]
+            with self.subTest(tier=tier):
+                if tier == "base":
+                    self.assertFalse(same, kinds)
+                else:
+                    self.assertLessEqual(len(same), 1, kinds)
+                    self.assertFalse([n for n in same if levels[n] == levels[n - 1]], levels)
+                    self.assertTrue(all(kinds[n] == "planted" for n in same), kinds)
+                planted = [level for level in levels if level]
+                self.assertNotEqual(planted, sorted(planted))
 
     def test_the_answer_keys(self):
         for case, key in KEYS.items():
             with self.subTest(case=case):
-                self.assertEqual(sorted(key), ["alone", "case", "kind", "level", "locations",
-                                               "name", "probe", "summary", "terms"])
-                self.assertEqual(bool(key["alone"]), key["level"] == "guard")
+                fields = ["case", "kind", "level", "name", "probe", "summary"]
+                fields += ["tier"] if case in IDS["hard"] else []
+                fields += ["findings"] if "findings" in key else ["alone", "locations", "terms"]
+                self.assertEqual(sorted(key), sorted(fields))
                 self.assertEqual(key["case"], case)
                 self.assertIn(key["kind"], score.KINDS)
+                self.assertIn(score.tier_of(key), score.TIERS)
                 self.assertTrue(key["summary"] and key["probe"])
                 compile(key["probe"], case, "exec")
                 located = key["kind"] in REFUSE
-                self.assertEqual(bool(key["locations"]), located)
-                self.assertEqual(bool(key["terms"]), located)
-                for place in key["locations"]:
-                    self.assertEqual(sorted(place), ["file", "lines", "text"])
-                    if place["lines"] is None:
-                        self.assertIsNone(place["text"])
-                        continue
-                    low, high = place["lines"]
-                    self.assertTrue(1 <= low <= high, place)
-                for term in key["terms"] + key["alone"]:
-                    for part in term if isinstance(term, list) else [term]:
-                        self.assertFalse(re.search(r"^[\w/]+\.(py|md)$", part), part)
-                        self.assertNotIn(part.lower(), ("test", "tests", "bug", "wrong",
-                                                        "missing", "default", "docstring"))
+                if "findings" in key:
+                    self.assertEqual(key["kind"], "planted")
+                    self.assertGreater(len(key["findings"]), 1)
+                for finding in score.findings_of(key):
+                    if "findings" in key:
+                        self.assertEqual(sorted(finding), ["alone", "locations", "terms"])
+                    self.assertEqual(bool(finding["alone"]), key["level"] == "guard")
+                    self.assertEqual(bool(finding["locations"]), located)
+                    self.assertEqual(bool(finding["terms"]), located)
+                    for place in finding["locations"]:
+                        self.assertEqual(sorted(place), ["file", "lines", "text"])
+                        if place["lines"] is None:
+                            self.assertIsNone(place["text"])
+                            continue
+                        low, high = place["lines"]
+                        self.assertTrue(1 <= low <= high, place)
+                    for term in finding["terms"] + finding["alone"]:
+                        for part in term if isinstance(term, list) else [term]:
+                            self.assertFalse(re.search(r"^[\w/]+\.(py|md)$", part), part)
+                            self.assertNotIn(part.lower(), ("test", "tests", "bug", "wrong",
+                                                            "missing", "default",
+                                                            "docstring"))
         self.assertEqual(score.answer_keys(os.path.join(SUITE, "no-such-folder")), {})
 
 
@@ -377,7 +442,7 @@ class ScaffoldTest(unittest.TestCase):
             total = sum(len(read(os.path.join(work, path)).split("\n")) - 1 for path in files)
             with self.subTest(case=folder):
                 self.assertEqual(phase.returncode, 0, phase.stderr)
-                self.assertLessEqual(total, MAX_LINES)
+                self.assertLessEqual(total, MAX_LINES[tier_of(folder)])
                 self.assertIn("CLAUDE.md", files)
                 self.assertIn("run_tests.py", files)
                 for text in [messages, branches, " ".join(files + history)]:
@@ -420,7 +485,7 @@ class ScaffoldTest(unittest.TestCase):
     def test_each_key_s_lines_hold_its_marker(self):
         for folder, work in self.work.items():
             base = DISPATCH.search(load(folder)["execution"]["prompt"]).group(1)
-            for place in key_of(folder)["locations"]:
+            for place in places(key_of(folder)):
                 with self.subTest(case=folder, file=place["file"]):
                     if place["lines"] is None:  # a file the candidate removed
                         self.assertTrue(git(work, "show", "%s:%s" % (base, place["file"])))
@@ -814,6 +879,210 @@ class ScoreTest(unittest.TestCase):
         self.assertEqual(score.from_trace(events)[1]["reviewer"], {})
 
 
+@needs_keys
+class HardScoreTest(unittest.TestCase):
+    """score.py on the hard tier: its terms, a key with two findings, a nit, totals per tier."""
+
+    def grade(self, name, *blockers, **kwargs):
+        verdict = kwargs.get("verdict", "CHANGES REQUIRED")
+        return score.grade(KEYS[case_of(name)], answer(verdict, *blockers))
+
+    def outcome(self, name, *blockers):
+        return self.grade(name, *blockers)["outcome"]
+
+    def folder(self, files):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        for name, text in files.items():
+            label, rest = name.split(".", 1)
+            with open(os.path.join(tmp, case_of(label) + "." + rest), "w",
+                      encoding="utf-8") as fh:
+                fh.write(text)
+        return tmp
+
+    def test_right_blockers_are_found(self):
+        for name, blocker in (
+                ("l2-mutable-default", "B1. tags.py:9 — `seen=[]` is a mutable default: the "
+                                       "hashtags of earlier calls accumulate"),
+                ("l2-mutable-default", "B1. hashtags (tags.py) also returns the tags of every "
+                                       "earlier call; the list is shared between calls"),
+                ("l3-tuple-to-dict", "B1. release.py:13 still indexes the result with "
+                                     "parsed[0]: bump raises KeyError"),
+                ("l3-tuple-to-dict", "B1. versions.py now returns a dict, but release.bump reads "
+                                     "it by position, so `cli.py bump` raises KeyError"),
+                ("l1-condition-dropped-in-move", "B1. pricing.py:28 — the HOME_COUNTRY check "
+                                                 "was dropped: orders abroad from 50 ship free"),
+                ("l1-condition-dropped-in-move", "B1. pricing.shipping (pricing.py) gives free "
+                                                 "shipping to foreign orders over 50"),
+                ("l4-binding-decision", "B1. config.py:15 — int() raises ValueError for a bad "
+                                        "port, against B2 (load never raises)"),
+                ("l4-binding-decision", "B1. docs/LIVING_PLAN.md — binding decision B2 broken: "
+                                        "load raises for a non-numeric port"),
+                ("l4-half-up", "B1. ratings.py:15 — round() rounds half to even, so 2.5 gives 2; "
+                               "the plan says half up"),
+                ("l4-half-up", "B1. tests/test_ratings.py:21 asserts banker's rounding, against "
+                               "the acceptance"),
+                ("l2-late-binding", "B1. limits.py:19 — late binding: every lambda sees the last "
+                                    "maximum"),
+                ("l2-late-binding", "B1. the closures in limit_checks (limits.py) all capture "
+                                    "the loop variable")):
+            with self.subTest(case=name, blocker=blocker):
+                self.assertEqual(self.outcome(name, blocker), "found")
+        unfixed = self.grade("round2-unfixed-leap-year", "B1. B1 still present — months.py:19 — "
+                                                         "year % 4 makes 1900 a leap year")
+        self.assertEqual((unfixed["outcome"], unfixed["named"]), ("rejected", True))
+
+    def test_wrong_faults_on_the_right_file_are_missed(self):
+        for name, blocker in (
+                ("l2-mutable-default", "B1. tags.py:5 — normalize keeps inner punctuation"),
+                ("l3-tuple-to-dict", "B1. versions.py:4 — parse_version has no type hints"),
+                ("l3-tuple-to-dict", "B1. release.py:1 — the module docstring is vague"),
+                ("l1-condition-dropped-in-move", "B1. pricing.py:3 — VAT_RATE belongs in the "
+                                                 "settings"),
+                ("l4-binding-decision", "B1. config.py:4 — DEFAULT_PORT is not in the README"),
+                ("l4-half-up", "B1. ratings.py:5 — average gives a float for whole ratings"),
+                ("l2-late-binding", "B1. limits.py:9 — parse_limits fails on a line with two "
+                                    "equal signs")):
+            with self.subTest(case=name):
+                self.assertEqual(self.outcome(name, blocker), "missed")
+
+    def test_two_findings(self):
+        median = ("B1. stats.py:18 — the median of an even count is the upper middle value: "
+                  "[1, 2, 3, 4] gives 3")
+        order = "B2. summary sorts the caller's list in place (stats.py:17)"
+        other = "B3. no test with an even count — tests/test_stats.py"
+        both = self.grade("l2-two-faults", median, order)
+        self.assertEqual((both["outcome"], both["right"], both["findings"], both["extra"]),
+                         ("found", True, [2, 2], 0))
+        self.assertTrue(both["matches"][0][1].startswith("finding 1: stats.py"))
+        self.assertTrue(both["matches"][1][1].startswith("finding 2: stats.py"))
+        for blocker in (median, order):
+            one = self.grade("l2-two-faults", blocker, other)
+            self.assertEqual((one["outcome"], one["right"], one["findings"], one["extra"]),
+                             ("partial", False, [1, 2], 1))
+        none = self.grade("l2-two-faults", "B1. stats.py:3 — the module docstring is vague")
+        self.assertEqual((none["outcome"], none["right"], none["findings"]),
+                         ("missed", False, [0, 2]))
+        self.assertEqual(self.grade("l2-two-faults", verdict="PASS")["outcome"], "missed")
+        silent = score.grade(KEYS[case_of("l2-two-faults")], "no answer")
+        self.assertEqual((silent["outcome"], silent["findings"]), ("no verdict", [0, 2]))
+        one = self.grade("l2-two-faults", "B1. stats.py — summary sorts values in place, and "
+                                          "for an even count the median is not the mean of the "
+                                          "two middle values")
+        self.assertEqual((one["outcome"], one["findings"]), ("found", [2, 2]))
+        self.assertIn("finding 1: ", one["matches"][0][1])
+        self.assertIn("; finding 2: ", one["matches"][0][1])
+        # A cited range spanning both findings, or a loose word, credits only the finding named.
+        for blocker in ("B1. stats.py:9-18 — summary sorts the caller's list in place",
+                        "B1. summary mutates the input list; stats.py sorts it in place even "
+                        "when the median is all that is needed",
+                        "B1. stats.py:18 — for an even count the median is the upper middle "
+                        "value; use sorted(values) and average the two middle values"):
+            with self.subTest(blocker=blocker):
+                half = self.grade("l2-two-faults", blocker)
+                self.assertEqual((half["outcome"], half["right"], half["findings"]),
+                                 ("partial", False, [1, 2]))
+        # Natural wordings of one bug credit that finding alone; a citation credits a finding
+        # that it overlaps when it is clear of the other's (stats.py:9-18 names neither).
+        for number, blocker in (
+                (1, "B1. stats.py:18 — the median is wrong when len(values) is even"),
+                (1, "B1. stats.py — for even-numbered lists the median ignores the middle pair"),
+                (1, "B1. stats.py — the median should average the two central elements"),
+                (1, "B1. stats.py — median of [1, 2, 3, 4] gives 3 instead of 2.5; the code "
+                    "sorts values then indexes len // 2"),
+                (1, "B1. stats.py:18 — wrong value returned"),
+                (2, "B1. stats.py:17 — the input list is modified"),
+                (2, "B1. stats.py — the caller's values are reordered"),
+                (2, "B1. stats.py:16 — ordered is the same object as values, so .sort() "
+                    "changes it"),
+                (2, "B1. stats.py — `ordered = values` should be `ordered = sorted(values)`"),
+                (2, "B1. stats.py — summary alters the argument list"),
+                (2, "B1. stats.py — the passed-in list gets sorted"),
+                (2, "B1. stats.py:16-17 — wrong"),
+                (2, "B1. stats.py:15-17 — wrong")):
+            with self.subTest(blocker=blocker):
+                half = self.grade("l2-two-faults", blocker)
+                self.assertEqual((half["outcome"], half["findings"]), ("partial", [1, 2]))
+                self.assertTrue(half["matches"][0][1].startswith("finding %d: " % number),
+                                half["matches"][0][1])
+        for blocker in ("B1. stats.py:9-18 — wrong", "B1. stats.py:16-18 — wrong"):
+            self.assertEqual(self.grade("l2-two-faults", blocker)["outcome"], "missed")
+        self.assertEqual(self.grade("l1-off-by-one", "B1. off by one (pager.py)")["findings"],
+                         [1, 1])
+
+    def test_nit(self):
+        for verdict in ("PASS", "PASS WITH NOTES"):
+            with self.subTest(verdict=verdict):
+                passed = self.grade("nit-docstring-typo", verdict=verdict)
+                self.assertEqual((passed["outcome"], passed["right"]), ("pass", True))
+        for result in (self.grade("nit-docstring-typo", "B1. typo — names.py:11 — seperated"),
+                       self.grade("nit-docstring-typo", verdict="CHANGES REQUIRED"),
+                       self.grade("nit-docstring-typo", "B1. typo — names.py:11",
+                                  verdict="PASS WITH NOTES")):
+            self.assertEqual((result["outcome"], result["right"]), ("over-blocking", False))
+        silent = score.grade(KEYS[case_of("nit-docstring-typo")], "no answer")
+        self.assertEqual((silent["outcome"], silent["right"]), ("no verdict", False))
+
+    def test_totals_per_tier(self):
+        tmp = self.folder({
+            "l1-off-by-one.txt": answer("CHANGES REQUIRED", "B1. off by one (pager.py)"),
+            "decoy-for-else.txt": answer("PASS"),
+            "nit-docstring-typo.1.txt": answer("PASS WITH NOTES"),
+            "nit-docstring-typo.2.txt": answer("CHANGES REQUIRED", "B1. typo — names.py:11"),
+            "decoy-memo-default.txt": answer("CHANGES REQUIRED", "B1. mutable default — "
+                                                                 "sequences.py:11"),
+            "l2-two-faults.txt": answer("CHANGES REQUIRED", "B1. stats.py sorts in place")})
+        lines, totals = score.report(score.runs_from_folder(tmp, KEYS), KEYS)
+        self.assertEqual(totals["runs"], 6)
+        self.assertEqual(totals["over-blocking nit"], [1, 2])
+        self.assertEqual(totals["false alarms decoy"], [1, 2])
+        self.assertEqual(totals["false alarms"], [1, 2])
+        self.assertEqual(totals["recall"]["L1"], [1, 1])
+        self.assertEqual(totals["recall"]["L2"], [1, 2])
+        self.assertEqual(totals["recall"]["all"], [2, 3])
+        self.assertEqual(sorted(totals["tiers"]), ["base", "hard"])
+        hard, base = totals["tiers"]["hard"], totals["tiers"]["base"]
+        self.assertEqual((hard["runs"], hard["over-blocking nit"], hard["recall"]["all"],
+                          hard["false alarms decoy"], hard["invalid"]),
+                         (4, [1, 2], [1, 2], [1, 1], 0))
+        self.assertEqual((base["runs"], base["over-blocking nit"], base["recall"]["all"],
+                          base["false alarms decoy"]), (2, [0, 0], [1, 1], [0, 1]))
+        self.assertIn("over-blocking nit: 1/2 (50%)", lines)
+        self.assertIn("tier hard: over-blocking nit: 1/2 (50%)", lines)
+        self.assertIn("tier hard: recall: L1 0/0, L2 1/2 (50%), L3 0/0, L4 0/0, guard 0/0, "
+                      "all 1/2 (50%)", lines)
+        self.assertIn("tier base: recall: L1 1/1 (100%), L2 0/0, L3 0/0, L4 0/0, guard 0/0, "
+                      "all 1/1 (100%)", lines)
+        self.assertIn("tier hard: false alarms: decoys 1/1 (100%), clean 0/0, together "
+                      "1/1 (100%)", lines)
+        self.assertFalse([line for line in lines if line.startswith("tier base: over-")])
+        self.assertTrue([line for line in lines if line.startswith(case_of("l2-two-faults"))
+                         and "| partial (1/2 findings) |" in line])
+        done = subprocess.run([sys.executable, os.path.join(SUITE, "score.py"), tmp, "--json"],
+                              capture_output=True, env=dict(os.environ,
+                                                            PYTHONDONTWRITEBYTECODE="1"))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(json.loads(done.stdout.decode())["tiers"]["hard"]["recall"]["L2"],
+                         [1, 2])
+        rows = read(os.path.join(tmp, "audit.md")).split("\n")
+        self.assertTrue([row for row in rows if row.startswith("| %s | 1 |"
+                                                                % case_of("l2-two-faults"))
+                         and "finding 2: stats.py + term 'in place'" in row])
+
+    def test_one_tier_reports_as_before(self):
+        base = self.folder({"l1-off-by-one.txt": answer("PASS")})
+        lines, totals = score.report(score.runs_from_folder(base, KEYS), KEYS)
+        self.assertNotIn("tiers", totals)
+        self.assertFalse([line for line in lines if "over-blocking" in line
+                          or line.startswith("tier ")])
+        hard = self.folder({"l2-late-binding.txt": answer("PASS")})
+        lines, totals = score.report(score.runs_from_folder(hard, KEYS), KEYS)
+        self.assertNotIn("tiers", totals)
+        self.assertIn("over-blocking nit: 0/0", lines)
+        self.assertIn("recall: L1 0/0, L2 0/1 (0%), L3 0/0, L4 0/0, guard 0/0, all 0/1 (0%)",
+                      lines)
+
+
 class RunnerTest(unittest.TestCase):
     """run.py builds the command; nothing here starts a run."""
 
@@ -964,6 +1233,26 @@ class RunnerTest(unittest.TestCase):
         lines = done.stdout.decode().splitlines()
         self.assertEqual(len(lines), 2)
         self.assertTrue(lines[0].startswith("claude plugin eval "))
+        self.assertIn(" --tag reviewer-calibration --ablation ", lines[0])
+        done = subprocess.run([sys.executable, os.path.join(SUITE, "run.py"), "--dry-run",
+                               "--tier", "hard", "--max-cost-usd", "1"], capture_output=True,
+                              env=dict(os.environ, PATH="", PYTHONDONTWRITEBYTECODE="1"))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        lines = done.stdout.decode().splitlines()
+        self.assertEqual(len(lines), 2)
+        self.assertIn(" --tag reviewer-calibration-hard --ablation ", lines[0])
+        self.assertIn(" --max-cost-usd 1 ", lines[0])
+
+    def test_the_tier_picks_the_tag(self):
+        for argv, tag in (([], "reviewer-calibration"),
+                          (["--tier", "base"], "reviewer-calibration"),
+                          (["--tier", "hard"], "reviewer-calibration-hard")):
+            with self.subTest(argv=argv):
+                run = self.command("--max-cost-usd", "1", *argv)[0]
+                self.assertEqual(run.count("--tag"), 1)
+                self.assertEqual(run[run.index("--tag") + 1], tag)
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            runner.parser().parse_args(["--max-cost-usd", "1", "--tier", "all"])
 
 
 class ReadmeTest(unittest.TestCase):
@@ -1002,7 +1291,15 @@ class ReadmeTest(unittest.TestCase):
         section = self.text.split("### Reviewer calibration")[1]
         for name in NAMES:
             self.assertNotIn("rc-" + name, section)
-        self.assertEqual(sorted(set(re.findall(r"rc-[0-9]{2}", section))), ["rc-01", "rc-20"])
+        self.assertEqual(sorted(set(re.findall(r"rc-[0-9]{2}", section))),
+                         ["rc-01", "rc-20", "rc-21", "rc-32"])
+
+    def test_the_hard_tier(self):
+        self.assertIn("python3 plugins/manager-plugin/evals/reviewer-calibration/run.py "
+                      "--tier hard", self.text)
+        self.assertIn("`rc-21` to `rc-32` (tag `reviewer-calibration-hard`)", self.text)
+        self.assertIn("a meaningful read needs `--runs 3`", self.text)
+        self.assertIn("not a measurement", self.text)
 
 
 if __name__ == "__main__":

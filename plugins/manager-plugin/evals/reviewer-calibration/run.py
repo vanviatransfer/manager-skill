@@ -2,18 +2,20 @@
 """run: start the reviewer-calibration eval (paid), then score it with score.py.
 
 Usage:
-  run.py --max-cost-usd USD [--model sonnet|opus] [--runs N] [-j N] [--case GLOB]
-         [--trust-plugin] [--dry-run]
+  run.py --max-cost-usd USD [--tier base|hard] [--model sonnet|opus] [--runs N] [-j N]
+         [--case GLOB] [--trust-plugin] [--dry-run]
 
-Runs `claude plugin eval` on this plugin for the cases tagged `reviewer-calibration` only, with
-the plugin on (`--ablation none`), each case's scaffold, no published report and the tools the
-cases need (`Agent Bash ToolSearch`). Every run is a paid session: the cost ceiling is required
-and passed as `--max-cost-usd` (the runner stops launching runs once it is reached, exit 2, and
-reports what it has). Defaults: `--model sonnet` (the reviewer inherits the session's model;
-`opus` for the stronger tier), `--runs 1`, `-j 1`. The result goes to `evals-results/<UTC
-time>/` at the repository root (git ignores it), outside the plugin folder that a run's session
-can read, so a later run finds no earlier trace there; score.py then reads its
-`aggregate-result.json`. The eval's graders check the dispatch, the relayed answer and
+Runs `claude plugin eval` on this plugin for the cases of one tier only: `--tier base` (the
+default) takes the 20 cases tagged `reviewer-calibration`, `--tier hard` the 12 harder ones
+tagged `reviewer-calibration-hard` (the CLI matches a tag exactly, so neither takes the other),
+with the plugin on (`--ablation none`), each case's scaffold, no published report and the tools
+the cases need (`Agent Bash ToolSearch`). Every run is a paid session: the cost ceiling is
+required and passed as `--max-cost-usd` (the runner stops launching runs once it is reached,
+exit 2, and reports what it has). Defaults: `--model sonnet` (the reviewer inherits the
+session's model; `opus` for the stronger tier), `--runs 1`, `-j 1`. The result goes to
+`evals-results/<UTC time>/` at the repository root (git ignores it), outside the plugin folder
+that a run's session can read, so a later run finds no earlier trace there; score.py then reads
+its `aggregate-result.json`. The eval's graders check the dispatch, the relayed answer and
 blindness, not the verdict, which only score.py grades. run.py exits non-zero when the eval or
 score.py does (score.py: 1 when a run is invalid). The eval asks to trust the plugin folder only
 in an interactive terminal; without one it exits with an error, so pass `--trust-plugin` (handed
@@ -52,6 +54,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PLUGIN = os.path.dirname(os.path.dirname(HERE))
 REPO = os.path.dirname(os.path.dirname(PLUGIN))
 MODELS = ("sonnet", "opus")
+TIER_TAGS = {"base": "reviewer-calibration", "hard": "reviewer-calibration-hard"}
 SANDBOX_PREFIXES = ("claude-eval-", "e-")
 TOOLS = ("Agent", "Bash", "ToolSearch")
 
@@ -72,6 +75,8 @@ def parser():
     found = argparse.ArgumentParser(prog="run.py", description=__doc__.split("\n\n")[0])
     found.add_argument("--max-cost-usd", type=positive(float), required=True,
                        help="hard cost ceiling of the whole run, in USD (required)")
+    found.add_argument("--tier", choices=sorted(TIER_TAGS), default="base",
+                       help="the cases to run: base (20, the default) or hard (12)")
     found.add_argument("--model", choices=MODELS, default="sonnet")
     found.add_argument("--runs", type=positive(int), default=1)
     found.add_argument("-j", "--concurrency", type=positive(int), default=1)
@@ -87,7 +92,7 @@ def commands(args, stamp):
     out = os.path.join(REPO, "evals-results", stamp)
     if not 1 <= args.concurrency <= 8 or args.runs > 50:
         raise SystemExit("run.py: -j is 1-8 and --runs at most 50")
-    run = ["claude", "plugin", "eval", PLUGIN, "--tag", "reviewer-calibration",
+    run = ["claude", "plugin", "eval", PLUGIN, "--tag", TIER_TAGS[args.tier],
            "--ablation", "none", "--scaffold", "--no-publish", "--keep-temp",
            "--allow-tools"] + list(TOOLS) + [
            "--model", args.model, "--runs", str(args.runs), "-j", str(args.concurrency),

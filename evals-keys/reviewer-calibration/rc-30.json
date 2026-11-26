@@ -1,0 +1,12 @@
+{
+  "case": "rc-30",
+  "name": "decoy-memo-default",
+  "kind": "decoy",
+  "level": null,
+  "tier": "hard",
+  "summary": "correct: the shared default list `_known` is a documented memo of the numbers found so far, never returned or handed out",
+  "locations": [],
+  "terms": [],
+  "alone": [],
+  "probe": "from sequences import fibonacci as f\nassert [f(n) for n in (10, 3, 0, 1, 20, 2)] == [55, 2, 0, 1, 6765, 1]\ntry:\n    f(-1)\nexcept ValueError:\n    pass\nelse:\n    raise AssertionError(\"no ValueError\")"
+}

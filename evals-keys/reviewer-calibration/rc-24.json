@@ -1,0 +1,12 @@
+{
+  "case": "rc-24",
+  "name": "nit-docstring-typo",
+  "kind": "nit",
+  "level": null,
+  "tier": "hard",
+  "summary": "correct; only the docstring of `initials` misspells \"separated\"",
+  "locations": [],
+  "terms": [],
+  "alone": [],
+  "probe": "from names import initials as i\nassert i(\"Ada Lovelace\") == \"AL\" and i(\"  a \\t b\\nc \") == \"ABC\"\nassert i(\"\") == \"\" and i(\" \\t \") == \"\""
+}

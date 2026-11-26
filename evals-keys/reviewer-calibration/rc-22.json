@@ -1,0 +1,12 @@
+{
+  "case": "rc-22",
+  "name": "decoy-sentinel-reraise",
+  "kind": "decoy",
+  "level": null,
+  "tier": "hard",
+  "summary": "correct: the `_NO_DEFAULT` sentinel compared with `is` tells a None default from none, and `except Exception` logs and re-raises with a bare `raise`",
+  "locations": [],
+  "terms": [],
+  "alone": [],
+  "probe": "from settings import Settings\ns = Settings({\"a\": None})\nassert s.get(\"a\", 1) is None and s.get(\"b\", None) is None and s.get(\"b\", 0) == 0\ntry:\n    s.get(\"b\")\nexcept KeyError:\n    pass\nelse:\n    raise AssertionError(\"no KeyError\")"
+}

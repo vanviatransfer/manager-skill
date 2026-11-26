@@ -1,0 +1,42 @@
+{
+  "case": "rc-23",
+  "name": "l3-tuple-to-dict",
+  "kind": "planted",
+  "level": "L3",
+  "tier": "hard",
+  "summary": "`release.bump` (untested, unchanged) still reads `parsed[0]` of what is now a dict: every bump raises KeyError",
+  "locations": [
+    {
+      "file": "release.py",
+      "lines": [
+        13,
+        13
+      ],
+      "text": "parsed[0]"
+    },
+    {
+      "file": "versions.py",
+      "lines": [
+        14,
+        14
+      ],
+      "text": "return {"
+    }
+  ],
+  "terms": [
+    "KeyError",
+    "[0]",
+    "parsed[0]",
+    "index",
+    "indexes",
+    "indexed",
+    "indexing",
+    "positional",
+    "by position",
+    "tuple",
+    "subscript",
+    "integer keys"
+  ],
+  "alone": [],
+  "probe": "from release import bump\nassert bump(\"1.4.2\", \"minor\") == \"1.5.0\""
+}

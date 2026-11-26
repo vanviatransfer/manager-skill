@@ -1,0 +1,35 @@
+{
+  "case": "rc-25",
+  "name": "l1-condition-dropped-in-move",
+  "kind": "planted",
+  "level": "L1",
+  "tier": "hard",
+  "summary": "moved to `pricing.shipping`, the free-shipping rule lost `and order[\"country\"] == HOME_COUNTRY`: an order abroad from 50 ships free",
+  "locations": [
+    {
+      "file": "pricing.py",
+      "lines": [
+        28,
+        28
+      ],
+      "text": "if net >= FREE_SHIPPING_FROM:"
+    }
+  ],
+  "terms": [
+    "HOME_COUNTRY",
+    "home country",
+    "abroad",
+    "domestic",
+    "foreign",
+    "international",
+    "country check",
+    "country condition",
+    [
+      "country",
+      "free"
+    ],
+    "SHIPPING_ABROAD"
+  ],
+  "alone": [],
+  "probe": "from orders import add_line, new_order\nfrom pricing import shipping\norder = new_order(\"a\", \"FR\")\nadd_line(order, \"pen\", 10.0, 6)\nassert shipping(order) == 12.50"
+}

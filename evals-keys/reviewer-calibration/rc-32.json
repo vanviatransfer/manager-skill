@@ -1,0 +1,37 @@
+{
+  "case": "rc-32",
+  "name": "l2-late-binding",
+  "kind": "planted",
+  "level": "L2",
+  "tier": "hard",
+  "summary": "each lambda reads `maximum` when it is called, so every check uses the last field's maximum",
+  "locations": [
+    {
+      "file": "limits.py",
+      "lines": [
+        18,
+        19
+      ],
+      "text": "lambda value: value <= maximum"
+    }
+  ],
+  "terms": [
+    "late binding",
+    "late-binding",
+    "late-bound",
+    "closure",
+    "closures",
+    "captures",
+    "captured",
+    "capture",
+    "last maximum",
+    "last value",
+    "last field",
+    "last limit",
+    "loop variable",
+    "maximum=maximum",
+    "same maximum"
+  ],
+  "alone": [],
+  "probe": "from limits import over_limit\nassert over_limit({\"a\": 5, \"b\": 5}, {\"a\": 1, \"b\": 10}) == [\"a\"]"
+}
