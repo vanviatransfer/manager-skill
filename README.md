@@ -21,9 +21,11 @@ A Claude Code plugin with six skills:
   where a name is defined, who imports a file and which vault pages mention it; `mentions` lists the
   vault pages to check after a change; `changed` gives a reviewer pointers into a diff (the changed
   files, each with the top-level definitions whose text differs, its importers, its tests and the
-  vault lines that mention it; at most 60 lines; approximate, so never a filter on what is
-  reviewed). Two more run only when asked: `impact` lists what depends on files (importers up to
-  a depth, their tests, the files naming their definitions) and `query --budget` ranks a long
+  vault lines that mention it; at most 60 lines; then, only when it finds one, possible weakened
+  guards: test files deleted or moved, skip markers or suppressions added, assert lines removed,
+  lint or CI configuration edited; approximate, so never a filter on what is reviewed). Two more
+  run only when asked: `impact` lists what depends on files (importers up to a depth, their
+  tests, the files naming their definitions) and `query --budget` ranks a long
   query and cuts it at about that many tokens. It finds an existing vault wherever it is (a
   `.obsidian/` folder, a known folder name, or the folder with most `[[wikilinks]]`), including
   vaults made without this plugin, and records the layout in `.codemap.json`. It is the plugin's own
@@ -87,8 +89,9 @@ A Claude Code plugin with six skills:
   rules. Its `skilltrain.py` (standard-library Python) checks the files (shape, routing of every
   `references/` file from `## Knowledge`, cited lesson ids and their verifier outcomes, and with
   `--triggers-from <ref>` the description's quoted trigger phrases, including a retired
-  trainer's), flags stale lessons for the next training, finds a term in every
-  skill's files (`query`), writes one instruction line into `CLAUDE.md` (`rules-hint`), and tells
+  trainer's; invisible or direction-changing Unicode characters are reported), flags stale
+  lessons for the next training, finds a term in every skill's files (`query`), writes one
+  instruction line into `CLAUDE.md` (`rules-hint`), and tells
   the manager which skills are due for training and which fail their check.
 
 ## Learning from runs

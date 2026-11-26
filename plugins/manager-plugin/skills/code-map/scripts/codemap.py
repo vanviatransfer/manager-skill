@@ -12,7 +12,8 @@ Usage:
                                                changed files, the top-level definitions whose text
                                                differs (`(module level)`: the text above them),
                                                who imports them, their tests and the vault pages
-                                               that mention them (60 lines at most)
+                                               that mention them (60 lines at most); then,
+                                               only when found, possible weakened guards
   codemap.py query TERM --budget N             the same, ranked (exact matches, then the most
                                                imported or linked) and cut at about N tokens
   codemap.py impact [PATH...] [--base SHA]     who depends on these files (or the files changed
@@ -1021,6 +1022,203 @@ def changed_lines(root, diff, head, info, importers, mentions, out_rel):
     return lines
 
 
+# `changed`: possible weakened guards, a section printed only when something is found. By path,
+# and by counting marker lines in the two versions of each file (so a moved line counts for
+# nothing): approximate, never a filter.
+MAX_GUARD_LINES = 8
+PROSE = (".md", ".markdown", ".rst", ".txt", ".adoc")  # docs naming a marker are no finding
+SKIP_MARKS = (  # (label, pattern, in test files only, a call); a line counts for its first match
+    ("@unittest.skip", re.compile(r"@unittest\.skip(?![A-Za-z])"), False, False),
+    ("skipTest(", re.compile(r"\.skipTest\("), False, True),
+    ("pytest.mark.skip", re.compile(r"\bpytest\.mark\.skip(?![A-Za-z])"), False, False),
+    ("pytest.mark.xfail", re.compile(r"\bpytest\.mark\.xfail"), False, False),
+    ("@Disabled", re.compile(r"@Disabled\b"), False, False),
+    ("t.Skip(", re.compile(r"\bt\.Skip(?:Now|f)?\("), False, True),
+    (".only(", re.compile(r"\.only\("), True, False),
+    ("xit(", re.compile(r"\bxit\("), True, False),
+    ("xdescribe(", re.compile(r"\bxdescribe\("), True, False),
+    (".skip(", re.compile(r"\.skip\("), True, True),
+)
+# A skip call is conditional (not counted) after an `if` on its line, or inside a block that one
+# of these opens: the nearest line above it with less indentation.
+CONDITION = re.compile(r"^\s*(?:\}\s*)?(?:if|elif|else|except|catch|case|when|unless)\b")
+IF_BEFORE = re.compile(r"\bif\b")
+# A `noqa` whose only code is E402 (an import after a sys.path setup).
+NOQA_IMPORT = re.compile(r"#\s*noqa:\s*E402\b(?!\s*,)", re.I)
+SUPPRESSIONS = (
+    ("noqa", re.compile(r"#\s*noqa\b", re.I)),
+    ("type: ignore", re.compile(r"#\s*type:\s*ignore\b")),
+    ("eslint-disable", re.compile(r"\beslint-disable")),
+    ("@ts-ignore", re.compile(r"@ts-(?:ignore|nocheck)\b")),
+    ("nolint", re.compile(r"//\s*nolint\b")),
+    ("pragma: no cover", re.compile(r"#\s*pragma:\s*no\s*cover\b")),
+)
+ASSERT_LINE = re.compile(r"assert|\bexpect\b", re.I)
+TOML_HEADER = re.compile(r"^\s*\[\[?\s*([^\]]+?)\s*\]\]?\s*(?:#.*)?$")
+
+
+def check_config(path):
+    """The kind of lint, format, type-check, test or CI configuration a path is, or None."""
+    name = posixpath.basename(path).lower()
+    if path.startswith((".github/workflows/", ".circleci/")) or name in (
+            ".gitlab-ci.yml", ".travis.yml", "azure-pipelines.yml", "jenkinsfile"):
+        return "CI"
+    if name.startswith(".pre-commit-config"):
+        return "pre-commit"
+    if name in (".flake8", "ruff.toml", ".ruff.toml", ".pylintrc", "pylintrc") or \
+            name.startswith((".eslintrc", "eslint.config.", ".golangci", ".stylelintrc")):
+        return "lint"
+    if name in ("mypy.ini", ".mypy.ini", "pyrightconfig.json") or \
+            (name.startswith("tsconfig") and name.endswith(".json")):
+        return "type-check"
+    if name.startswith((".prettierrc", "prettier.config.")):
+        return "format"
+    if name in ("setup.cfg", "tox.ini", "pytest.ini", ".coveragerc"):
+        return "lint/test"
+    return None
+
+
+def tool_sections(text):
+    """{name: text} of a pyproject.toml's [tool.*] tables."""
+    found, name = {}, None
+    for line in text.split("\n"):
+        m = TOML_HEADER.match(line)
+        if m:
+            name = m.group(1) if m.group(1).startswith("tool.") else None
+        if name:
+            found[name] = found.get(name, "") + line + "\n"
+    return found
+
+
+def conditional(lines, n, start):
+    """Whether the skip call at column `start` of lines[n] runs only under a condition: an `if`
+    before it on its line, or the nearest line above with less indentation opens a branch."""
+    line = lines[n]
+    if IF_BEFORE.search(line[:start]):
+        return True
+    indent = len(line) - len(line.lstrip())
+    for above in reversed(lines[:n]):
+        if above.strip() and len(above) - len(above.lstrip()) < indent:
+            return bool(CONDITION.match(above))
+    return False
+
+
+def guard_marks(text, test):
+    """({skip label: lines}, {suppression label: lines}, assert/expect lines) of a file's text;
+    skip markers marked test-only and assert lines are counted in test files only. Conditional
+    skips (`skipIf`, `skipUnless`, `pytest.mark.skipif`, a skip call under a condition) and a
+    `noqa` for E402 are not counted."""
+    skips, quiet, asserts = {}, {}, 0
+    lines = text.split("\n")
+    for n, line in enumerate(lines):
+        for label, rx, test_only, call in SKIP_MARKS:
+            m = rx.search(line) if test or not test_only else None
+            if m:
+                if not (call and conditional(lines, n, m.start())):
+                    skips[label] = skips.get(label, 0) + 1
+                break
+        for label, rx in SUPPRESSIONS:
+            if rx.search(line):
+                if not (label == "noqa" and NOQA_IMPORT.search(line)):
+                    quiet[label] = quiet.get(label, 0) + 1
+                break
+        if test and ASSERT_LINE.search(line):
+            asserts += 1
+    return skips, quiet, asserts
+
+
+def renamed_paths(root, base, head):
+    """[(old path, new path)] of the renames git detects in `git diff base...head`."""
+    items = git_lines(root, ["diff", "--name-status", "-z", "-M", "--relative",
+                             "%s...%s" % (base, head)])
+    found, n = [], 0
+    while n < len(items):
+        status = items[n]
+        if status[:1] in ("R", "C"):
+            if status[0] == "R":
+                found.append((items[n + 1], items[n + 2]))
+            n += 3
+        else:
+            n += 2
+    return found
+
+
+def weakened_lines(root, base, head, diff, out_rel):
+    """The `possible weakened guards` section of `changed`, [] when nothing is found: test files
+    deleted, renamed or moved; skip markers and suppressions added; net-removed assert/expect
+    lines in a test file; edited lint, format, type-check, test or CI configuration. At most
+    MAX_GUARD_LINES findings, then a count of the rest (all of them when one more would fit).
+    Files that may hold secrets are never read."""
+    entries = [e for e in diff if not is_map_page(e[1], out_rel)]
+    moves = [(o, n) for o, n in renamed_paths(root, base, head)
+             if not is_map_page(o, out_rel) and not is_map_page(n, out_rel)]
+    gone, came = {o: n for o, n in moves}, {n: o for o, n in moves}
+    old_blob = {path: old for _, path, old, _ in entries}
+    found = []
+    for o, n in moves:
+        if is_test(o):
+            where = ("moved and renamed" if posixpath.dirname(o) != posixpath.dirname(n) and
+                     posixpath.basename(o) != posixpath.basename(n) else
+                     "moved" if posixpath.dirname(o) != posixpath.dirname(n) else "renamed")
+            found.append((0, o, "test file", "%s to %s%s" % (
+                where, n, "" if is_test(n) else ", no longer named as a test")))
+    sides = []  # (path, base blob, head blob, test file)
+    for status, path, old, new in entries:
+        kind = check_config(path)
+        if kind:
+            found.append((3, path, "check config", "%s config %s" % (
+                kind, {"A": "added", "D": "deleted"}.get(status, "edited"))))
+        if path in gone:
+            continue
+        if status == "D" and is_test(path):
+            found.append((0, path, "test file", "deleted"))
+            continue
+        before = old_blob.get(came[path]) if path in came else old
+        # test code: a test file in a language the map parses (no data files or fixtures)
+        test = (is_test(path) or (path in came and is_test(came[path]))) and \
+            posixpath.splitext(path)[1].lower() in LANG
+        if not path.lower().endswith(PROSE) and not skipped(path, out_rel):
+            sides.append((path, before, new, test))
+    blobs = sorted({b for _, old, new, _ in sides for b in (old, new) if b})
+    data = dict(zip(blobs, blob_bytes(root, blobs)))
+
+    def text(blob):
+        raw = data.get(blob) if blob else None
+        if raw is None or len(raw) > MAX_BYTES or b"\0" in raw[:8192]:
+            return ""
+        return raw.replace(b"\r\n", b"\n").decode("utf-8", "replace")
+
+    for path, old, new, test in sides:
+        before, after = text(old), text(new)
+        if posixpath.basename(path).lower() == "pyproject.toml":
+            was, now = tool_sections(before), tool_sections(after)
+            names = sorted(k for k in set(was) | set(now) if was.get(k) != now.get(k))
+            if names:
+                found.append((3, path, "check config", "%s edited" % ", ".join(
+                    "[%s]" % k for k in names[:3]) + (" (+%d more)" % (len(names) - 3)
+                                                      if len(names) > 3 else "")))
+        (skips0, quiet0, asserts0), (skips1, quiet1, asserts1) = \
+            guard_marks(before, test), guard_marks(after, test)
+        for order, kind, was, now in ((1, "skip marker", skips0, skips1),
+                                      (4, "suppression", quiet0, quiet1)):
+            added = ["+%d %s" % (now[k] - was.get(k, 0), k) for k in sorted(now)
+                     if now[k] > was.get(k, 0)]
+            if added:
+                found.append((order, path, kind, ", ".join(added)))
+        if test and asserts0 > asserts1:
+            found.append((2, path, "asserts", "%d fewer assert/expect line%s" % (
+                asserts0 - asserts1, "" if asserts0 - asserts1 == 1 else "s")))
+    if not found:
+        return []
+    found.sort()
+    lines = ["possible weakened guards (approximate, never a filter):"]
+    shown = found if len(found) <= MAX_GUARD_LINES + 1 else found[:MAX_GUARD_LINES]
+    lines += ["  %s: %s: %s" % (kind, path, why) for _, path, kind, why in shown]
+    if len(shown) < len(found):  # as the 60-line cap: a more-line only for two or more
+        lines.append("  … %d more" % (len(found) - len(shown)))
+    return lines
+
+
 # `impact` and `query --budget`: run only when asked; nothing calls them by default.
 WORD = re.compile(r"[A-Za-z_$][\w$]*")
 
@@ -1995,6 +2193,10 @@ def main(argv=None):
         if len(cut) > 1:
             lines[MAX_CHANGED_LINES - 1:] = ["(cut: %d more lines, with %d more files)" % (
                 len(cut), sum(1 for line in cut if not line.startswith(" ")))]
+        try:  # its own section, after the cap; nothing found: no line at all
+            lines += weakened_lines(root, revs[0], revs[1], diff, out_rel)
+        except (OSError, subprocess.CalledProcessError, ValueError, IndexError):
+            pass  # pointers only: a failed git call leaves the section out
         for line in lines:  # a path may hold a newline: one line each, whatever it holds
             print(re.sub(r"[\x00-\x1f\x7f]", "?", line))
         return 0

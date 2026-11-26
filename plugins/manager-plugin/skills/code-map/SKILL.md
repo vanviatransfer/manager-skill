@@ -65,12 +65,12 @@ No Python → read `references/python-install.md` first (the install offer).
   after a change; also `grep` the vault for symbol names and plain-text paths the change renames
   or removes, since `mentions` sees only code spans and links.
 - `<cmd> changed --base <base> --head <head>`: pointers for reviewing `git diff <base>...<head>`,
-  at most 60 lines, then a count of the cut. Per changed file (map pages left out): the
+  at most 60 lines, then a cut count. Per changed file (map pages left out): the
   top-level definitions whose text differs (approximate: a change between two names the one
   above; `(module level)`: above the first), its importers, its tests (importing or named after
   it) and the vault lines mentioning it. Beyond the definitions it reads the working tree, so
-  run it at `<head>`. It writes nothing. Pointers only, never a filter: it can miss what a
-  change affects.
+  run it at `<head>`. Writes nothing; pointers only, never a filter (guard flags:
+  `references/changed-flags.md`).
 - `<cmd> impact <path>...` (or `--base <sha>`): what depends on a file, before editing a widely
   used file; `query <term> --budget <n>`: a ranked, cut query, when a query is long. Using
   either: read `references/impact-budget.md` first.
