@@ -793,6 +793,26 @@ class ScoreTest(unittest.TestCase):
                                   capture_output=True)
             self.assertEqual(done.returncode, 2, bad)
 
+    def test_tokens_come_from_the_result_event_when_it_has_model_usage(self):
+        """The assistant snapshots under-count output and miss the reviewer's last message, so
+        the session's `modelUsage` wins; the reviewer is that minus the main thread's `usage`."""
+        events = [
+            {"type": "assistant", "parent_tool_use_id": None, "message": {
+                "id": "m1", "usage": {"input_tokens": 1, "output_tokens": 1}, "content": [{
+                    "type": "tool_use", "id": "toolu_r", "name": "Agent",
+                    "input": {"subagent_type": "manager-plugin:reviewer"}}]}},
+            {"type": "result", "result": "VERDICT: PASS", "usage": {
+                "input_tokens": 6, "cache_read_input_tokens": 400,
+                "cache_creation_input_tokens": 100, "output_tokens": 1300},
+             "modelUsage": {"a": {"inputTokens": 10, "cacheReadInputTokens": 1000,
+                                  "cacheCreationInputTokens": 300, "outputTokens": 2800},
+                            "b": {"inputTokens": 6, "outputTokens": 95}}}]
+        self.assertEqual(score.from_trace(events)[1], {
+            "all": {"input": 16, "cache read": 1000, "cache write": 300, "output": 2895},
+            "reviewer": {"input": 10, "cache read": 600, "cache write": 200, "output": 1595}})
+        events[0]["message"]["content"][0]["input"]["subagent_type"] = "other"
+        self.assertEqual(score.from_trace(events)[1]["reviewer"], {})
+
 
 class RunnerTest(unittest.TestCase):
     """run.py builds the command; nothing here starts a run."""
@@ -821,6 +841,8 @@ class RunnerTest(unittest.TestCase):
         ignored = read(os.path.join(repo, ".gitignore")).split("\n") if os.path.isfile(
             os.path.join(repo, ".gitignore")) else ["evals-results/"]
         self.assertIn("evals-results/", ignored)
+        self.assertEqual(self.command("--max-cost-usd", "1", "--trust-plugin")[0][-1],
+                         "--trust-plugin")
         run = self.command("--max-cost-usd", "2.5", "--model", "opus", "--runs", "3", "-j",
                            "2", "--case", "rc-0?")[0]
         self.assertIn("--model opus --runs 3 -j 2 --max-cost-usd 2.5", " ".join(run))
@@ -848,6 +870,9 @@ class RunnerTest(unittest.TestCase):
             os.makedirs(os.path.join(root, "work", "closed"))
             with open(os.path.join(root, "out", "trace.jsonl"), "w", encoding="utf-8") as fh:
                 fh.write("trace %d\n" % number)
+            with open(os.path.join(root, "work", "object"), "w", encoding="utf-8") as fh:
+                fh.write("read-only, as git writes its objects\n")
+            os.chmod(os.path.join(root, "work", "object"), 0o400)
             os.chmod(os.path.join(root, "work", "closed"), 0o500)
             roots.append(root)
         other = os.path.join(tmp, "claude-eval-OTHER")
@@ -872,6 +897,16 @@ class RunnerTest(unittest.TestCase):
         self.assertTrue(os.path.isdir(other), "a sandbox the result does not name stays")
         self.assertTrue(os.path.isfile(os.path.join(plain, "trace.jsonl")),
                         "a folder not named like a sandbox stays")
+
+    def test_home_falls_back_to_the_user_folder(self):
+        seen = []
+        with mock.patch.dict(os.environ, {"HOME": ""}), \
+                mock.patch.object(runner.os.path, "expanduser", return_value="/u/me"), \
+                mock.patch.object(runner, "preflight",
+                                  side_effect=lambda r, t, h: seen.append(h) or ([], [])), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(runner.main(["--max-cost-usd", "1", "--dry-run"]), 0)
+        self.assertEqual(seen, ["/u/me"])
 
     def test_preflight(self):
         blind = runner.blind_pattern()
@@ -905,8 +940,15 @@ class RunnerTest(unittest.TestCase):
                     mock.patch.object(runner, "REPO", os.path.join(tmp, str(expected),
                                                                    str(eval_code))), \
                     mock.patch.object(runner.subprocess, "call", side_effect=call), \
+                    mock.patch.object(runner.sys, "platform", "linux"), \
                     contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(runner.main(["--max-cost-usd", "1"]), expected)
+        with mock.patch.object(runner.sys, "platform", "win32"), \
+                mock.patch.object(runner.subprocess, "call") as call, \
+                contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(runner.main(["--max-cost-usd", "1"]), 2)
+        call.assert_not_called()
+        self.assertIn("Windows has no Bash sandbox", err.getvalue())
         with mock.patch.object(runner, "REPO", os.path.join(tmp, "evals-keys")), \
                 mock.patch.object(runner.subprocess, "call") as call, \
                 contextlib.redirect_stderr(io.StringIO()) as err:
@@ -945,8 +987,9 @@ class ReadmeTest(unittest.TestCase):
         self.assertIn("`evals-results/<UTC time>/` at the repository root", self.text)
 
     def test_trust_and_the_residual_risk(self):
-        self.assertIn("run.py passes no `--trust-plugin`, so the first run asks you to trust the "
-                      "plugin interactively", self.text)
+        self.assertIn("add `--trust-plugin` when you start it from a session or a script",
+                      self.text)
+        self.assertIn("It does not run on Windows (run.py refuses)", self.text)
         self.assertIn("Limits, from a static reading of the 2.1.332 sandbox builder, not from an "
                       "observed run", self.text)
         self.assertIn("The residual risk is a checkout outside your home and outside the temp "
