@@ -1,0 +1,11 @@
+{
+  "case": "rc-16",
+  "name": "decoy-fallthrough",
+  "kind": "decoy",
+  "level": null,
+  "summary": "correct: each `if` falls through to the next role on purpose",
+  "locations": [],
+  "terms": [],
+  "alone": [],
+  "probe": "from roles import permissions as p\nassert p(\"viewer\") == {\"read\"} and p(\"editor\") == {\"read\", \"write\"}\nassert p(\"admin\") == {\"read\", \"write\", \"delete\"} and p(\"x\") == set()"
+}

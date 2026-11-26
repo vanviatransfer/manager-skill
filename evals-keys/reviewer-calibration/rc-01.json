@@ -1,0 +1,48 @@
+{
+  "case": "rc-01",
+  "name": "l3-contract-change",
+  "kind": "planted",
+  "level": "L3",
+  "summary": "`service.record` still relies on `find` returning None for a new page; the first visit now raises KeyError",
+  "locations": [
+    {
+      "file": "service.py",
+      "lines": [
+        9,
+        10
+      ],
+      "text": "count = visits.find(page)"
+    },
+    {
+      "file": "store.py",
+      "lines": null,
+      "text": null
+    }
+  ],
+  "terms": [
+    "is None",
+    "None check",
+    "first visit",
+    [
+      "KeyError",
+      "record"
+    ],
+    [
+      "KeyError",
+      "caller"
+    ],
+    [
+      "KeyError",
+      "service"
+    ],
+    [
+      "raises",
+      "record"
+    ],
+    "returning None",
+    "returns None",
+    "expects None"
+  ],
+  "alone": [],
+  "probe": "import service\nassert service.record(\"home\") == 1"
+}

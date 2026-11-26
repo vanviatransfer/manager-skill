@@ -1,0 +1,24 @@
+{
+  "case": "rc-08",
+  "name": "round2-unfixed",
+  "kind": "round2-unfixed",
+  "level": null,
+  "summary": "`0 < port <= 65536` still accepts 65536; the new test checks 0 only",
+  "locations": [
+    {
+      "file": "ports.py",
+      "lines": [
+        14,
+        14
+      ],
+      "text": "if not 0 < port <= 65536:"
+    }
+  ],
+  "terms": [
+    "65536",
+    "65535",
+    "upper bound"
+  ],
+  "alone": [],
+  "probe": "from ports import parse_port\ntry:\n    parse_port(\"65536\")\nexcept ValueError:\n    pass\nelse:\n    raise AssertionError(\"65536 accepted\")"
+}

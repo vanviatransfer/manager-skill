@@ -639,10 +639,6 @@ class ExpectedModelTest(Fixture):
                          [IMPLEMENTER.replace("| model-a |", "| model-a!=sonnet |"), REVIEWER])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 def call(at, key, tool="Bash", given=None):
     """An assistant record holding one tool call."""
     return [{"type": "assistant", "timestamp": stamp(at), "message": {
@@ -723,3 +719,7 @@ class StreakTest(Fixture):
                                 (stamp(25), "0 | 0 | none")):
             self.assertEqual(lines(SESSION, "s1", "--streaks", "--since", since)[1],
                              "streaks | s1 | " + expected, since)
+
+
+if __name__ == "__main__":
+    unittest.main()

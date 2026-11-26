@@ -1,2 +1,4 @@
 __pycache__/
 *.pyc
+# reviewer-calibration results (run.py), outside the plugin folder
+evals-results/
