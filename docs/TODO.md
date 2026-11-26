@@ -1867,3 +1867,14 @@ strategy's per-phase models and efforts.
 - **Fixed after PR #74's review.** A state line left at `dispatched` with no answer (a lost
   result) now becomes `failed: result lost`; a phase landing after the pass is said to be
   uncovered; a 101-column test line; item 34's eval-suite sentence.
+
+### 36. Improvement pass: run it less often (owner, noted, not built)
+
+The owner finds the pass (item 34) offered too often. Wanted, for a later change:
+- **Ask only when reviewers are Sonnet.** The gate line appears only when the approved strategy
+  gives at least one phase a Sonnet reviewer (all Sonnet, or mixed); never under all Opus.
+- **At least 5 phases.** The pass runs only when at least 5 phase PRs landed in the run (today:
+  at least one).
+- **Default off, can be turned on later.** Off unless the owner turns it on; the owner can still
+  turn it on later in the run (open: whether the gate keeps asking at all, or the owner only says
+  so when wanted).
