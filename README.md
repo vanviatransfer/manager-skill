@@ -22,9 +22,11 @@ A Claude Code plugin with six skills:
   vault pages to check after a change; `changed` gives a reviewer pointers into a diff (the changed
   files, each with the top-level definitions whose text differs, its importers, its tests and the
   vault lines that mention it; at most 60 lines; approximate, so never a filter on what is
-  reviewed). It finds an existing vault wherever it is (a `.obsidian/`
-  folder, a known folder name, or the folder with most `[[wikilinks]]`), including vaults made
-  without this plugin, and records the layout in `.codemap.json`. It is the plugin's own
+  reviewed). Two more run only when asked: `impact` lists what depends on files (importers up to
+  a depth, their tests, the files naming their definitions) and `query --budget` ranks a long
+  query and cuts it at about that many tokens. It finds an existing vault wherever it is (a
+  `.obsidian/` folder, a known folder name, or the folder with most `[[wikilinks]]`), including
+  vaults made without this plugin, and records the layout in `.codemap.json`. It is the plugin's own
   standard-library Python script (3.8+; no packages, nothing sent anywhere; files that may hold
   secrets are never read). A map always comes with a vault: in a repository without one, the skill
   first creates it (`create-vault`, Create mode) in the same PR. Without Python it offers the

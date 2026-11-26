@@ -71,6 +71,9 @@ No Python → read `references/python-install.md` first (the install offer).
   it) and the vault lines mentioning it. Beyond the definitions it reads the working tree, so
   run it at `<head>`. It writes nothing. Pointers only, never a filter: it can miss what a
   change affects.
+- `<cmd> impact <path>...` (or `--base <sha>`): what depends on a file, before editing a widely
+  used file; `query <term> --budget <n>`: a ranked, cut query, when a query is long. Using
+  either: read `references/impact-budget.md` first.
 
 - `<cmd> rules-hint` (`--remove` to take it out): writes the rules block (`references/setup.md`)
   into `AGENTS.md` and `CLAUDE.md` at the repository root (each created if missing, with a one-line

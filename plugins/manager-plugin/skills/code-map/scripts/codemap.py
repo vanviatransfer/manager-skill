@@ -13,6 +13,11 @@ Usage:
                                                differs (`(module level)`: the text above them),
                                                who imports them, their tests and the vault pages
                                                that mention them (60 lines at most)
+  codemap.py query TERM --budget N             the same, ranked (exact matches, then the most
+                                               imported or linked) and cut at about N tokens
+  codemap.py impact [PATH...] [--base SHA]     who depends on these files (or the files changed
+                    [--depth N]                since SHA): importers up to N levels (default 2),
+                                               their tests, and the files naming their definitions
   codemap.py detect [--root DIR]               where the vault and the map are, and why
   codemap.py check --quiet                     the same check: one line when stale, else none
   codemap.py install-hook | uninstall-hook     the opt-in git pre-commit hook for this clone
@@ -60,6 +65,8 @@ TOP_IMPORTED = 15
 MAX_CHANGED_LINES = 60
 MAX_CHANGED_NAMES = 20  # the definitions of one changed file; its other lists: MAX_SYMBOLS
 MODULE_LEVEL = "(module level)"
+IMPACT_NAMES = 10  # the files on one `impact` line
+CHARS_PER_TOKEN = 4  # `query --budget`: the token estimate
 
 SKIP_DIRS = {
     "node_modules", "vendor", "third_party", "dist", ".venv", "venv", "__pycache__", ".git",
@@ -1014,6 +1021,158 @@ def changed_lines(root, diff, head, info, importers, mentions, out_rel):
     return lines
 
 
+# `impact` and `query --budget`: run only when asked; nothing calls them by default.
+WORD = re.compile(r"[A-Za-z_$][\w$]*")
+
+
+def lang_family(lang):
+    """Languages whose files can use each other's names: JavaScript and TypeScript, C and C++."""
+    return {"TypeScript": "JavaScript", "C++": "C", "C/C++": "C"}.get(lang, lang)
+
+
+def short_list(items, limit=IMPACT_NAMES):
+    more = len(items) - limit
+    return ", ".join(items[:limit]) + (" (+%d more)" % more if more > 0 else "")
+
+
+def impact_lines(root, targets, depth, info, importers, out_rel):
+    """The lines `impact` prints: per target file the map knows, its importers (import-based,
+    each file once: direct, then each further level up to `depth`), the tests among them and
+    those of its language family named after it (`test_<name>` ...), and per top-level
+    definition the other source files of its language family whose text (Python: outside
+    strings and comments) holds its name as a whole word, importers first (name-based: anything
+    else of the same name counts too). Targets the map doesn't parse are named on one line at the
+    end. `main` cuts it at MAX_CHANGED_LINES."""
+    paths = sorted(set(targets))
+    known = [p for p in paths if p in info]
+    tests_by_stem = {}
+    for p in sorted(info):
+        stem = posixpath.splitext(posixpath.basename(p))[0]
+        if is_test(p) and TEST_AFFIX.sub("", stem) != stem:  # a test_ / _test ... affix, not
+            tests_by_stem.setdefault(TEST_AFFIX.sub("", stem).lower(), []).append(p)  # __init__
+    wanted = {n.rstrip("?!") for p in known for n, _ in info[p]["symbols"][:MAX_CHANGED_NAMES]}
+    users_of = {}
+    for p in sorted(info) if wanted else ():
+        text = read_text(root, p) or ""
+        if info[p]["lang"] == "Python":  # outside strings and comments
+            state, code = None, []
+            for line in text.split("\n"):
+                part, state = code_part(line, state)
+                code.append(part)
+            text = "\n".join(code)
+        for word in wanted.intersection(WORD.findall(text)):
+            users_of.setdefault(word, []).append(p)
+    lines = ["impact: %d source file%s (imported by, depth, tests: import-based; tests by name, "
+             "referenced: name-based, may include false matches)"
+             % (len(known), "" if len(known) == 1 else "s")]
+    for path in known:
+        lines.append(path)
+        found, seen = set(), {path}
+        if info[path]["lang"] not in IMPORT_LANGS:
+            lines.append("  imports: not parsed for %s" % info[path]["lang"])
+        else:
+            level = [path]
+            for n in range(1, depth + 1):
+                level = sorted({u for p in level for u in importers.get(p, ())} - seen)
+                if not level:
+                    break
+                seen.update(level)
+                found.update(u for u in level if is_test(u))
+                rest = [u for u in level if not is_test(u)]
+                if rest:
+                    lines.append("  %s: %s" % ("imported by" if n == 1 else "depth %d" % n,
+                                               short_list(rest)))
+            if found:
+                lines.append("  tests: %s" % short_list(sorted(found)))
+        names, family = [n for n, _ in info[path]["symbols"]], lang_family(info[path]["lang"])
+        stem = posixpath.splitext(posixpath.basename(path).lower())[0]
+        named = [t for t in tests_by_stem.get(stem, []) if t not in found and t != path
+                 and lang_family(info[t]["lang"]) == family]
+        if named and not is_test(path):
+            lines.append("  tests by name: %s" % short_list(named))
+        for name in names[:MAX_CHANGED_NAMES]:
+            users = [u for u in users_of.get(name.rstrip("?!"), [])
+                     if u != path and lang_family(info[u]["lang"]) == family]
+            users.sort(key=lambda u: u not in seen)  # importers first, each part sorted
+            if users:
+                lines.append("  referenced: %s: %s" % (name, short_list(users, MAX_SYMBOLS)))
+        if len(names) > MAX_CHANGED_NAMES:
+            lines.append("  (+%d more definitions)" % (len(names) - MAX_CHANGED_NAMES))
+    other = [p for p in paths if p not in info and not is_map_page(p, out_rel)]
+    if other:
+        lines.append("not a source file in the map (other type, skipped or deleted): %s"
+                     % short_list(other))
+    return lines
+
+
+def query_ranked(term, budget, info, importers, mentions, vault):
+    """The lines of `query --budget`: the same items as `query` (50 per section at most),
+    ranked (exact name or path matches first, then by how many files import the file or link to
+    the page, then in `query`'s order) and kept, in rank order, while the output stays within
+    about `budget` tokens (characters / CHARS_PER_TOKEN): one that doesn't fit is skipped, a
+    later smaller one may still go in. The first ranked item is always kept; a cut ends with one
+    line."""
+    items = []  # (rank, section, lines)
+    for p, d in sorted(info.items()):
+        for n, ln in d["symbols"]:
+            if term in n.lower():
+                rank = (n.lower() != term, -len(importers.get(p, ())), 0, len(items))
+                items.append((rank, 0, ["  %s:%d %s" % (p, ln, n)]))
+    for p in sorted(info):
+        if term in p.lower():
+            users = importers.get(p, [])
+            if info[p]["lang"] in IMPORT_LANGS:
+                block = ["  %s (imported by %d local files)" % (p, len(users))]
+            else:
+                block = ["  %s (imports not parsed for %s)" % (p, info[p]["lang"])]
+            block += ["    <- %s" % u for u in users[:20]]
+            block += ["    mentioned in %s:%d" % m for m in mentions_of(mentions, p)[:20]]
+            low = p.lower()
+            exact = term in (low, posixpath.basename(low), posixpath.splitext(low)[0]) or \
+                low.endswith("/" + term) or posixpath.splitext(low)[0].endswith("/" + term)
+            items.append(((not exact, -len(users), 1, len(items)), 1, block))
+    for pg in vault["pages"] if vault else ():
+        title = vault["meta"][pg][0]
+        low = pg.lower()
+        if term in low or term in title.lower():
+            exact = term in (low, title.lower(), posixpath.splitext(posixpath.basename(low))[0])
+            block = ["  %s — %s (%d words, linked from %d)" % (pg, title, vault["meta"][pg][1],
+                                                              vault["inbound"][pg])]
+            items.append(((not exact, -vault["inbound"][pg], 2, len(items)), 2, block))
+    heads = ["defined:", "paths:", "vault pages:"][:3 if vault else 2]
+    present = {s for _, s, _ in items}
+    shown, capped = {}, []  # `query` shows 50 items per section; the budget only cuts further
+    for item in items:  # still in `query`'s order
+        shown[item[1]] = shown.get(item[1], 0) + 1
+        if shown[item[1]] <= 50:
+            capped.append(item)
+    over, items = len(items) - len(capped), capped
+    size = sum(len(h) + 7 for s, h in enumerate(heads) if s not in present)  # "<head> none\n"
+    ordered, total = sorted(items), len(items) + over
+    full = size + sum(len(line) + 1 for _, _, block in ordered for line in block) + \
+        sum(len(heads[s]) + 1 for s in present)
+    limit = budget * CHARS_PER_TOKEN
+    if full > limit or over:  # room for the line that says how many were cut
+        limit -= len("… %d more (raise --budget)\n" % total)
+    kept, count = {}, 0
+    for _, s, block in ordered:  # in rank order; one that doesn't fit leaves room for the next
+        cost = sum(len(line) + 1 for line in block) + (0 if s in kept else len(heads[s]) + 1)
+        if kept and size + cost > limit:
+            continue
+        size += cost
+        count += 1
+        kept.setdefault(s, []).extend(block)
+    lines = []
+    for s, h in enumerate(heads):
+        if s not in present:
+            lines.append(h + " none")
+        elif s in kept:
+            lines += [h] + kept[s]
+    if count < total:
+        lines.append("… %d more (raise --budget)" % (total - count))
+    return lines
+
+
 # The git pre-commit hook. A POSIX sh script (Git for Windows runs hooks through its own sh, also
 # for a commit started from PowerShell) that runs an existing hook first, then `pre-commit`.
 HOOK_MARKER = "# codemap-managed-hook"
@@ -1626,17 +1785,24 @@ def session_hook(python, stdin_text=None):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="codemap.py", description="Deterministic code map.")
-    ap.add_argument("action", choices=["build", "check", "query", "mentions", "changed", "detect",
-                                       "install-hook", "uninstall-hook", "pre-commit",
+    ap.add_argument("action", choices=["build", "check", "query", "mentions", "changed", "impact",
+                                       "detect", "install-hook", "uninstall-hook", "pre-commit",
                                        "claude-hook", "rules-hint", "session-hook"])
     ap.add_argument("terms", nargs="*")
     ap.add_argument("--root", default=".")
     ap.add_argument("--out", help="map path (default: from %s, else detected)" % CONFIG)
     ap.add_argument("--vault", help="vault folder (default: from %s, else detected)" % CONFIG)
     ap.add_argument("--redetect", action="store_true", help="build: ignore and rewrite %s" % CONFIG)
-    ap.add_argument("--base", help="mentions: use the files changed since this commit; "
+    ap.add_argument("--base", help="mentions, impact: use the files changed since this commit; "
                                    "changed: the commit the diff starts from")
     ap.add_argument("--head", help="changed: the commit the diff ends at")
+    ap.add_argument("--depth", type=int, default=2,
+                    help="impact: how many levels of importers to follow (default 2)")
+    ap.add_argument("--budget", type=int,
+                    help="query: cap the output at about N tokens, estimated as characters / %d; "
+                         "exact matches first, then the most imported files and most linked "
+                         "pages; a cut ends with one line saying how many more"
+                         % CHARS_PER_TOKEN)
     ap.add_argument("--quiet", action="store_true",
                     help="check: print nothing when current, one line otherwise")
     ap.add_argument("--remove", action="store_true", help="rules-hint: remove the block")
@@ -1645,6 +1811,10 @@ def main(argv=None):
     ap.add_argument("--python", default="python3",
                     help="claude-hook, session-hook: Python command to print")
     args = ap.parse_args(argv)
+    if args.budget is not None and (args.action != "query" or args.budget < 1):
+        ap.error("--budget takes a positive number of tokens, with query only")
+    if args.depth < 1:
+        ap.error("--depth must be 1 or more")
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(errors="backslashreplace")
@@ -1733,6 +1903,10 @@ def main(argv=None):
         if len(args.terms) != 1:
             ap.error("query needs one TERM")
         term = args.terms[0].lower()
+        if args.budget is not None:
+            for line in query_ranked(term, args.budget, info, importers, mentions, vault):
+                print(line)
+            return 0
         hits = [(p, n, ln) for p, d in sorted(info.items()) for n, ln in d["symbols"]
                 if term in n.lower()]
         paths = [p for p in sorted(info) if term in p.lower()]
@@ -1779,6 +1953,37 @@ def main(argv=None):
                 found += 1
         if not found:
             print("no vault page mentions these files")
+        return 0
+
+    if args.action == "impact":
+        targets = list(args.terms)
+        if args.base:
+            try:
+                targets += changed_files(root, args.base)
+            except (OSError, subprocess.CalledProcessError):
+                ap.error("cannot diff against %s" % args.base)
+        if not targets:
+            if args.base:
+                print("no files changed since %s" % args.base)
+                return 0
+            ap.error("impact needs PATH... or --base SHA")
+        for n, x in enumerate(targets):
+            if os.path.isabs(x):  # a file under the root; on Windows also a drive path
+                try:
+                    rel = os.path.relpath(os.path.abspath(x), root)
+                except ValueError:  # another drive
+                    rel = None
+                if rel and rel not in (os.curdir, os.pardir) \
+                        and not rel.startswith(os.pardir + os.sep):
+                    targets[n] = rel
+        targets = [strip_dot_slash(posixpath.normpath(x.replace("\\", "/"))) for x in targets]
+        lines = impact_lines(root, targets, args.depth, info, importers, out_rel)
+        cut = lines[MAX_CHANGED_LINES - 1:]
+        if len(cut) > 1:
+            lines[MAX_CHANGED_LINES - 1:] = ["(cut: %d more lines, with %d more files)" % (
+                len(cut), sum(1 for line in cut if not line.startswith((" ", "not a source"))))]
+        for line in lines:
+            print(re.sub(r"[\x00-\x1f\x7f]", "?", line))
         return 0
 
     if args.action == "changed":
