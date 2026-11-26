@@ -60,13 +60,13 @@ standing policy and wins over that rule (owner quotes stay verbatim).
 ## Map and rules block
 
 In every mode the same PR also sets up the code map and the rules block, without a separate
-question (the owner asking for a vault is the yes), as the `code-map` skill's "Setting it up"
-says: `.codemap.json` and `build` (`build --redetect` when `.codemap.json` has no `vault`), then
-`rules-hint`, which adds or updates its marked block in `AGENTS.md` and `CLAUDE.md` (the
-`code-map` skill's **The rules block** says what else it may add: a new file's title, one
-separating line). No Python 3.8+ → offer the install (that skill's command for the OS); declined
-→ the vault without a map, with the block written by hand from that skill's template, and say so
-in the report. The commit hooks are not part of this; they stay a separate owner choice.
+question (the owner asking for a vault is the yes), as "Setting it up" in the `code-map` skill's
+`references/setup.md` says: `.codemap.json`, `build` (`build --redetect` when `.codemap.json` has
+no `vault`), then `rules-hint`, which writes its marked block into `AGENTS.md` and `CLAUDE.md`
+(that file's **The rules block** says what else it may add: a new file's title, a blank line).
+No Python 3.8+ → offer the install (that skill's command for the OS); declined → the vault
+without a map, with the block written by hand from that skill's template, and say so in the
+report. The commit hooks are not part of this; they stay a separate owner choice.
 
 ## Landing
 

@@ -1232,11 +1232,12 @@ No rule was reworded, weakened or deleted; no read was added to a normal run.
   resolution and every command, the nudge's scope and one-time block, Rules, In the manager.
 - **manager: moved.** "No living plan" / "work not split into phases" → `references/no-plan.md`
   (read only at step 0 when there is no plan or the work is unsplit); a refused or blocked landing,
-  with the branch-protection line from **GitHub CI is not a gate** → `references/refused-landing.md`
-  (read only when a landing is refused or blocked). Not into `landing.md` (read at every phase's
-  landing) or `establish-state.md` (read at step 0, after each compaction, and again at loop steps
-  1 and 2 when the default head moved): there the moved text would be paid more than once per run.
-  Both files are byte for byte as at 0.9.9 (`landing.md` 2,192 chars, `establish-state.md` 5,127). **Kept, normal path or a tested invariant:**
+  with the branch-protection line from **GitHub CI is not a gate** →
+  `references/refused-landing.md` (read only when a landing is refused or blocked). Not into
+  `landing.md` (read at every phase's landing) or `establish-state.md` (read at step 0, after each
+  compaction, and again at loop steps 1 and 2 when the default head moved): there the moved text
+  would be paid more than once per run. Both files are byte for byte as at 0.9.9 (`landing.md`
+  2,192 chars, `establish-state.md` 5,127). **Kept, normal path or a tested invariant:**
   ground rules, subagents, model strategy and run marker, step 0 items, every loop step, brakes,
   owner decisions, talking to the owner, run record, stop conditions. 15% was not reachable: the
   body is already mostly invariants the tests pin to SKILL.md and pointers; the remaining rare
@@ -1255,3 +1256,45 @@ No rule was reworded, weakened or deleted; no read was added to a normal run.
   Header, entry 22 and the test docstring say "a name with no letters is marked"; the header's
   141-character line re-wrapped to 100 columns.
 - **Version.** plugin.json 0.9.10.
+
+### 24. code-map `impact` and budgeted `query` (plugin 0.9.11)
+
+Owner rule for this change: no added token cost. Both commands run only when an agent asks for
+them: no hook, brief or skill step calls them, and `implementer-brief.md`, `reviewer-brief.md` and
+manager SKILL.md are untouched (whether reviewers should use `impact` will be decided from eval
+data, not now).
+
+- **`impact <path>...` / `impact --base <sha>`** (`--depth N`, default 2). What: per file, its
+  importers (direct, then each further level, each file once), the test files among them and
+  those named after it, and per top-level definition the other files of its language naming it.
+  Why: before editing a widely used file, one call answers "what does this touch" that otherwise
+  takes several `grep`s. Built on the existing scan (`scan`'s importers, `is_test`, `TEST_AFFIX`,
+  `changed_files`, `code_part`); no new parser. Import-based lines and the name-based
+  `referenced` lines (a whole-word match, Python outside strings and comments; may include false
+  matches) are marked as such in the first line. At most 60 lines, lists capped.
+- **`query <term> --budget N`.** What: the same items as `query`, ranked (exact name or path
+  match first, then by import in-degree or inbound vault links, then `query`'s order) and kept
+  while the output stays within about N tokens (characters / 4, said in `--help`); a cut ends
+  with `… <k> more (raise --budget)`. Why: a broad term's `query` can run to hundreds of lines.
+  Without `--budget` the output is byte-identical to 0.9.10 (golden test).
+- **Cost argument.** Nothing new is loaded or run by default. code-map SKILL.md grows by three
+  lines naming the commands and when they help, with a pointer: 9,108 → 9,347 chars (ceiling
+  9,500 kept). The detail is in `references/impact-budget.md`, read only when using them.
+- **Measured output** (this repository, 34 source files): `impact` on
+  `plugins/manager-plugin/skills/manager/scripts/usage.py` 17 lines, 2,757 chars (about 690
+  tokens); `query hook --budget 300` 1,193 chars against 2,876 without `--budget`. On a large
+  open-source Python clone (7,104 tracked files): `impact` on a widely imported utility module
+  15 lines, 3,365 chars, 4.8 s; `query model --budget 300` 30 lines, about 1,200 chars, against
+  419 lines and 20,472 bytes without it, 2.1 s (the scan dominates; the same as plain `query`).
+- **Tests.** `skills/code-map/scripts/test_impact.py`: a fixture with a chain a → b → c, another
+  importer of c and a test; `impact` on c lists b, a and the test; `--depth 1`; `--base`;
+  each dependent once; the budget cut keeps the exact match and prints the more-line; `query`
+  without `--budget` equals the 0.9.10 output (golden).
+- **Follow-ups from the 0.9.10 review.** Manager SKILL.md ceiling 18,000 → 17,600 (17,587, this
+  change doesn't grow it). `test_moved_rules_exist_exactly_once` also pins one key sentence of
+  each file moved in 0.9.10 (code-map `layout.md`, `python-install.md`, `setup.md`,
+  `commit-hooks.md`, `search-nudge.md`; manager `no-plan.md`, `refused-landing.md`;
+  self-training-skills `adopt.md`), counted across every skill's SKILL.md and references.
+  create-vault SKILL.md names `references/setup.md` for the rules block (7,302 → 7,299 chars).
+  Entry 23's two lines over 100 columns are wrapped.
+- **Version.** plugin.json 0.9.11. README names both commands.

@@ -346,10 +346,11 @@ class SizeCeilingTest(unittest.TestCase):
     ceiling by what it adds. Words are counted as `str.split()` does (`wc -w` in a UTF-8 locale)."""
 
     def test_manager_skill_fits_the_reattach_budget(self):
-        self.assertLessEqual(len(read(os.path.join(MANAGER, "SKILL.md"))), 18000)
+        self.assertLessEqual(len(read(os.path.join(MANAGER, "SKILL.md"))), 17600)
 
     def test_code_map_skill(self):
-        """9,108 characters at 0.9.10, after its rare paths moved to `references/`."""
+        """9,108 characters at 0.9.10, after its rare paths moved to `references/`; 9,347 at
+        0.9.11."""
         self.assertLessEqual(len(read(os.path.join(SKILLS, "code-map", "SKILL.md"))), 9500)
 
     def test_rare_path_pointers_resolve(self):
@@ -442,6 +443,28 @@ class ReferencePointerTest(unittest.TestCase):
                 ("the rules and the merge call's own refusal", "landing.md"),
                 ("never for the hooks line alone", "code-map-check.md")):
             found = {name: text.count(rule) for name, text in self.texts.items() if rule in text}
+            self.assertEqual(found, {home: 1}, rule)
+        # Moved out of a SKILL.md in 0.9.10: one key sentence each, counted in every skill's
+        # SKILL.md and references.
+        paths = sorted(glob.glob(os.path.join(SKILLS, "*", "SKILL.md"))
+                       + glob.glob(os.path.join(SKILLS, "*", "references", "*.md")))
+        texts = {os.path.relpath(p, SKILLS).replace(os.sep, "/"): " ".join(read(p).split())
+                 for p in paths}
+        for rule, home in (
+                ("the deepest folder holding at least 80% of the pages with `[[wikilinks]]`",
+                 "code-map/references/layout.md"),
+                ("Install only after the owner agrees in this conversation",
+                 "code-map/references/python-install.md"),
+                ("`--remove` deletes only such a file, and only when nothing but its title is left",
+                 "code-map/references/setup.md"),
+                ("An existing `pre-commit` hook is kept as `pre-commit.codemap-chained` and runs "
+                 "first", "code-map/references/commit-hooks.md"),
+                ("Each subagent counts on its own", "code-map/references/search-nudge.md"),
+                ("No living plan \u2192 the run can't start", "manager/references/no-plan.md"),
+                ("stops that landing only", "manager/references/refused-landing.md"),
+                ("an unmarked one is never checked or trained by this skill",
+                 "self-training-skills/references/adopt.md")):
+            found = {name: text.count(rule) for name, text in texts.items() if rule in text}
             self.assertEqual(found, {home: 1}, rule)
 
     def test_the_final_report_step_reaches_the_bookkeeping_pr(self):
