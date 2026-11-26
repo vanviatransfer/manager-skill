@@ -1626,3 +1626,26 @@ No change to the reviewer, its brief, the manager skill or a hook; nothing runs 
   Windows, Git Bash, CLI 2.1.330); the suite's stop rule held the pilot back. No other Windows
   failure in the six unit suites, `plugin validate` or the smoke runs.
 - **Cost.** None: one string, in a script run only by hand.
+
+### 30. Calibration runner: Windows attempts and the first pilot (plugin 0.9.17)
+
+- **What.** `run.py` gains `--trust-plugin` (passed on to the eval), refuses to launch on Windows,
+  falls back to `expanduser("~")` when `HOME` is unset, and opens file modes as well as folder
+  modes before removing a kept sandbox. README and the docstring say so.
+- **Why.** Two Windows attempts (native, CLI 2.1.330) spent nothing and found four things. The
+  eval asks for trust only in a terminal and otherwise exits with an error. PowerShell's `bash`
+  is the WSL launcher, so the scaffold failed. From Git Bash the scaffold passed, but Claude Code
+  refused the session: no Bash sandbox on Windows, and folder modes do not restrict reads there.
+  Clean-up failed on git's read-only objects.
+- **Pilot.** One case (rc-01, Sonnet, Linux, CLI 2.1.332, checkout under `HOME`, run as root),
+  `--max-cost-usd 2`.
+  - Result: score 1.00, 0.13 USD, 26 s. The reviewer was dispatched with the real brief and ran
+    the probe. It returned CHANGES REQUIRED with two blockers. `score.py` matched the first
+    (found, L3); the second was an extra missing-test blocker.
+  - Trace and clean-up: copied, and the sandbox was removed. No blind string; the init event
+    lists one manager-plugin, the one under test.
+  - Two things to check in the full run's audit. The reviewer's token count (68 output tokens)
+    looks under-counted, so read the totals, not that column. As root the harness could not seal
+    the kept sandbox, which leaves only the blind grader as the check.
+- **Cost.** None for normal runs. By the pilot, a 20-case Sonnet run is about 3-5 USD, below the
+  earlier 5-10 estimate.
