@@ -266,8 +266,8 @@ class ManagerRunCompactHookTest(unittest.TestCase):
         self.mark()
         for suffix in ("; improvement pass: on", "; improvement pass: off", ""):
             text = ("Run R2026-01-01-0000: model strategy Sonnet (owner: \"Sonnet\")%s\n"
-                    "Run R2026-01-01-0000: improvement pass: dispatched — 0123abc..4567def, "
-                    "report /tmp/r/improvement.md\n" % suffix)
+                    "Run R2026-01-01-0000: improvement pass: dispatched — 0123abc..4567def\n"
+                    % suffix)
             self.notes(text)
             code, out, err = self.hook("SessionStart")
             with self.subTest(suffix=suffix):
@@ -412,7 +412,7 @@ class ReferencePointerTest(unittest.TestCase):
         for name in self.texts:
             if name == "SKILL.md":
                 continue
-            if name == "brief-improvement.md":  # a researcher's brief, named by the pass's rules
+            if name == "brief-improvement.md":  # the pass's brief, named by its rules
                 self.assertIn("references/%s>" % name, self.texts["improvement-pass.md"])
             elif name.startswith("brief-"):
                 self.assertIn("`%s`" % name, briefs, name)
@@ -712,7 +712,7 @@ class StepZeroCommandTest(unittest.TestCase):
 class ImprovementPassTest(unittest.TestCase):
     """The opt-in end-of-run improvement pass (0.9.20): asked at the gate, off unless the owner
     says yes, recorded as a suffix older records lack, read from one reference before the final
-    report, one read-only Opus researcher, no retry."""
+    report, one read-only Opus reviewer agent, no retry."""
 
     SUFFIX = re.compile(r"; improvement pass: (on|off)$")
 
@@ -759,8 +759,12 @@ class ImprovementPassTest(unittest.TestCase):
         self.assertIn("Sonda Opus iyileştirme turu (tek ajan, salt okunur, öneriler rapora; "
                       "~100–200k token): Evet / Hayır Model tercihiniz hangisi?", self.strategy)
         self.assertNotIn("improvement", self.texts["SKILL.md"].lower())  # no room under 17,600
-        self.assertIn("`İyileştirme önerileri` section or its one line "
-                      "(read `references/improvement-pass.md` first)",
+        strategy = " ".join(read(os.path.join(MANAGER, "references", "model-strategy.md")).split())
+        # after a compaction, the kept state line keeps the owner's yes even if a line lacks it
+        self.assertIn("or a `Run <id>: improvement pass:` line for this run is kept", strategy)
+        self.assertIn("The `run` line and the working-notes strategy line always carry it", strategy)
+        self.assertIn("Improvement pass on → read `references/improvement-pass.md` and run the "
+                      "pass before",
                       self.texts["final-report.md"])
 
     def test_the_pass_rules(self):

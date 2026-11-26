@@ -45,8 +45,9 @@ carried out right after the gate.
 **Improvement pass** (opt-in, default off): one Opus pass at the end of the run
 (`references/improvement-pass.md`). It is on only when the owner says yes to its line at the gate
 or otherwise in this conversation for this run, when rule 3's `standing` line ends with
-`; improvement pass: on`, or, after a compaction, when the working-notes line (rule 2: the plan's
-`run` line) ends so. Anything else is off: no answer, a strategy given without that line being
+`; improvement pass: on`, or, after a compaction, when the working-notes strategy line (rule 2: the
+plan's `run` line) ends so or a `Run <id>: improvement pass:` line for this run is kept. Anything
+else is off: no answer, a strategy given without that line being
 asked, a line without the suffix. Never inferred.
 
 Guide for the recommendation: Sonnet for bounded code, docs, tests and ordinary reviews; Opus for
@@ -66,8 +67,9 @@ replacing the previous `run` line. A `standing` line (`scope: standing`) is writ
 owner says the choice is a policy for all runs, and stays until the owner changes it.
 
 Both lines, and the working-notes line, may end with `; improvement pass: on` or
-`; improvement pass: off`; absent (every older record) means off. The `run` line always carries
-it; a `standing` line only when the owner's policy words cover the pass. Pass on → also keep the
+`; improvement pass: off`; absent (every older record) means off. The `run` line and the
+working-notes strategy line always carry it; a `standing` line only when the owner's policy words
+cover the pass. Pass on → also keep the
 working-notes line `Run <id>: improvement pass: start <the default head step 0 item 2 recorded>`.
 The pass's own dispatch is outside the strategy: `model: opus`, `effort: high`, by the owner's yes.
 

@@ -25,8 +25,7 @@ the default branch whose PR body carries this run's `Run:` id; neither found →
 so in one line.
 
 **Dispatch.** Change the line to `Run <id>: improvement pass: dispatched — <start>..<final>`.
-Measure the
-**Ignored-data guard** before and after (`references/dispatch.md`). One Agent call:
+Measure the **Ignored-data guard** before and after (`references/dispatch.md`). One Agent call:
 `subagent_type: manager-plugin:reviewer`, `model: opus`, `effort: high`,
 `run_in_background: false`, the prompt `Read and follow <the resolved path of
 ${CLAUDE_SKILL_DIR}/references/brief-improvement.md>.` and that brief's dispatch fields:
