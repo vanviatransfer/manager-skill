@@ -43,8 +43,10 @@ outcome in its evidence (a records row cited as "<date> <context>: <outcome>" th
 hold, or an owner verdict quoted as owner: "<words>", <date>); a sourced lesson may back a rule
 without one while the changelog has only its first entry. An old five-column lessons table reports
 these evidence gaps as notes, not problems (see references/lessons-format.md). Invisible or
-direction-changing characters (INVISIBLE) in SKILL.md, lessons.md and the records file are one
-problem per file and line; they are reported, never stripped. With --triggers-from REF, every quoted
+direction-changing characters (INVISIBLE) in SKILL.md, lessons.md and the records file give one
+line per file and line, never stripped: a problem for a bidi control or a stray tag character, a
+note for the others; emoji presentation and joiners inside words are allowed (invisible_chars,
+strict=False). With --triggers-from REF, every quoted
 phrase ("..." or “...”) of the skill's description at REF, and of the description of the folder
 <name>-trainer beside it at REF (the retired trainer), must still be in the current
 description. A skill missing at REF is new: a note, not a problem; a trainer missing at REF is
@@ -135,6 +137,11 @@ ZWJ = "\u200d"
 EMOJI = ((0x1F000, 0x1FAFF), (0x2600, 0x27BF), (0x2300, 0x23FF), (0x2B00, 0x2BFF),
          (0x00A9, 0x00A9), (0x00AE, 0x00AE), (0x203C, 0x203C), (0x2049, 0x2049),
          (0x2122, 0x2122), (0x2139, 0x2139))
+BIDI = ((0x202A, 0x202E), (0x2066, 0x2069))  # a problem in check; the rest of INVISIBLE: a note
+TAG_CHARS = ((0xE0000, 0xE007F),)  # a problem in check outside a TAG_SEQUENCE
+TAG_SEQUENCE = re.compile("\U0001F3F4[\U000E0020-\U000E007E]+\U000E007F")  # a subdivision flag
+SELECTORS = "\ufe0e\ufe0f"
+KEYCAP_BASES = "0123456789#*"
 
 
 NEAR_MISS = ("the marker doesn't match: the line right after the frontmatter must be exactly %s"
@@ -191,26 +198,50 @@ def in_ranges(ch, ranges):
     return any(lo <= cp <= hi for lo, hi in ranges)
 
 
-def invisible_chars(text):
+def word_char(ch):
+    """A non-ASCII letter, or a combining mark (a Devanagari virama before a ZWJ)."""
+    return ord(ch) > 127 and (ch.isalpha() or unicodedata.category(ch).startswith("M"))
+
+
+def emoji_join(line, i):
+    """Whether the ZWJ at line[i] joins two emoji: the character after it is in EMOJI, and so is
+    the one before it once variation selectors and skin-tone modifiers are passed over."""
+    before = i - 1
+    while before >= 0 and (line[before] in SELECTORS or 0x1F3FB <= ord(line[before]) <= 0x1F3FF):
+        before -= 1
+    return before >= 0 and i + 1 < len(line) and in_ranges(line[before], EMOJI) and \
+        in_ranges(line[i + 1], EMOJI)
+
+
+def invisible_chars(text, strict=True):
     """[(line, column, code point)] of the INVISIBLE characters in a text, 1-based, the column
-    counted in characters (lines split at \\n). Allowed: a BOM (U+FEFF) as the text's first
-    character, and a ZWJ (U+200D) between two emoji: the character after it is in EMOJI, and so is
-    the one before it once variation selectors (U+FE0E, U+FE0F) and skin-tone modifiers are
-    passed over (those selectors are still reported themselves)."""
+    counted in characters (lines split at \\n). Always allowed: a BOM (U+FEFF) as the text's
+    first character and a ZWJ between two emoji (emoji_join). Strict (the plugin's own text test)
+    allows nothing else. Not strict (`check` on a project's skills) also allows a variation
+    selector right after an EMOJI character or a keycap base (0-9 # * then U+20E3), a ZWNJ or
+    ZWJ between two word_char characters (Persian, Indic scripts), and a well-formed emoji tag
+    sequence (TAG_SEQUENCE)."""
     found = []
     for n, line in enumerate(text.split("\n"), 1):
-        for col, ch in enumerate(line, 1):
-            if not in_ranges(ch, INVISIBLE) or (n == 1 and col == 1 and ch == "\ufeff"):
+        tagged = set()
+        if not strict:
+            for m in TAG_SEQUENCE.finditer(line):
+                tagged.update(range(m.start() + 1, m.end()))
+        for i, ch in enumerate(line):
+            if not in_ranges(ch, INVISIBLE) or (n == 1 and i == 0 and ch == "\ufeff"):
                 continue
-            if ch == ZWJ:
-                before = col - 2
-                while before >= 0 and (line[before] in "\ufe0e\ufe0f" or
-                                       0x1F3FB <= ord(line[before]) <= 0x1F3FF):
-                    before -= 1
-                if before >= 0 and col < len(line) and in_ranges(line[before], EMOJI) and \
-                        in_ranges(line[col], EMOJI):
+            if ch == ZWJ and emoji_join(line, i):
+                continue
+            if not strict:
+                if i in tagged:
                     continue
-            found.append((n, col, ord(ch)))
+                if ch in SELECTORS and i > 0 and (in_ranges(line[i - 1], EMOJI) or (
+                        line[i - 1] in KEYCAP_BASES and line[i + 1:i + 2] == "\u20e3")):
+                    continue
+                if ch in "\u200c\u200d" and 0 < i < len(line) - 1 and word_char(line[i - 1]) \
+                        and word_char(line[i + 1]):
+                    continue
+            found.append((n, i + 1, ord(ch)))
     return found
 
 
@@ -221,8 +252,9 @@ def char_name(cp):
 
 
 def check_invisible(sk):
-    """One problem per line of SKILL.md, lessons.md and the records file that holds INVISIBLE
-    characters. A file that can't be read is left to the other checks."""
+    """One line per line of SKILL.md, lessons.md and the records file that holds INVISIBLE
+    characters (invisible_chars, not strict): a problem when one is a bidi control or a tag
+    character, else a note. A file that can't be read is left to the other checks."""
     rels = [sk.rel_dir + "/SKILL.md", sk.rel_dir + "/lessons.md"]
     path = section_paths(section(sk.secs, "Record") or []).get("Records")
     if path and safe_rel(path):
@@ -232,12 +264,19 @@ def check_invisible(sk):
             text = read_rel(sk.root, rel)
         except (ValueError, OSError):
             continue
-        lines = {}
-        for n, col, cp in invisible_chars(text):
+        lines, bad = {}, set()
+        for n, col, cp in invisible_chars(text, strict=False):
             lines.setdefault(n, []).append("%s at column %d" % (char_name(cp), col))
+            if in_ranges(chr(cp), BIDI + TAG_CHARS):
+                bad.add(n)
         for n, chars in sorted(lines.items()):
-            sk.problems.append("%s:%d holds invisible characters (%s): they can hide text from a "
-                               "review; remove them by hand" % (rel, n, ", ".join(chars)))
+            if n in bad:
+                sk.problems.append("%s:%d holds invisible characters (%s): they can hide text "
+                                   "from a review; remove them by hand"
+                                   % (rel, n, ", ".join(chars)))
+            else:
+                sk.notes.append("note: %s:%d holds invisible characters (%s): remove them unless "
+                                "they belong there" % (rel, n, ", ".join(chars)))
 
 
 def split_frontmatter(text):
@@ -527,8 +566,8 @@ def today():
 
 
 def stale_lines(lessons, rows, days=STALE_DAYS, uses=STALE_USES):
-    """One line per active lesson whose last-confirmed is more than `days` old, or followed by
-    more than `uses` records rows (for an unknown one, all rows count)."""
+    """One line per active lesson whose last-confirmed is more than `days` old, or with more than
+    `uses` records rows dated after last-confirmed (for an unknown one, all rows count)."""
     out = []
     now = today()
     for lid, les in lessons.items():

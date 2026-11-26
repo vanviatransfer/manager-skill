@@ -112,6 +112,14 @@ class WeakenedGuardsTest(unittest.TestCase):
         self.assertEqual(len(section), 1 + 8 + 1)
         self.assertEqual(section[-1], "  … 3 more")
 
+    def test_nine_findings_are_all_shown(self):
+        """As the 60-line cap: a more-line only when it stands for two or more."""
+        self.plant()
+        self.write("lint0/.flake8", "[flake8]\n")
+        section = self.section(self.changed(self.base, self.commit("one more")))
+        self.assertEqual(len(section), 1 + 9)
+        self.assertNotIn("more", section[-1])
+
     def test_rename_kinds_and_a_test_no_longer_named_as_one(self):
         self.git("mv", "tests/test_moved.py", "tests/test_other.py")
         os.makedirs(os.path.join(self.root, "attic"))
@@ -134,6 +142,29 @@ class WeakenedGuardsTest(unittest.TestCase):
         head = self.commit("harmless")
         out = self.changed(self.base, head)
         self.assertNotIn(HEADER, out)
+
+    def test_conditional_skips_import_noqa_and_data_files_count_for_nothing(self):
+        cond = "        if not run():\n            self.%s(\"no\")\n" % ("skip" + "Test")
+        self.write("tests/test_core.py", BASE["tests/test_core.py"].replace(
+            "class T", "@unittest.%s(True, \"x\")\n@unittest.%s(True, \"y\")\nclass T" % (
+                "skip" + "If", "skip" + "Unless")).replace(
+            "        self.assertEqual", cond + "        self.assertEqual").replace(
+            "from app.core", "import sys  %s: E402\nfrom app.core" % NOQA))
+        self.write("tests/test_flags.py", "import pytest\n\n\n@pytest.mark.%s(True, reason='x')\n"
+                   "def test_x():\n    if True: pytest.%s('y')\n" % ("skip" + "if", "skip"))
+        self.write("tests/data/cases.json", '{"assert": 1, "expect": 2}\n')
+        base = self.commit("data")
+        self.write("tests/data/cases.json", "{}\n")  # fewer `assert` words, but no code
+        head = self.commit("data edited")
+        self.assertNotIn(HEADER, self.changed(self.base, base))
+        self.assertNotIn(HEADER, self.changed(base, head))
+
+    def test_an_unconditional_skip_call_is_flagged(self):
+        self.write("tests/test_core.py", BASE["tests/test_core.py"].replace(
+            "        self.assertEqual", "        self.%s(\"later\")\n        self.assertEqual"
+            % ("skip" + "Test")))
+        self.assertEqual(self.section(self.changed(self.base, self.commit("skip"))),
+                         [HEADER, "  skip marker: tests/test_core.py: +1 skipTest("])
 
     def test_without_findings_the_output_is_unchanged(self):
         """Golden: the `changed` output of 0.9.12 for a diff with nothing to flag."""
@@ -159,6 +190,12 @@ class MarkerUnitTest(unittest.TestCase):
                                  "nolint": 1, "pragma: no cover": 1})
         self.assertEqual(asserts, 2)
         self.assertEqual(codemap.guard_marks("x.only(1)\nexpect(a)\n", False), ({}, {}, 0))
+        self.assertEqual(codemap.guard_marks(
+            "import x  # noqa: E402\nimport y  # noqa: F401, E402\nimport z  # noqa\n"
+            "@unittest.skipIf(a, 'b')\n@pytest.mark.skipif(a)\ndef f():\n    try:\n"
+            "        g()\n    except OSError:\n        self.skipTest('no')\n"
+            "    if a: pytest.skip('x')\n    t.Skip()\n", True),
+            ({"t.Skip(": 1}, {"noqa": 1}, 0))
 
     def test_check_config(self):
         for path, kind in ((".github/workflows/ci.yml", "CI"), (".gitlab-ci.yml", "CI"),

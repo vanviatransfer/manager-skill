@@ -11,7 +11,7 @@ REPO = os.path.dirname(os.path.dirname(PLUGIN))  # plugins/manager-plugin in the
 sys.dont_write_bytecode = True
 sys.path.insert(0, HERE)
 import skilltrain  # noqa: E402
-from test_skilltrain import LESSONS, SKILL, Fixture, run  # noqa: E402
+from test_skilltrain import LESSONS, RECORDS, SKILL, Fixture, run  # noqa: E402
 
 SKIP_DIRS = {".git", "__pycache__", "node_modules"}
 
@@ -79,24 +79,61 @@ class HelperTest(unittest.TestCase):
         self.assertEqual(skilltrain.char_name(0xE0041), "U+E0041 TAG LATIN CAPITAL LETTER A")
 
 
+# What `check` (not strict) allows in a project's skill text, each in a sentence of prose.
+ALLOWED = (
+    ("warning sign", "\u26a0\ufe0f"),
+    ("red heart", "\u2764\ufe0f"),
+    ("keycap one", "1\ufe0f\u20e3"),
+    ("health worker", "\U0001F9D1\u200d\u2695\ufe0f"),
+    ("flag of Scotland", "\U0001F3F4\U000E0067\U000E0062\U000E0073\U000E0063\U000E0074\U000E007F"),
+    ("Persian word with ZWNJ", "\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645"),
+    ("Devanagari word with ZWJ", "\u0915\u094d\u200d\u0937"),
+)
+
+
 class CheckTest(Fixture):
-    def test_one_problem_per_file_and_line_nothing_stripped(self):
-        skill = SKILL.replace("## Purpose", "## Purpose\u200b").replace(
-            "Group them by area.", "Group \u202ethem\u202c by area.")
+    def check(self, text):
+        self.write(".claude/skills/release-notes/SKILL.md",
+                   SKILL.replace("Group them by area.", "Group them by area. %s" % text))
+        return run("check", self.dir)
+
+    def test_emoji_and_joiners_inside_words_pass(self):
+        for name, text in ALLOWED:
+            code, out = self.check("See %s here." % text)
+            self.assertEqual(code, 0, (name, out))
+            self.assertNotIn("invisible", out, name)
+            self.assertTrue(skilltrain.invisible_chars(text), "strict reports %s" % name)
+
+    def test_a_bidi_override_in_prose_is_a_problem(self):
+        code, out = self.check("Never \u202eesrever\u202c this.")
+        self.assertEqual(code, 1, out)
+        self.assertIn(".claude/skills/release-notes/SKILL.md:19 holds invisible characters "
+                      "(U+202E RIGHT-TO-LEFT OVERRIDE at column 30, U+202C POP DIRECTIONAL "
+                      "FORMATTING at column 38)", out)
+
+    def test_a_stray_tag_character_is_a_problem(self):
+        code, out = self.check("A hidden\U000E0041 tag, a broken \U0001F3F4\U000E0067 flag.")
+        self.assertEqual(code, 1, out)
+        self.assertIn("U+E0041 TAG LATIN CAPITAL LETTER A at column 32, U+E0067 TAG LATIN SMALL "
+                      "LETTER G at column 49", out)
+
+    def test_other_characters_are_notes_and_nothing_is_stripped(self):
+        skill = SKILL.replace("Group them by area.", "Group them by\u200barea.")
         self.write(".claude/skills/release-notes/SKILL.md", skill)
         self.write(".claude/skills/release-notes/lessons.md",
-                   LESSONS.replace("| L1 |", "| L1\u2060 |", 1))
-        self.append("docs/vault/skills/release-notes/records.md", "\u200d\n")
+                   LESSONS.replace("look for", "look\u2060for", 1))
+        self.write("docs/vault/skills/release-notes/records.md",
+                   RECORDS.replace("# release-notes", "# release-notes\u200d", 1))
         code, out = run("check", self.dir)
-        self.assertEqual(code, 1, out)
+        self.assertEqual(code, 0, out)
         lines = [ln for ln in out.splitlines() if "invisible characters" in ln]
-        self.assertEqual(len(lines), 4, out)
-        self.assertIn(".claude/skills/release-notes/SKILL.md:12 holds invisible characters "
-                      "(U+200B ZERO WIDTH SPACE at column 11)", out)
-        self.assertIn("(U+202E RIGHT-TO-LEFT OVERRIDE at column 10, U+202C POP DIRECTIONAL "
-                      "FORMATTING at column 15)", out)
-        self.assertIn("lessons.md:", lines[2])
-        self.assertIn("records.md:", lines[3])
+        self.assertEqual(len(lines), 3, out)
+        self.assertTrue(all(ln.startswith("note: ") for ln in lines), out)
+        self.assertEqual(lines[0], "note: .claude/skills/release-notes/SKILL.md:19 holds invisible "
+                         "characters (U+200B ZERO WIDTH SPACE at column 17): remove them unless "
+                         "they belong there")
+        self.assertIn("lessons.md:", lines[1])
+        self.assertIn("records.md:", lines[2])
         with open(os.path.join(self.dir, "SKILL.md"), encoding="utf-8") as fh:
             self.assertEqual(fh.read(), skill)
 

@@ -1027,18 +1027,23 @@ def changed_lines(root, diff, head, info, importers, mentions, out_rel):
 # nothing): approximate, never a filter.
 MAX_GUARD_LINES = 8
 PROSE = (".md", ".markdown", ".rst", ".txt", ".adoc")  # docs naming a marker are no finding
-SKIP_MARKS = (  # (label, pattern, in test files only); a line counts for its first match
-    ("@unittest.skip", re.compile(r"@unittest\.skip"), False),
-    ("skipTest(", re.compile(r"\.skipTest\("), False),
-    ("pytest.mark.skip", re.compile(r"\bpytest\.mark\.skip"), False),
-    ("pytest.mark.xfail", re.compile(r"\bpytest\.mark\.xfail"), False),
-    ("@Disabled", re.compile(r"@Disabled\b"), False),
-    ("t.Skip(", re.compile(r"\bt\.Skip(?:Now|f)?\("), False),
-    (".only(", re.compile(r"\.only\("), True),
-    ("xit(", re.compile(r"\bxit\("), True),
-    ("xdescribe(", re.compile(r"\bxdescribe\("), True),
-    (".skip(", re.compile(r"\.skip\("), True),
+SKIP_MARKS = (  # (label, pattern, in test files only, a call); a line counts for its first match
+    ("@unittest.skip", re.compile(r"@unittest\.skip(?![A-Za-z])"), False, False),
+    ("skipTest(", re.compile(r"\.skipTest\("), False, True),
+    ("pytest.mark.skip", re.compile(r"\bpytest\.mark\.skip(?![A-Za-z])"), False, False),
+    ("pytest.mark.xfail", re.compile(r"\bpytest\.mark\.xfail"), False, False),
+    ("@Disabled", re.compile(r"@Disabled\b"), False, False),
+    ("t.Skip(", re.compile(r"\bt\.Skip(?:Now|f)?\("), False, True),
+    (".only(", re.compile(r"\.only\("), True, False),
+    ("xit(", re.compile(r"\bxit\("), True, False),
+    ("xdescribe(", re.compile(r"\bxdescribe\("), True, False),
+    (".skip(", re.compile(r"\.skip\("), True, True),
 )
+# A skip call is conditional (not counted) after an `if` on its line, or inside a block that one
+# of these opens: the nearest line above it with less indentation.
+CONDITION = re.compile(r"^\s*(?:\}\s*)?(?:if|elif|else|except|catch|case|when|unless)\b")
+IF_BEFORE = re.compile(r"\bif\b")
+NOQA_IMPORT = re.compile(r"#\s*noqa:[\w\s,]*\bE402\b", re.I)  # an import after sys.path setup
 SUPPRESSIONS = (
     ("noqa", re.compile(r"#\s*noqa\b", re.I)),
     ("type: ignore", re.compile(r"#\s*type:\s*ignore\b")),
@@ -1084,18 +1089,37 @@ def tool_sections(text):
     return found
 
 
+def conditional(lines, n, start):
+    """Whether the skip call at column `start` of lines[n] runs only under a condition: an `if`
+    before it on its line, or the nearest line above with less indentation opens a branch."""
+    line = lines[n]
+    if IF_BEFORE.search(line[:start]):
+        return True
+    indent = len(line) - len(line.lstrip())
+    for above in reversed(lines[:n]):
+        if above.strip() and len(above) - len(above.lstrip()) < indent:
+            return bool(CONDITION.match(above))
+    return False
+
+
 def guard_marks(text, test):
     """({skip label: lines}, {suppression label: lines}, assert/expect lines) of a file's text;
-    skip markers marked test-only and assert lines are counted in test files only."""
+    skip markers marked test-only and assert lines are counted in test files only. Conditional
+    skips (`skipIf`, `skipUnless`, `pytest.mark.skipif`, a skip call under a condition) and a
+    `noqa` for E402 are not counted."""
     skips, quiet, asserts = {}, {}, 0
-    for line in text.split("\n"):
-        for label, rx, test_only in SKIP_MARKS:
-            if (test or not test_only) and rx.search(line):
-                skips[label] = skips.get(label, 0) + 1
+    lines = text.split("\n")
+    for n, line in enumerate(lines):
+        for label, rx, test_only, call in SKIP_MARKS:
+            m = rx.search(line) if test or not test_only else None
+            if m:
+                if not (call and conditional(lines, n, m.start())):
+                    skips[label] = skips.get(label, 0) + 1
                 break
         for label, rx in SUPPRESSIONS:
             if rx.search(line):
-                quiet[label] = quiet.get(label, 0) + 1
+                if not (label == "noqa" and NOQA_IMPORT.search(line)):
+                    quiet[label] = quiet.get(label, 0) + 1
                 break
         if test and ASSERT_LINE.search(line):
             asserts += 1
@@ -1122,7 +1146,7 @@ def weakened_lines(root, base, head, diff, out_rel):
     """The `possible weakened guards` section of `changed`, [] when nothing is found: test files
     deleted, renamed or moved; skip markers and suppressions added; net-removed assert/expect
     lines in a test file; edited lint, format, type-check, test or CI configuration. At most
-    MAX_GUARD_LINES findings, then a count of the rest. Files that may hold secrets are never
+    MAX_GUARD_LINES findings, then a count of the rest (all of them when one more would fit). Files that may hold secrets are never
     read."""
     entries = [e for e in diff if not is_map_page(e[1], out_rel)]
     moves = [(o, n) for o, n in renamed_paths(root, base, head)
@@ -1149,7 +1173,9 @@ def weakened_lines(root, base, head, diff, out_rel):
             found.append((0, path, "test file", "deleted"))
             continue
         before = old_blob.get(came[path]) if path in came else old
-        test = is_test(path) or (path in came and is_test(came[path]))
+        # test code: a test file in a language the map parses (no data files or fixtures)
+        test = (is_test(path) or (path in came and is_test(came[path]))) and \
+            posixpath.splitext(path)[1].lower() in LANG
         if not path.lower().endswith(PROSE) and not skipped(path, out_rel):
             sides.append((path, before, new, test))
     blobs = sorted({b for _, old, new, _ in sides for b in (old, new) if b})
@@ -1185,10 +1211,10 @@ def weakened_lines(root, base, head, diff, out_rel):
         return []
     found.sort()
     lines = ["possible weakened guards (approximate, never a filter):"]
-    lines += ["  %s: %s: %s" % (kind, path, why) for _, path, kind, why in
-              found[:MAX_GUARD_LINES]]
-    if len(found) > MAX_GUARD_LINES:
-        lines.append("  … %d more" % (len(found) - MAX_GUARD_LINES))
+    shown = found if len(found) <= MAX_GUARD_LINES + 1 else found[:MAX_GUARD_LINES]
+    lines += ["  %s: %s: %s" % (kind, path, why) for _, path, kind, why in shown]
+    if len(shown) < len(found):  # as the 60-line cap: a more-line only for two or more
+        lines.append("  … %d more" % (len(found) - len(shown)))
     return lines
 
 

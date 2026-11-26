@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.dirname(HERE))  # portability.py, in the plugin folde
 import portability  # noqa: E402
 sys.path.insert(0, HERE)
 from test_prefer_plugin_agents import CODEMAP, ENV  # noqa: E402
+from test_search_nudge import MARKED  # noqa: E402
 
 with open(os.path.join(HERE, "hooks.json"), encoding="utf-8") as _fh:
     HOOKS = json.load(_fh)["hooks"]
@@ -160,6 +161,28 @@ class SilenceContractTest(unittest.TestCase):
         self.assertEqual(sorted({n for n, _ in self.outputs}), blocking)
         self.assert_no_off_switch()
 
+    def test_the_search_nudge_skills_branch_blocks_with_a_message(self):
+        """The search nudge's second message (skills first), formatted at run time."""
+        root = os.path.join(self.tmp, "skills")
+        for rel, text in (("docs/vault/skills/notes/records.md", "x\n"),
+                          (".claude/skills/notes/SKILL.md", MARKED + "\n## Record\n\n"
+                           "Records: `docs/vault/skills/notes/records.md`\n")):
+            path = os.path.join(root, *rel.split("/"))
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write(text)
+        os.makedirs(os.path.join(root, ".git"))
+        entries = [e for e in ENTRIES if script_of(e[2]) == "codemap-search-nudge.sh"
+                   and e[1] == "Grep"]
+        self.assertEqual(len(entries), 1)
+        event, alt, command, timeout = entries[0]
+        code, out, err = self.run_entry(command, self.payload(
+            event, alt, root, {"pattern": "lesson", "path": ".claude/skills"}), timeout)
+        self.assertEqual((code, out), (2, ""), err)
+        self.assertTrue(err.startswith("manager-plugin: skills first: run "), err)
+        self.assertEqual(len(err.strip().splitlines()), 1, err)
+        self.assert_no_off_switch()
+
     def blocking_inputs(self):
         """{script: (tool, cwd, tool input)} of one input each blocking hook refuses."""
         if not hasattr(self, "_blocking"):
@@ -218,6 +241,7 @@ class SilenceContractTest(unittest.TestCase):
             for path in paths:
                 text = text.replace(path, "<path>")
             self.assertIsNone(OFF_SWITCH.search(text), (name, text))
+            self.assertIsNone(re.search(r"%[sdr(]", text), (name, text))  # formatted in full
 
 
 class DenialTextTest(unittest.TestCase):

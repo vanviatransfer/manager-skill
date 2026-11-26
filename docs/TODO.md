@@ -1351,52 +1351,69 @@ Source: ideas from reading a public MIT-licensed plugin repository; our own code
 Owner rule for this change: no added token cost.
 
 - **Weakened-guard flags in `changed`.** What: after the pointers (and after their 60-line cap), a
-  `possible weakened guards (approximate, never a filter):` section, printed only when something
-  is found, at most 8 lines and then `… <k> more`, each `<kind>: <path>: <reason>`, sorted by kind
-  then path: a test file (`is_test`) deleted, renamed, moved, or moved and renamed (git's rename
-  detection; also when the new name is no longer a test's); more lines with a skip marker
-  (`@unittest.skip`, `skipTest(`, `pytest.mark.skip`/`xfail`, `@Disabled`, `t.Skip(` anywhere;
-  `.only(`, `xit(`, `xdescribe(`, `.skip(` in test files) or a suppression (`noqa`,
-  `type: ignore`, `eslint-disable`, `@ts-ignore`, `nolint`, `pragma: no cover`) than before;
-  a test file with fewer `assert` / `expect` lines; an edited, added or deleted lint, format,
-  type-check, test or CI configuration file, and a `pyproject.toml` whose `[tool.*]` tables
-  differ. Why: the reviewer already runs `changed`; a weakened test or check is easy to miss in a
-  long diff. Counts compare the two versions of each file (a moved line counts for nothing); prose
-  files and files that may hold secrets are not read. Without a finding the output is
-  byte-identical to 0.9.12 (golden test; the 0.9.12 range of this repository gives the same bytes
-  with both versions).
+  `possible weakened guards (approximate, never a filter):` section, printed only when something is
+  found, at most 8 lines and then `… <k> more` (9 are all shown, as the 60-line cap cuts only two or
+  more), each `<kind>: <path>: <reason>`, sorted by kind then path: a test file (`is_test`) deleted,
+  renamed, moved, or moved and renamed (git's rename detection; also when the new name is no longer
+  a test's); more lines with a skip marker (`@unittest.skip`, `skipTest(`,
+  `pytest.mark.skip`/`xfail`, `@Disabled`, `t.Skip(` anywhere; `.only(`, `xit(`, `xdescribe(`,
+  `.skip(` in test files) or a suppression (`noqa`, `type: ignore`, `eslint-disable`, `@ts-ignore`,
+  `nolint`, `pragma: no cover`) than before; a test file with fewer `assert` / `expect` lines; an
+  edited, added or deleted lint, format, type-check, test or CI configuration file, and a
+  `pyproject.toml` whose `[tool.*]` tables differ. Not counted (fix round, to cut noise):
+  conditional skips (`skipIf`, `skipUnless`, `pytest.mark.skipif`, a skip call after an `if` on its
+  line or in an `if` / `else` / `except` / `catch` / `case` block, found by indentation), a `noqa`
+  naming E402, and assert lines in a test folder's data files (only languages the map parses count
+  as test code; the simpler of the two options, chosen). Why: the reviewer already runs `changed`; a
+  weakened test or check is easy to miss in a long diff. Counts compare the two versions of each
+  file (a moved line counts for nothing); prose files and files that may hold secrets are not read.
+  Without a finding the output is byte-identical to 0.9.12 (golden test; the 0.9.12 range of this
+  repository gives the same bytes with both versions).
 - **Invisible-Unicode check.** What: `skilltrain.invisible_chars` (stdlib) finds U+200B-200D,
   U+2060-2064, U+FEFF, U+202A-202E, U+2066-2069, U+115F, U+1160, U+3164, U+FFA0, U+FE00-FE0F and
-  U+E0000-E007F. Allowed: a BOM as a file's first character (`read_rel` already accepts one) and a
-  ZWJ between two emoji (the next character, and the previous one past variation selectors and
-  skin-tone modifiers, in the emoji blocks; the selectors themselves are still reported). Used by
-  `skilltrain.py check` (one problem per line of SKILL.md, lessons.md and the records file; never
-  stripped) and by `test_invisible_unicode.py`, which scans every text file of the plugin and the
-  repository's root `*.md` and `docs/` (file:line:col and the code point). Why: such characters
-  can hide instructions from whoever reviews a skill.
+  U+E0000-E007F. Always allowed: a BOM as a file's first character (`read_rel` already accepts one)
+  and a ZWJ between two emoji (the next character, and the previous one past variation selectors and
+  skin-tone modifiers, in the emoji blocks). `strict=True` (the default) allows nothing else:
+  `test_invisible_unicode.py` uses it on every text file of the plugin and the repository's root
+  `*.md` and `docs/` (file:line:col and the code point). `skilltrain.py check` uses `strict=False`,
+  so existing skills don't newly fail (as 0.9.12 kept old tables working): it also allows a
+  variation selector right after an emoji or a keycap base (`0-9#*`, then U+20E3), a ZWNJ / ZWJ
+  between two non-ASCII letters or combining marks (Persian, Indic scripts; a mark because a
+  Devanagari ZWJ follows a virama), and a well-formed emoji tag sequence (U+1F3F4, tag characters,
+  U+E007F). Per line of SKILL.md, lessons.md and the records file it then prints a problem (exit 1)
+  when the line holds a bidi control (U+202A-202E, U+2066-2069) or a tag character outside such a
+  sequence, else a `note:` line (exit unchanged); never stripped. Why: such characters can hide
+  instructions from whoever reviews a skill.
 - **Hook silence test.** `hooks/test_hook_silence.py` runs every command hooks.json registers as
   Claude Code does (`sh -c`, CLAUDE_PLUGIN_ROOT set), for every matcher alternative: an input no
   guard acts on gives no stdout, no stderr, exit 0; each hook whose script can exit 2
-  (prefer-plugin-agents, scan-guard, search nudge, commit check) blocks one input with exit 2 and
-  a message; no probe output and no blocking message in the hook sources names an environment
-  variable, config key, settings file or off-switch wording. The prompt marker
-  `[general-purpose: <reason>]` is a per-call escape with a stated reason, not a setting: allowed.
-  Out of its scope and unchanged: the git pre-commit hook (`codemap.py pre-commit`, installed by
-  `install-hook`, no hooks.json entry) tells the agent to "commit with --no-verify" when a tracked
-  input isn't readable (sparse checkout); for the owner to decide.
+  (prefer-plugin-agents, scan-guard, search nudge, commit check) blocks one input with exit 2 and a
+  message, and so does the search nudge's skills-first branch (a marked skill, a search of
+  `.claude/skills`), checked at run time so its `%`-formatted text is too; no probe output (none
+  with a `%s` left in it) and no blocking message in the hook sources names an environment variable,
+  config key, settings file or off-switch wording. The prompt marker `[general-purpose: <reason>]`
+  is a per-call escape with a stated reason, not a setting: allowed. Out of its scope and unchanged:
+  the git pre-commit hook (`codemap.py pre-commit`, installed by `install-hook`, no hooks.json
+  entry) tells the agent to "commit with --no-verify" when a tracked input isn't readable (sparse
+  checkout); for the owner to decide.
 - **Cost argument.** Nothing new runs by default and no always-loaded text grows: the flags are
   output of `changed`, only when found; the Unicode check is a test and a `check` problem; the
   silence test is a test. code-map SKILL.md stays at 9,347 characters (the bullet names
   `references/changed-flags.md`, the detail is there); self-training-skills SKILL.md, manager
   SKILL.md, the briefs and the hook scripts are untouched; ceilings unchanged.
-- **False-positive risks.** A justified change is flagged too: a test moved with its code, a
-  `noqa` with a reason (0.9.11's `test_impact.py` imports give `+2 noqa`), a CI edit that only adds
-  a job. `.skip(` / `.only(` in a test file may be an unrelated method; any line holding `assert`
-  or the word `expect` counts (comments, `assertion`); an assert rewritten as one line from two
-  counts as removed. Misses: a weakening the markers don't name (an early `return`, a loosened
-  tolerance, a check removed from a non-test file). The emoji test is a block range, not
-  Unicode's emoji property.
+- **Noise, measured** on the 7 merges to main d73d0bb ... f024a60 (each against its first parent):
+  before the fix round 4 ranges showed the section (2, 2, 2 and 10 lines, all justified: `# noqa:
+  E402` imports, `skipIf` / `skipUnless`, `skipTest` under an `if` or `except`); after it none does.
+  The planted fixture still gives all eight findings.
+- **False-positive risks.** A justified change is flagged too: a test moved with its code, a `noqa`
+  with another code, a CI edit that only adds a job. Splitting a test file into two gives `asserts`
+  on the file the tests left (they moved, they didn't go). A test folder's data file in a language
+  the map parses (a `.py` or `.js` fixture) still counts as test code. `.skip(` / `.only(` in a test
+  file may be an unrelated method; any line holding `assert` or the word `expect` counts (comments,
+  `assertion`); an assert rewritten as one line from two counts as removed. Misses: a weakening the
+  markers don't name (an early `return`, a loosened tolerance, a check removed from a non-test
+  file). The emoji test is a block range, not Unicode's emoji property.
 - **Also.** TODO 25 and the skilltrain usage docstring: a lesson is stale with more than 20/M
-  records rows dated after `last-confirmed`; `stats` stale lines carry the `note:` prefix too.
-  The `check` docstring says old five-column tables report evidence gaps as notes. plugin.json
-  0.9.13; README names the weakened-guard section and the Unicode check.
+  records rows dated after `last-confirmed`; `stats` stale lines carry the `note:` prefix too. The
+  `check` docstring says old five-column tables report evidence gaps as notes. plugin.json 0.9.13;
+  README names the weakened-guard section and the Unicode check.
