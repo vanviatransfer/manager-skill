@@ -4,9 +4,11 @@
 PreToolUse hook on Bash, PowerShell, Glob and Grep (hooks/scan-guard.sh). A command that
 recursively scans a filesystem root, a drive root or the home folder (`find /`, `ls -R C:\\`,
 `du ~`, `grep -r x /`, `rg x $HOME`, `Get-ChildItem C:\\ -Recurse`, `cmd /c dir /s C:\\`, also in
-`bash -c`, `powershell -Command`, pipes, chains, subshells, `$( )` and backticks; a scan with no
-path, or with `.`, when the cwd is such a root; Glob or Grep there) is refused: exit 2, one line
-naming the code map's and skilltrain's runnable commands and a search limited to the repository.
+`bash -c`, `eval`, `powershell -Command`, a decoded `-EncodedCommand`, `iex`, pipes, chains,
+subshells, `$( )` and backticks; here-document bodies are text, whatever they are fed to; a
+scan with no path, or with `.`, when the cwd is such a root; Glob or Grep there) is refused:
+exit 2, one line naming the code map's and skilltrain's runnable commands and a search limited
+to the repository.
 Why: such a scan can run for hours and exhaust memory, and an agent that doesn't know where
 `codemap.py` is tends to look for it with exactly such a scan. It has no off switch, and
 `"search_nudge": false` doesn't touch it. Everything else passes; a command it can't parse (an
@@ -26,6 +28,7 @@ The search nudge (search_nudge.py) imports `refused` so a command refused here d
 its once-per-session block. Output goes to stdout; the sh wrapper sends a refusal to stderr.
 Standard library only (Python 3.8+); it writes nothing but the hint's marker file.
 """
+import base64
 import json
 import os
 import posixpath
@@ -53,11 +56,25 @@ PS_LIST = {"get-childitem", "gci", "dir", "ls"}
 PS_CD = {"cd", "chdir", "set-location", "sl", "pushd", "push-location"}
 # Wrappers that run the rest of the line: the words they take before it.
 WRAPPERS = {"sudo": "ugCDhpRrt", "doas": "uC", "nice": "n", "env": "uCS", "nohup": "",
-            "stdbuf": "ioe", "builtin": "", "xargs": "dEIiLlnPs"}
+            "stdbuf": "ioe", "builtin": "", "xargs": "dEIiLlnPs", "ionice": "cnp",
+            "busybox": "", "time": "fo", "command": "", "exec": "a"}
+# powershell.exe and pwsh options that take a value (any unambiguous prefix), and aliases.
+PS_VALUE_OPTS = ("executionpolicy", "windowstyle", "version", "inputformat", "outputformat",
+                 "configurationname", "psconsolefile", "workingdirectory", "settingsfile",
+                 "custompipename")
+PS_VALUE_ALIASES = {"ep", "ex", "w", "v", "if", "of", "o", "wd"}
+# A file name or wildcard as the last part of a path (`C:\codemap.py`, `C:\*.py`).
+LEAF_FILE = re.compile(r"^(.*[/\\]|[A-Za-z]:)([^/\\]*[*?]|[^/\\.][^/\\]*\.[^/\\]+)$")
+UP_LEVELS = re.compile(r"^(.*?)(?:[/\\]+\.\.)+[/\\]*$")
 TIMED = {"find", "grep", "egrep", "fgrep", "rg", "ls", "du", "tree"}  # for the timeout hint
-HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][\w.-]*)\1")
+# A here-document opener: <<WORD, <<-WORD, <<\WORD, <<'WORD', <<"WORD" (quoted: spaces allowed).
+HEREDOC = re.compile(r"<<(-?)[ \t]*\\?(?:'([^'\n]+)'|\"([^\"\n]+)\"|([A-Za-z_][\w.-]*))")
 HINT = "manager-plugin: long recursive scans: prefix `timeout 120`."
 MAX_DEPTH = 4
+# Longer command text is not scanned (fails open): shlex and the tokenizers grow superlinearly
+# on one long word (a 160 KB base64 -EncodedCommand took about 1 s, 850 KB 24 s), past a hook's
+# time budget, and no hand-written scan is that long.
+MAX_COMMAND = 64 * 1024
 
 
 def norm(path):
@@ -73,9 +90,10 @@ def norm(path):
     return "" if s == "/" else s.rstrip("/")
 
 
-def home_values():
+def home_values(posix=True):
     """The literal HOME and USERPROFILE paths, unless one is itself a repository's top (a
-    container with HOME=/app holding the repository: scanning it is scanning the repository)."""
+    container with HOME=/app holding the repository: scanning it is scanning the repository).
+    posix: a Windows-form home in its Git Bash, Cygwin and WSL spellings too (`/c/Users/x`)."""
     out = set()
     for var in ("HOME", "USERPROFILE"):
         v = os.environ.get(var)
@@ -83,13 +101,18 @@ def home_values():
             top = sn.find_top(v) if os.path.isdir(v) else None
             if top and os.path.normcase(top) == os.path.normcase(os.path.abspath(v)):
                 continue
-            out.add(norm(v))
+            n = norm(v)
+            out.add(n)
+            drive = re.match(r"^([a-z]):(/.*)?$", n)
+            if posix and drive:
+                out.update(p + "/" + drive.group(1) + (drive.group(2) or "")
+                           for p in ("", "/cygdrive", "/mnt"))
     return out
 
 
 def is_root_norm(s, posix=True):
     return s in HOME_WORDS or any(r.fullmatch(s) for r in ROOT_RES) or \
-        (posix and any(r.fullmatch(s) for r in POSIX_RES)) or s in home_values()
+        (posix and any(r.fullmatch(s) for r in POSIX_RES)) or s in home_values(posix)
 
 
 def absolute(path):
@@ -104,13 +127,18 @@ def is_root(path, cwd, posix=True):
         return False
     if is_root_norm(norm(path), posix):
         return True
+    up = UP_LEVELS.match(path.strip())  # above a root is a root: `~/..`, `$HOME/..`
+    if up and up.group(1) and is_root(up.group(1), cwd, posix):
+        return True
     if absolute(path) or cwd is None:
         return False
     return is_root_norm(norm(sn.join(cwd, path)), posix)
 
 
 def drop_heredocs(cmd):
-    """The command without here-document bodies (their lines are text, not commands)."""
+    """The command without here-document bodies: their lines are text, never commands, whatever
+    they are fed to (`bash <<EOF` included: a known gap, see TODO 21). A `<<` whose delimiter
+    can't be read (`1<<2`, `<< ""`) stays as text."""
     out, ends = [], []
     for line in cmd.split("\n"):
         if ends:
@@ -118,9 +146,21 @@ def drop_heredocs(cmd):
             if (line.lstrip("\t") if tab else line) == word:
                 ends.pop(0)
             continue
+        i = 0
+        while True:
+            i = line.find("<<", i)
+            if i < 0:
+                break
+            if line.startswith("<<<", i):
+                i += 3
+                continue
+            m = HEREDOC.match(line, i)
+            if not m:
+                i += 2
+                continue
+            ends.append((m.group(1) == "-", next(g for g in m.groups()[1:] if g)))
+            i = m.end()
         out.append(line)
-        for m in HEREDOC.finditer(line):
-            ends.append((m.group(0).startswith("<<-"), m.group(2)))
     return "\n".join(out)
 
 
@@ -256,7 +296,7 @@ def strip_wrappers(words):
     timed = False
     while words:
         w, name = words[0], sn.command_name(words[0])
-        if w in sn.PREFIXES or sn.is_assignment(w):
+        if (w in sn.PREFIXES and name not in WRAPPERS) or sn.is_assignment(w):
             words = words[1:]
         elif name == "timeout":
             words, timed = words[1:], True
@@ -268,6 +308,10 @@ def strip_wrappers(words):
             takes, words = WRAPPERS[name], words[1:]
             while words and (words[0].startswith("-") or sn.is_assignment(words[0])):
                 a, words = words[0], words[1:]
+                if name == "command" and a in ("-v", "-V"):
+                    return [], timed  # a lookup: nothing runs
+                if a == "--":
+                    break
                 if len(a) == 2 and a[1] in takes and words:
                     words = words[1:]
         else:
@@ -277,6 +321,107 @@ def strip_wrappers(words):
 
 def first_operand(args):
     return next((a for a in args if not a.startswith("-")), None)
+
+
+def shallow(values, keys):
+    """True if one of the depth options is 0 or 1: a listing of one folder, as find's
+    -maxdepth 0|1 and Get-ChildItem's -Depth 0|1."""
+    return any(values.get(k, "").strip() in ("0", "1") for k in keys if values.get(k))
+
+
+def leaf_dir(path, dotted=False, cwd=None):
+    """The folder a path with a wildcard leaf (or, dotted=True, a dotted name that is not an
+    existing folder, such as codemap.py) searches from: cmd's `dir /s C:\\codemap.py` walks all
+    of C:\\, `dir /s C:\\Users\\me\\my.app` (a folder) only that folder."""
+    m = LEAF_FILE.match(path)
+    if not m:
+        return path
+    if any(c in m.group(2) for c in "*?"):
+        return m.group(1)
+    if dotted:
+        full = expand(path)
+        if full is None:
+            return path  # a spelling this can't expand: taken for a folder (fails open)
+        if not os.path.isdir(full if absolute(full) or cwd is None else sn.join(cwd, full)):
+            return m.group(1)  # a dotted name that is no folder here: a file name
+    return path
+
+
+ENV_REF = re.compile(r"%([A-Za-z_]\w*)%|\$\{env:(\w+)\}|\$env:(\w+)|\$\{(\w+)\}|\$(\w+)", re.I)
+
+
+def expand(path):
+    """The path with a leading ~ and %VAR%, $env:NAME, ${NAME}, $NAME expanded from the
+    environment, separators as /; None when one is unset (or ~user)."""
+    p = path.replace("\\", "/")
+    if p.startswith("~"):
+        if p[1:2] not in ("", "/"):
+            return None
+        home = os.environ.get("HOME") or os.environ.get("USERPROFILE")
+        if not home:
+            return None
+        p = home.replace("\\", "/").rstrip("/") + p[1:]
+    missing = []
+
+    def value(m):
+        name = next(g for g in m.groups() if g)
+        v = os.environ.get(name) or os.environ.get(name.upper())
+        if not v and name.upper() == "HOME":  # PowerShell's $HOME is the profile folder
+            v = os.environ.get("USERPROFILE")
+        if not v:
+            missing.append(name)
+            return ""
+        return v.replace("\\", "/").rstrip("/")
+    p = ENV_REF.sub(value, p)
+    return None if missing else re.sub(r"/{2,}", "/", p)
+
+
+def decode_ps(text):
+    """The script of a -EncodedCommand (base64 of UTF-16LE), or None."""
+    try:
+        return base64.b64decode(text.strip(), validate=True).decode("utf-16-le")
+    except (ValueError, UnicodeDecodeError):
+        return None
+
+
+def powershell_args(scan, low, args, cwd, depth):
+    """`powershell -Command <script>`, `-EncodedCommand <base64>` (decoded and scanned), or
+    powershell.exe's bare script after its options (pwsh takes a bare word as a file)."""
+    k = 0
+    while k < len(args):
+        a = args[k]
+        opt = a[1:].lower() if a.startswith("-") and len(a) > 1 else None
+        if opt is not None and re.fullmatch(r"c|com|comm|comma|comman|command", opt):
+            scan_ps(scan, " ".join(args[k + 1:]), cwd, depth + 1)
+            return
+        if opt is not None and (opt in ("e", "ec") or
+                                (len(opt) >= 2 and "encodedcommand".startswith(opt))):
+            text = decode_ps(args[k + 1]) if k + 1 < len(args) else None
+            if text:
+                scan_ps(scan, text, cwd, depth + 1)
+            return
+        if opt is not None and (opt == "f" or (len(opt) >= 2 and "file".startswith(opt))):
+            return  # a script file
+        if opt is None:
+            if low == "powershell":
+                scan_ps(scan, " ".join(args[k:]), cwd, depth + 1)
+            return
+        takes = opt in PS_VALUE_ALIASES or \
+            (len(opt) >= 3 and any(v.startswith(opt) for v in PS_VALUE_OPTS))
+        k += 2 if takes else 1
+
+
+def forfiles_path(args):
+    """The folder `forfiles /s` walks (its /p value, else the cwd), or None without /s."""
+    low = [a.lower() for a in args]
+    if not any(re.fullmatch(r"[/-]+s", a) for a in low):
+        return None
+    for k, a in enumerate(low):
+        if re.fullmatch(r"[/-]+p", a) and k + 1 < len(args):
+            return args[k + 1]
+        if re.match(r"[/-]+p:", a):
+            return args[k].split(":", 1)[1]
+    return "."
 
 
 def scan_unix(scan, name, args, cwd, after_pipe, timed, hint=True, posix=True):
@@ -303,9 +448,14 @@ def scan_unix(scan, name, args, cwd, after_pipe, timed, hint=True, posix=True):
                                  "changed-before", "owner", "ignore-file", "format"})
         paths = operands[1:] + [values[k] for k in ("--search-path", "--base-directory")
                                 if values.get(k)]
-        paths = paths or ["."]
+        paths = None if shallow(values, ("-d", "--max-depth", "--exact-depth")) else \
+            (paths or ["."])
     else:
         paths = sn.search_paths(name, args, after_pipe)
+        if paths and name in ("rg", "ag"):
+            values = sn.parse(args, sn.OPTIONS[name][0], sn.OPTIONS[name][1])[1]
+            if shallow(values, ("-d", "--max-depth", "--maxdepth", "--depth")):
+                paths = None
     if paths:
         scan.check(name, paths, cwd, timed, hint, posix)
 
@@ -320,17 +470,29 @@ def new_cwd(arg, cwd, posix=True):
     return None if cwd is None and not absolute(arg) else sn.join(cwd or "/", arg)
 
 
+def drive_roots(cmd):
+    """An unquoted drive root before a space (`find C:\\ -name x`): Git Bash would read `\\ ` as
+    an escaped space; the model meant the drive."""
+    return re.sub(r"(?<![\w\\])([A-Za-z]:)\\(?=[\s;|&)\"']|$)", r"\1/", cmd)
+
+
+def splits(cmd):
+    try:
+        shlex.split(drive_roots(cmd), comments=True, posix=True)
+    except ValueError:
+        return False
+    return True
+
+
 def scan_bash(scan, cmd, cwd, depth=0):
     if depth > MAX_DEPTH:
         return
-    cmd = drop_heredocs(cmd)
-    # An unquoted drive root before a space (`find C:\ -name x`): Git Bash would read `\ ` as an
-    # escaped space; the model meant the drive.
-    cmd = re.sub(r"(?<![\w\\])([A-Za-z]:)\\(?=[\s;|&)\"']|$)", r"\1/", cmd)
-    try:
-        shlex.split(cmd, comments=True, posix=True)
-    except ValueError:
-        return fallback(scan, cmd, cwd)
+    original, cmd = cmd, drop_heredocs(cmd)
+    if not splits(cmd):
+        if cmd != original and splits(original):
+            return  # a here-document opener inside a quote ate lines: fail open
+        return fallback(scan, drive_roots(cmd), cwd)
+    cmd = drive_roots(cmd)
     for inner in substitutions(cmd):
         scan_bash(scan, inner, cwd, depth + 1)
     for words, after_pipe in sn.simple_commands(cmd):
@@ -341,6 +503,8 @@ def scan_bash(scan, cmd, cwd, depth=0):
         args = words[1:]
         if name in ("cd", "pushd"):
             cwd = new_cwd(first_operand(args), cwd)
+        elif name == "eval":
+            scan_bash(scan, " ".join(args), cwd, depth + 1)
         elif name in SHELLS:
             shell_c(scan, args, cwd, depth)
         else:
@@ -364,10 +528,11 @@ def scan_other(scan, name, args, cwd, after_pipe, timed, depth, hint, posix):
     if not posix and low in ("find", "tree"):
         args = [a for a in args if not WIN_SWITCH.fullmatch(a)]
     if low in POWERSHELLS:
-        for k, a in enumerate(args):
-            if re.fullmatch(r"-(c|com|comm|comma|comman|command)", a, re.I):
-                scan_ps(scan, " ".join(args[k + 1:]), cwd, depth + 1)
-                break
+        powershell_args(scan, low, args, cwd, depth)
+    elif low == "forfiles":
+        path = forfiles_path(args)
+        if path:
+            scan.check("forfiles /s", [path], cwd, hint=False, posix=posix)
     elif low == "cmd":
         for k, a in enumerate(args):
             if re.fullmatch(r"/+[ck]", a, re.I):
@@ -400,7 +565,7 @@ def ps_child_item(args):
         name = name.lower()
         takes = False
         if ps_param(name, "recurse", 1):
-            recurse = True
+            recurse = value.strip().lower() != "$false" if colon else True
         elif ps_param(name, "depth", 2):
             recurse = True
             if not colon and i < len(args):
@@ -438,7 +603,10 @@ def scan_ps(scan, cmd, cwd, depth=0):
         elif name in PS_LIST:
             recurse, paths = ps_child_item(args)
             if recurse:
-                scan.check(name, paths, cwd, hint=False, posix=False)
+                scan.check(name, [leaf_dir(p) for p in paths], cwd, hint=False, posix=False)
+        elif name in ("iex", "invoke-expression"):
+            scan_ps(scan, " ".join(a for a in args if a.lower() not in ("-command", "-c")),
+                    cwd, depth + 1)
         elif name in SHELLS:
             shell_c(scan, args, cwd, depth)
         else:
@@ -449,11 +617,16 @@ def scan_cmd(scan, text, cwd, depth=0):
     if depth > MAX_DEPTH:
         return
     for words, _ in cmd_commands(text):
+        glued = re.match(r"^([A-Za-z]+(?:\.exe)?)(/.+)$", words[0])  # dir/s
+        if glued and glued.group(1).lower() in ("dir", "tree", "where", "forfiles",
+                                                 "where.exe", "forfiles.exe"):
+            words = [glued.group(1), glued.group(2)] + words[1:]
         name = sn.command_name(words[0]).lower()
         args = words[1:]
         switches = {s.lower() for a in args if a.startswith("/") for s in a.split("/") if s}
         if name == "dir" and "s" in switches:
-            paths = [a for a in args if not a.startswith("/")] or ["."]
+            paths = [leaf_dir(a.replace('"', ""), dotted=True, cwd=cwd) for a in args
+                     if not a.startswith("/")] or ["."]
             scan.check("dir /s", paths, cwd, hint=False, posix=False)
         elif name in ("cd", "chdir"):
             cwd = new_cwd(next((a for a in args if not a.startswith("/")), None) or "", cwd,
@@ -499,6 +672,8 @@ def inspect(data):
             if recursive:
                 scan.check(tool, [base], cwd, hint=False)
     elif tool in ("Bash", "PowerShell") and isinstance(ti.get("command"), str):
+        if len(ti["command"]) > MAX_COMMAND:
+            return scan  # too long to parse in time: fail open
         if tool == "Bash":
             scan_bash(scan, ti["command"], cwd)
         else:
