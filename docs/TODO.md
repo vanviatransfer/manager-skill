@@ -1615,3 +1615,14 @@ No change to the reviewer, its brief, the manager skill or a hook; nothing runs 
   `references/**/*.md` for invisible characters too (the routing already walks them).
 - plugin.json 0.9.15 (the nested scan changes `skilltrain.py check`; the eval alone would not need
   it); README: the calibration suite, the tagged invariant command, `references/**/*.md`.
+
+### 29. Calibration runner: portable trace paths (plugin 0.9.16)
+
+- **What.** `run.py collect()` wrote the copied trace's relative path with `os.path.join`, so on
+  Windows `aggregate-result.json` held `traces\rc-01-1.jsonl` and
+  `test_collect_copies_the_traces_and_removes_only_the_named_sandboxes` failed. It now writes
+  `traces/<case>-<n>.jsonl`, which `score.py` and Windows both read.
+- **Why.** Found by the first Windows run of the free checks before the paid pilot (native
+  Windows, Git Bash, CLI 2.1.330); the suite's stop rule held the pilot back. No other Windows
+  failure in the six unit suites, `plugin validate` or the smoke runs.
+- **Cost.** None: one string, in a script run only by hand.
