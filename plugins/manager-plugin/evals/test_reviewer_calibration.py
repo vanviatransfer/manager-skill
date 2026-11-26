@@ -1010,6 +1010,15 @@ class HardScoreTest(unittest.TestCase):
         self.assertEqual(self.grade("l1-off-by-one", "B1. off by one (pager.py)")["findings"],
                          [1, 1])
 
+    def test_a_finding_without_lines_among_several(self):
+        key = {"kind": "planted", "level": "L2", "findings": [
+            {"locations": [{"file": "a.py", "lines": [5, 6]}], "terms": [], "alone": []},
+            {"locations": [{"file": "a.py", "lines": None}], "terms": ["gone"], "alone": []}]}
+        self.assertEqual(score.grade(key, answer("CHANGES REQUIRED", "B1. a.py:5 — wrong"))
+                         ["findings"], [1, 2])
+        self.assertEqual(score.grade(key, answer("CHANGES REQUIRED", "B1. a.py gone"))
+                         ["findings"], [1, 2])
+
     def test_nit(self):
         for verdict in ("PASS", "PASS WITH NOTES"):
             with self.subTest(verdict=verdict):

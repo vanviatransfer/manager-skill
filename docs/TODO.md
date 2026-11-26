@@ -1735,8 +1735,8 @@ the 20 base cases or their keys, or any cost ceiling.
   names finding 1, `:16-17` or `:15-17` finding 2, `:9-18` neither); terms count as before. Known
   risk: finding 2's `copy`, `unchanged`, `as it was` and `in place` can credit the sort bug from a
   median-only blocker that suggests sorting a copy with `sorted(values)`; audit.md shows each match,
-  so it can be checked by hand. The run is `found` when all are, `partial` when some, `missed` when
-  none, right only when found; recall counts findings (so `l2-two-faults` adds 2 to L2), and the
+  so it can be checked by hand; item 33 lists the wider known limits. The run is `found` when all are,
+  `partial` when some, `missed` when none, right only when found; recall counts findings (so `l2-two-faults` adds 2 to L2), and the
   audit labels the finding a blocker matched (`finding 2: ...`). Kind `nit`: right (`pass`) with
   PASS or PASS WITH NOTES and no blocker, else `over-blocking`; its own line `over-blocking nit:
   x/y`, printed when a scored tier has a nit, never in the false-alarm rate. A result with runs of
@@ -1763,3 +1763,42 @@ the 20 base cases or their keys, or any cost ceiling.
   `decoy-memo-default` is not safe across threads (the plan names none), and `initials` of a word
   that starts with `ß` gives two letters.
 - plugin.json 0.9.18; README: the hard tier and its command.
+
+### 33. Reviewer calibration hard tier, first run (plugin 0.9.18)
+
+- **Run.** 12 hard cases, Sonnet, `--tier hard --runs 1 -j 4 --max-cost-usd 6` (given to run.py;
+  the result does not record it), main f5a6966 (plugin 0.9.18), Linux, CLI 2.1.332, checkout
+  under `HOME`. 1.60 USD (0.12-0.15 a case), 102 s. Invalid runs 0, no-verdict 0.
+- **First attempt.** It stopped before any case ran: without a terminal the CLI cannot ask to
+  trust the plugin folder, so `--trust-plugin` is needed for a non-interactive run. No cost.
+- **Result.** Recall 8/8 (L1 1/1, L2 4/4 including rc-29 with both findings in separate
+  blockers, L3 1/1, L4 2/2); decoys 0/2 false alarms; nit 0/1 over-blocking; round 2 1/1 (bug
+  named); clean 1/1 flagged (rc-28).
+- **rc-28 is a case defect, not a reviewer error.** Its blocker (rows shorter than the headers
+  now raise IndexError; the old code did not) is true, and the acceptance's "every table"
+  allowed that reading. The acceptance is clarified in this change ("every row as long as the
+  headers"; the code is unchanged, so the SHAs of rc-28 changed). Counted: 0 real false alarms.
+- **Checked by hand.** Every match in audit.md names the planted fault (rc-23 by release.py and
+  KeyError; rc-29 finding 2 by the aliasing blocker, finding 1 by the even-count one).
+- **Reading.** The hard tier is at the ceiling for Sonnet too (textbook Python traps and small
+  repositories). Decision: Sonnet stays the reviewer for standard phases; no Opus calibration
+  run; no new cases. The suite runs again only when the reviewer brief or its model changes.
+- **Side comparison** (qualitative, one sample, session tokens, not an eval). The same free-form
+  prompt ("find defects, suggest improvements") on PR #72, once with a Sonnet and once with an
+  Opus reviewer agent. Sonnet: about 31k tokens, 45 s, 3 tool calls; it did not read the tests
+  or scaffolds and mostly restated known risks and generic ideas. Opus: about 81k tokens, 227 s,
+  16 tool calls; it ran the tests and a probe of `score.grade`, reported six verified grading
+  defects (below) and workflow-specific ideas (shadow reviews in real runs, replaying past PRs,
+  a reviewer model set apart from the orchestrator's, outcomes priced as fix rounds), and
+  predicted the ceiling before seeing the run. Reading: no difference as a gate; a clear
+  difference in improvement ideas.
+- **Known grading limits** (not fixed; none changed this run's outcome): a blocker on
+  versions.py that says "tuple" credits rc-23 without the caller; generic terms in rc-21, 27, 31
+  and 32 keys (`same list`, `return None`, `ValueError`, `2.5`, `capture`) can credit wrong
+  blockers; rc-29 finding 2's prose terms (`copy`, `unchanged`, `modified`, `alters`) are wider
+  than item 32 says; a planted case counts as found under a PASS verdict; blockers that name no
+  file are missed; `--case` outside `--tier` runs nothing, silently; per-tier totals arise only
+  from a hand-built answer folder. Fixed here: the `lines: null` crash (a location without
+  lines inside a multi-finding key raised TypeError in `located` and `cites_lines`; rc-01 uses
+  such a location).
+- plugin.json 0.9.19.

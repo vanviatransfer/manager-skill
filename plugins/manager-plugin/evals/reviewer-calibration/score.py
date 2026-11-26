@@ -231,7 +231,8 @@ def located(blocker, key, others=None):
         if terms:
             return "%s + term %r" % (place["file"], shown(terms[0]))
         near = None if others is None else [
-            other["lines"] for other in others if other["file"] == place["file"]]
+            other["lines"] for other in others
+            if other["file"] == place["file"] and other["lines"]]
         if cites_lines(blocker, place["file"], place["lines"], near):
             return "%s:%d-%d cited" % (place["file"], place["lines"][0], place["lines"][1])
     return None
