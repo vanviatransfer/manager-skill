@@ -2,7 +2,8 @@
 """run: start the reviewer-calibration eval (paid), then score it with score.py.
 
 Usage:
-  run.py --max-cost-usd USD [--model sonnet|opus] [--runs N] [-j N] [--case GLOB] [--dry-run]
+  run.py --max-cost-usd USD [--model sonnet|opus] [--runs N] [-j N] [--case GLOB]
+         [--trust-plugin] [--dry-run]
 
 Runs `claude plugin eval` on this plugin for the cases tagged `reviewer-calibration` only, with
 the plugin on (`--ablation none`), each case's scaffold, no published report and the tools the
@@ -14,8 +15,9 @@ time>/` at the repository root (git ignores it), outside the plugin folder that 
 can read, so a later run finds no earlier trace there; score.py then reads its
 `aggregate-result.json`. The eval's graders check the dispatch, the relayed answer and
 blindness, not the verdict, which only score.py grades. run.py exits non-zero when the eval or
-score.py does (score.py: 1 when a run is invalid). run.py passes no `--trust-plugin`: the first
-run asks to trust the plugin interactively.
+score.py does (score.py: 1 when a run is invalid). The eval asks to trust the plugin folder only
+in an interactive terminal; without one it exits with an error, so pass `--trust-plugin` (handed
+on to the eval) when you run it from a session or a script.
 
 Traces: the eval removes each run's sandbox (`claude-eval-XXXXXX`, its `out/trace.jsonl`
 included) when the run ends, unless `--keep-temp` is given, so run.py passes it. After the eval,
@@ -28,7 +30,10 @@ Before it launches, run.py refuses (exit 2) when the repository's path or the te
 path holds a string the blind grader looks for, since every honest run would then fail it, and
 warns when the repository is not under `$HOME`: the eval's Bash sandbox keeps the home folder
 unreadable, so a checkout elsewhere (outside home and the temp folder) may leave the answer keys
-readable to the session. `--dry-run` runs these checks, prints both commands and runs nothing.
+readable to the session. On Windows it refuses to launch (exit 2): Claude Code has no Bash
+sandbox there (CLI 2.1.330 refuses a session with Bash before it starts, and folder modes do not
+restrict reads), so use Linux, macOS or a WSL2 distribution such as Ubuntu. `--dry-run` runs
+these checks, prints both commands and runs nothing.
 Standard library only.
 """
 import argparse
@@ -71,6 +76,8 @@ def parser():
     found.add_argument("--runs", type=positive(int), default=1)
     found.add_argument("-j", "--concurrency", type=positive(int), default=1)
     found.add_argument("--case", help="only the cases whose name matches this glob")
+    found.add_argument("--trust-plugin", action="store_true",
+                       help="pass --trust-plugin to the eval (needed without a terminal)")
     found.add_argument("--dry-run", action="store_true", help="print the commands, run nothing")
     return found
 
@@ -87,6 +94,8 @@ def commands(args, stamp):
            "--max-cost-usd", "%g" % args.max_cost_usd, "--output-dir", out]
     if args.case:
         run += ["--case", args.case]
+    if args.trust_plugin:
+        run.append("--trust-plugin")
     score = [sys.executable, os.path.join(HERE, "score.py"),
              os.path.join(out, "aggregate-result.json")]
     return run, score
@@ -125,13 +134,18 @@ def preflight(repo, temp, home):
 
 
 def remove_tree(root):
-    """Remove a kept sandbox root: its folders are opened to the owner first (the eval may have
-    closed their modes); symbolic links are removed, never followed."""
-    for top, dirs, _ in os.walk(root):
+    """Remove a kept sandbox root: its folders and files are opened to the owner first (the eval
+    may have closed their modes, and git writes its objects read-only, which Windows will not
+    delete); symbolic links are removed, never followed."""
+    for top, dirs, files in os.walk(root):
         for name in dirs:
             path = os.path.join(top, name)
             if not os.path.islink(path):
                 os.chmod(path, stat.S_IRWXU)
+        for name in files:
+            path = os.path.join(top, name)
+            if not os.path.islink(path):
+                os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
     os.chmod(root, stat.S_IRWXU)
     shutil.rmtree(root)
 
@@ -180,7 +194,11 @@ def main(argv):
     args = parser().parse_args(argv)
     run, score = commands(args, time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()))
     errors, warnings = preflight(REPO, os.environ.get("TMPDIR") or tempfile.gettempdir(),
-                                 os.environ.get("HOME"))
+                                 os.environ.get("HOME") or os.path.expanduser("~"))
+    if sys.platform.startswith("win") and not args.dry_run:
+        errors.append("Windows has no Bash sandbox for the eval's session, so every run fails "
+                      "before it starts; run it on Linux, macOS or a WSL2 distribution such as "
+                      "Ubuntu.")
     for line in warnings:
         sys.stderr.write("run.py: warning: %s\n" % line)
     for line in errors:

@@ -821,6 +821,8 @@ class RunnerTest(unittest.TestCase):
         ignored = read(os.path.join(repo, ".gitignore")).split("\n") if os.path.isfile(
             os.path.join(repo, ".gitignore")) else ["evals-results/"]
         self.assertIn("evals-results/", ignored)
+        self.assertEqual(self.command("--max-cost-usd", "1", "--trust-plugin")[0][-1],
+                         "--trust-plugin")
         run = self.command("--max-cost-usd", "2.5", "--model", "opus", "--runs", "3", "-j",
                            "2", "--case", "rc-0?")[0]
         self.assertIn("--model opus --runs 3 -j 2 --max-cost-usd 2.5", " ".join(run))
@@ -848,6 +850,9 @@ class RunnerTest(unittest.TestCase):
             os.makedirs(os.path.join(root, "work", "closed"))
             with open(os.path.join(root, "out", "trace.jsonl"), "w", encoding="utf-8") as fh:
                 fh.write("trace %d\n" % number)
+            with open(os.path.join(root, "work", "object"), "w", encoding="utf-8") as fh:
+                fh.write("read-only, as git writes its objects\n")
+            os.chmod(os.path.join(root, "work", "object"), 0o400)
             os.chmod(os.path.join(root, "work", "closed"), 0o500)
             roots.append(root)
         other = os.path.join(tmp, "claude-eval-OTHER")
@@ -905,8 +910,15 @@ class RunnerTest(unittest.TestCase):
                     mock.patch.object(runner, "REPO", os.path.join(tmp, str(expected),
                                                                    str(eval_code))), \
                     mock.patch.object(runner.subprocess, "call", side_effect=call), \
+                    mock.patch.object(runner.sys, "platform", "linux"), \
                     contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(runner.main(["--max-cost-usd", "1"]), expected)
+        with mock.patch.object(runner.sys, "platform", "win32"), \
+                mock.patch.object(runner.subprocess, "call") as call, \
+                contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(runner.main(["--max-cost-usd", "1"]), 2)
+        call.assert_not_called()
+        self.assertIn("Windows has no Bash sandbox", err.getvalue())
         with mock.patch.object(runner, "REPO", os.path.join(tmp, "evals-keys")), \
                 mock.patch.object(runner.subprocess, "call") as call, \
                 contextlib.redirect_stderr(io.StringIO()) as err:
@@ -945,8 +957,9 @@ class ReadmeTest(unittest.TestCase):
         self.assertIn("`evals-results/<UTC time>/` at the repository root", self.text)
 
     def test_trust_and_the_residual_risk(self):
-        self.assertIn("run.py passes no `--trust-plugin`, so the first run asks you to trust the "
-                      "plugin interactively", self.text)
+        self.assertIn("add `--trust-plugin` when you start it from a session or a script",
+                      self.text)
+        self.assertIn("It does not run on Windows (run.py refuses)", self.text)
         self.assertIn("Limits, from a static reading of the 2.1.332 sandbox builder, not from an "
                       "observed run", self.text)
         self.assertIn("The residual risk is a checkout outside your home and outside the temp "

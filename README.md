@@ -692,8 +692,11 @@ with its audit. A paid run, by hand only, with a required cost ceiling (Sonnet b
 time>/` at the repository root, which git ignores. The eval removes each run's sandbox, trace
 included, when the run ends, so run.py passes `--keep-temp`, copies each trace to `traces/` in
 the result folder, points the result at the copies and removes the kept sandboxes the result
-names. It exits non-zero when the eval or `score.py` does. run.py passes no `--trust-plugin`, so
-the first run asks you to trust the plugin interactively:
+names. It exits non-zero when the eval or `score.py` does. The eval asks you to trust the plugin
+folder only in an interactive terminal and otherwise exits with an error, so add `--trust-plugin`
+when you start it from a session or a script. It does not run on Windows (run.py refuses): Claude
+Code has no Bash sandbox there, so a session with Bash fails before it starts; use Linux, macOS
+or a WSL2 distribution such as Ubuntu:
 
 ```
 python3 plugins/manager-plugin/evals/reviewer-calibration/run.py --max-cost-usd 15
