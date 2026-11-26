@@ -1655,3 +1655,39 @@ No change to the reviewer, its brief, the manager skill or a hook; nothing runs 
     only closures by file mode do not.
 - **Cost.** None for normal runs. One short case cost 0.13 USD, so a 20-case Sonnet run is about
   3-5 USD, maybe up to about 8 with round-2 and larger cases (from one case only).
+
+### 31. Reviewer calibration: first full run (no plugin change)
+
+- **Run.** All 20 cases, Sonnet, `--runs 1 -j 1`, `--max-cost-usd 8` (given to run.py; the
+  result does not record it), on main dca993d (plugin 0.9.17), Linux, CLI 2.1.332, checkout under
+  `HOME`. 2.45 USD (0.12-0.14 a case), 503 s.
+- **Result.**
+
+  | measure | result |
+  |---|---|
+  | recall | L1 2/2, L2 2/2, L3 2/2, L4 2/2, guard 2/2: 10/10 |
+  | false alarms | decoys 0/4, clean 0/4 |
+  | round 2 | fixed accepted, unfixed refused (the bug named) |
+  | invalid runs, no verdict | 0, 0 |
+  | tokens (whole run) | cache read 2.37M, cache write 0.50M, output 54k; reviewer 30k output |
+
+- **Checked by hand.** Every "found" row of the audit names the planted fault itself; no match
+  came from a loose term. No tool call in the 20 traces touched the keys, the suite's folders,
+  `score.py` or the results; the only repository paths used were the reviewer brief and
+  `plan.py` (and, twice, a listing of plan.py's folder). Every kept sandbox was removed.
+- **What it shows.** The reviewer at Sonnet finds every planted fault of these kinds, passes
+  every decoy and clean diff, catches both test guards and handles round 2 (two cases per
+  level, so this is a floor check, not a rate). It does not show the
+  effect of any change: every measure is at the ceiling, so these cases cannot separate a better
+  reviewer from a worse one. One run per case, so the variance is unknown.
+- **Seen in passing.** On 5 of the 10 planted cases the reviewer adds a second, missing-test
+  blocker (rc-03 a third, the plan status set to done): fair findings, since each plan asks for
+  tests, but they can lengthen fix rounds. In rc-01 it first resolved the brief's relative
+  `plan.py` path one level too high (`manager-plugin/living-plan/...`, one wasted command), then
+  ran the right one, yet its answer's "Not checked" says plan.py was not found: a small
+  misreport of its own work.
+- **Next.** Keep the 20 cases as a regression suite. Measuring needs harder cases (larger diffs
+  with unrelated changes, faults across files, subtle contract changes, more convincing decoys),
+  designed first and approved by the owner. Opus or `--runs 3` (about 4-7.5 USD) only after
+  that, since at the ceiling they would teach little.
+- **Cost.** None for normal runs; this entry records a by-hand run.
