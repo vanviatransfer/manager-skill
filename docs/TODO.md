@@ -1812,7 +1812,8 @@ Why: item 33's side comparison showed an Opus reviewer given a free-form prompt 
 defects and workflow-specific ideas the Sonnet one did not, while the gate itself showed no
 difference. The owner approved one optional Opus pass per manager run, at the end, not per PR.
 No change to the reviewer agent, its brief, the implementer brief, `retro.sh`, the run record
-rules, the eval suites, any cost ceiling, or any strategy's per-phase models and efforts.
+rules, the eval suites (one assertion added in `evals/test_evals.py`), any cost ceiling, or any
+strategy's per-phase models and efforts.
 
 - **Opt-in, default off.** The model-strategy gate asks one more Turkish line ("Sonda Opus
   iyileştirme turu ... Evet / Hayır"). On only when the owner says yes (or a `standing` line
@@ -1846,3 +1847,23 @@ rules, the eval suites, any cost ceiling, or any strategy's per-phase models and
 - **Limits.** Not run live; the token estimate (100-200k) is a guess from item 33's single 81k
   sample. The items exist only in the agent's answer and the final report, not in a file.
 - plugin.json 0.9.20; README: the option, default off, its estimated cost.
+
+### 35. Improvement pass, first live sample (plugin 0.9.21)
+
+- **What ran.** The pass's dispatch alone, by hand from an outer session: `manager-plugin:reviewer`,
+  `model: opus` (effort not set: the agent's default), the 0.9.20 `brief-improvement.md` with its
+  dispatch fields filled, over the live-test project's whole history (seed..P7: 17 files, 582
+  added lines). Not exercised: the gate line, the working-notes states across a compaction, the
+  final-report section (that needs a nested manager session with GitHub access; not run).
+- **Cost.** 21,371 tokens by the Agent notice, 5 tool calls, 50 s. Below the 100-200k estimate on
+  this tiny project; one sample, so the estimate stands for real-sized runs.
+- **Result.** 4 items, all checked by hand and true: the README's usage section lacks the
+  function P7 added though P6's acceptance asks for one example per function, and no test reads
+  the README; the plan's "Done means" still lists five functions; `slugify` drops Latin letters
+  NFKD does not decompose (`Łódź straße Øresund Æsir` → `odz-strae-resund-sir`); `truncate` with
+  leading whitespace returns only the suffix (`truncate('  abcdef', 5)` → `…`). None was caught by
+  the seven phases' reviews. The answer followed the brief's format, gave no verdict, ran the
+  validation in a scratch clone and left the checkout clean.
+- **Fixed after PR #74's review.** A state line left at `dispatched` with no answer (a lost
+  result) now becomes `failed: result lost`; a phase landing after the pass is said to be
+  uncovered; a 101-column test line; item 34's eval-suite sentence.

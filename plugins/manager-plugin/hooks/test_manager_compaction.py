@@ -762,7 +762,8 @@ class ImprovementPassTest(unittest.TestCase):
         strategy = " ".join(read(os.path.join(MANAGER, "references", "model-strategy.md")).split())
         # after a compaction, the kept state line keeps the owner's yes even if a line lacks it
         self.assertIn("or a `Run <id>: improvement pass:` line for this run is kept", strategy)
-        self.assertIn("The `run` line and the working-notes strategy line always carry it", strategy)
+        self.assertIn("The `run` line and the working-notes strategy line always carry it",
+                      strategy)
         self.assertIn("Improvement pass on → read `references/improvement-pass.md` and run the "
                       "pass before",
                       self.texts["final-report.md"])
