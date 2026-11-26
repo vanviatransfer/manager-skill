@@ -2,9 +2,10 @@
 
 Copy the shape, not the wording. Drop sections that would be empty; don't pad.
 Fill every slot: `plan.py check` warns about a placeholder left in a phase's required field
-(`<...>`, `TODO`, `TBD`, `???`, `NEEDS CLARIFICATION`, inside backticks too) and about a
-`Validation` command piped into `tail`, `head`, `grep`, `less` or `tee` without `set -o pipefail`
-or `PIPESTATUS` (the pipe hides the exit code).
+(`TODO`, `TBD`, `???`, `NEEDS CLARIFICATION` anywhere; a `<...>` slot only outside backticks,
+since inside them it is a command template) and about a `Validation` command piped into `tail`,
+`head`, `grep`, `less` or `tee` without `set -o pipefail` or `PIPESTATUS` (the pipe hides the
+exit code).
 
 ```markdown
 # <Project> — Living Plan

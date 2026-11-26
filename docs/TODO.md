@@ -1437,28 +1437,32 @@ zero-tests sentence in both briefs).
   these strings for a sub-suite while others ran (the agent reads the log, so it can tell).
 - **`plan.py check` warnings.** What: after the existing warnings, one line per hit with the phase
   id and the field: a placeholder left in a required field (`<` then `...` or a letter up to the
-  next `>`, `TODO` / `TBD` as words of their own, not inside a path such as `docs/TODO.md`, `???`,
-  `NEEDS CLARIFICATION`), and a `Validation` command piped into `tail`, `head`, `grep`, `less` or
-  `tee` while the field names neither `pipefail` nor `PIPESTATUS`. Exit code unchanged. The
-  template's format doc doesn't call backticked slots literal, so they are flagged too; documented
-  in `references/plan-template.md` (SKILL.md unchanged). Why: a plan handed to the manager with a
-  slot still open, or a validation whose failure a pipe turns into exit 0. Cost: output only when
-  found; a plan without hits prints the same bytes. False positives: this repository's own plan
-  gives 9 such lines, all literal command examples in backticks in Scope (`<id>`, `<sha>`,
-  `<base-sha>`, `<plan-path>`, `<python>`, `<cmd>`, `<paths>`): for the owner to decide whether
-  backticked slots should be exempt. An HTML tag (`<br>`) counts as a slot; a `TODO` word in prose
-  is flagged; a pipe inside a quoted string counts.
+  next `>`, outside backticks only; anywhere `TODO` / `TBD` as words of their own, not inside a path
+  such as `docs/TODO.md`, `???`, `NEEDS CLARIFICATION`), and a `Validation` command piped into
+  `tail`, `head`, `grep`, `less` or `tee` while the field names neither `pipefail` nor `PIPESTATUS`.
+  Exit code unchanged. A `<...>` slot inside backticks is a command template (`git show <sha>`), not
+  flagged (review fix: all 9 first-round hits on this repository's plan were such templates; it now
+  prints what 0.9.13 printed); documented in `references/plan-template.md` (SKILL.md unchanged).
+  Why: a plan handed to the manager with a slot still open, or a validation whose failure a pipe
+  turns into exit 0. Cost: output only when found; a plan without hits prints the same bytes. False
+  positives: a bare HTML tag (`<br>`) counts as a slot; a `TODO` word in prose is flagged; a pipe
+  inside a quoted string counts. Misses: a slot left inside backticks.
 - **Dead sources in vault pages.** What: `codemap.py check` (not `--quiet`, not the map) prints
   `warning: dead source <page>:<line> -> <path> (no such file)` after the broken-link warnings, at
   most 20, only when any exist. Cited: a markdown link to a non-page file, and a code span with a
-  `/` that ends in `/` or in a file extension. Skipped: fenced code blocks, absolute paths,
+  `/` that ends in `/` or in a file extension, only when the path's first part is a file or folder
+  at the repository root (review fix: 8 of 9 probe hits named other repositories' files).
+  Skipped: fenced code blocks, absolute paths,
   placeholders (`<`, `>`, `*`, `{`, `$`, `...`, `path/to/`, a part named foo, bar or baz or holding
   "example"). A link is alive when the path exists; a code span also when it is the end of a
   tracked path (`scripts/<name>.py`) or a folder in one. Why: vault pages cite their sources, and a
   moved file leaves a stale citation nobody checked. Cost: a `check` warning only; the map, `build`
   and `--quiet` are unchanged; a clean vault prints the same bytes (golden test, also run against
-  0.9.13's script). False positives: a code span naming a file in another repository or a file
-  created later; misses: a bare file name, a code span without an extension.
+  0.9.13's script). Probe (`check --vault docs` on this repository, which has no vault): 9 lines
+  before the root rule, 0 after; the one real hit, `references/trainer-template.md` (a removed
+  file, cited relative to a skill folder), is dropped too, as `references` is no root folder.
+  False positives: another repository's file under a folder name this root also has; misses: a
+  bare file name, a code span without an extension, a path relative to a subfolder.
 - **Trigger-clause test.** `hooks/test_trigger_clauses.py`: every model-invoked skill's description
   keeps "Use when" / "Use for" (`disable-model-invocation: true` skills are exempt), every agent's
   its "Use ..." / "Used only when" clause. A test only.

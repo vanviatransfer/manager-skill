@@ -101,7 +101,9 @@ class TemplateShapeTest(unittest.TestCase):
         self.assertEqual(out.splitlines()[:len(errors)], errors)  # the warnings come after
         left = out.splitlines()[len(errors):]
         self.assertIn("warning: P1: Objective: placeholder left in: <one deliverable>", left)
-        self.assertIn("warning: P1: Validation: placeholder left in: <expensive cmd>", left)
+        self.assertIn('warning: P1: Validation: placeholder left in: <commands, or "standard">',
+                      left)
+        self.assertNotIn("warning: P1: Validation: placeholder left in: <expensive cmd>", left)
         for line in left:
             self.assertTrue(line.startswith("warning: P1: "), line)
 
@@ -309,7 +311,10 @@ class LeftoverTest(unittest.TestCase):
     def test_placeholders(self):
         for value, hits in (
                 ("<one deliverable>", ["<one deliverable>"]),
-                ("the reader, `<...>` and <id>", ["<...>", "<id>"]),
+                ("the reader, <...> and <id>", ["<...>", "<id>"]),
+                ("`git show <sha>` and <id>", ["<id>"]),  # a backticked slot is a template
+                ("`TODO`, `make ???` and `NEEDS CLARIFICATION`",
+                 ["TODO", "???", "NEEDS CLARIFICATION"]),  # these count inside backticks too
                 ("TODO", ["TODO"]), ("the reader (TBD).", ["TBD"]), ("which one???", ["???"]),
                 ("NEEDS CLARIFICATION: the format", ["NEEDS CLARIFICATION"])):
             for label in ("Objective", "Acceptance", "Risk"):

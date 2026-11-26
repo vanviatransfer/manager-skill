@@ -281,13 +281,15 @@ class CodemapTest(unittest.TestCase):
     def test_check_names_dead_sources(self):
         self.vault_setup()
         self.write("docs/vault/sources.md", "\n".join([
-            "Moved: `app/old.py`, `lib/gone/`, [the spec](../../spec/api.yaml).",  # 1: dead
+            "Moved: `app/old.py`, `web/gone/`, [the spec](../../app/api.yaml).",  # 1: dead
             "Alive: `app/util.py`, `util.py`, `tests/`, `vault/index.md`, [m](../../app/main.py)",
             "Alive by its end: `vault/topics/mimari.md` and `app/` and `web/lib.ts:x`",
             "Placeholders: `<dir>/x.py`, `src/foo.py`, `foo/bar`, `docs/example/a.md`,",
             "`path/to/file.py`, `app/*.py`, `src/.../x.py`, `${ROOT}/a.py`, [e](<dir>/x.py)",
             "No path: `and/or`, `os.path.join`, `0.9.13`, `true/false`, `/etc/hosts.conf`",
-            "```", "`app/fenced.py`", "```", "Last: `scripts/vanished.py`", ""]))
+            "```", "`app/fenced.py`", "```", "Last: `tests/vanished.py`",
+            "Another repository's: `lib/gone.py`, `.claude/CLAUDE.md`, [s](../../spec/api.yaml)",
+            ""]))
         self.git("add", "-A")
         run("build", "--root", self.root)
         code, out = run("check", "--root", self.root)
@@ -296,8 +298,8 @@ class CodemapTest(unittest.TestCase):
         self.assertEqual(out, "warning: broken link docs/vault/topics/mimari.md:1 -> [[yok]]\n"
                          + "".join("warning: dead source %s:%d -> %s (no such file)\n"
                                    % (page, ln, path) for ln, path in
-                                   ((1, "spec/api.yaml"), (1, "app/old.py"), (1, "lib/gone/"),
-                                    (10, "scripts/vanished.py")))
+                                   ((1, "app/api.yaml"), (1, "app/old.py"), (1, "web/gone/"),
+                                    (10, "tests/vanished.py")))
                          + "current: docs/vault/map.md\n")
         self.assertEqual(run("check", "--quiet", "--root", self.root), (0, ""))
         self.write("app/old.py", "x = 1\n")  # back on disk (untracked): no longer dead

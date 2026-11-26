@@ -567,9 +567,11 @@ def command_label():
 # and inline code spans naming a tracked file are recorded as mentions of that file.
 # Dead sources (`check` only, beside the broken links): a cited path that no longer exists. A
 # link to a non-page file counts as cited, and so does a code span with a `/` that ends in `/` or
-# in a file extension; skipped: fenced code blocks, placeholders (`<`, `>`, `*`, `{`, `$`, `...`,
-# `path/to`, a part named foo, bar, baz or holding "example"). A code span is alive when it is
-# on disk from the root, or the end of a tracked path (`scripts/x.py`), or a folder holding one.
+# in a file extension, but only when the path's first part is a file or folder at the repository
+# root (else it likely names another repository's file); skipped: fenced code blocks,
+# placeholders (`<`, `>`, `*`, `{`, `$`, `...`, `path/to`, a part named foo, bar, baz or holding
+# "example"). A code span is alive when it is on disk from the root, or the end of a tracked path
+# (`scripts/x.py`), or a folder holding one.
 WIKILINK = re.compile(r"\[\[([^\]|#\\]+?)(?:\\?\|[^\]]*|#[^\]]*)?\]\]")
 MD_LINK = re.compile(r"(?<!!)\[[^\]]*\]\(\s*(?:<([^<>\n]+)>|([^)\s]+))(?:\s+[^)]*)?\)")
 CODE_SPAN = re.compile(r"`([^`\n]+)`")
@@ -625,8 +627,12 @@ def placeholder_path(ref):
 def dead_sources(root, cited, known):
     """[(page, line, path)] of the cited paths that no longer exist (see the rule above)."""
     tracked = ["/" + f for f in sorted(known)]
+    tops = {f.split("/")[0] for f in known}
     dead = []
     for page, lineno, ref, exact in cited:
+        if ref.split("/")[0] not in tops and not os.path.lexists(os.path.join(root,
+                                                                            ref.split("/")[0])):
+            continue  # not rooted in this repository
         if placeholder_path(ref) or os.path.lexists(os.path.join(root, *ref.split("/"))):
             continue
         if ref.rstrip("/") in known:

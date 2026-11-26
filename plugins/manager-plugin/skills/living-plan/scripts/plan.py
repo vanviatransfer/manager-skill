@@ -41,8 +41,9 @@ scope`) names the same path. A path is a word with a `/` or a file extension; a 
 something under it count as the same.
 Also as warnings, one line per hit with the phase id and the field, after the ones above:
 - a placeholder left in a required field: a template slot (`<` then `...` or a letter, up to the
-  next `>`), `TODO` or `TBD` as a word of its own (not part of a path such as `docs/TODO.md`),
-  `???`, `NEEDS CLARIFICATION`; inside backticks too (the template doesn't call them literal);
+  next `>`) outside backticks (inside them it is a command template, not flagged), and anywhere
+  `TODO` or `TBD` as a word of its own (not part of a path such as `docs/TODO.md`), `???`,
+  `NEEDS CLARIFICATION`;
 - a `Validation` command piped into `tail`, `head`, `grep`, `less` or `tee`, which hides its exit
   code, unless the field names `pipefail` or `PIPESTATUS`.
 
@@ -60,8 +61,10 @@ HEADING = re.compile(r"### ([^\s.]+)\.(?:\s|$)")
 LABEL = re.compile(r"(%s):(?:\s|$)" % "|".join(REQUIRED + ("Notes", "Out of scope")))
 WORD = re.compile(r"[\w.~*/-]+")
 EXTENSION = re.compile(r"\.[A-Za-z]\w+$")
-PLACEHOLDER = re.compile(r"<(?:\.\.\.|[A-Za-z])[^<>]*>|(?<![\w/.-])(?:TODO|TBD)(?![\w/-]|\.\w)"
-                         r"|\?\?\?|NEEDS CLARIFICATION")
+SLOT = re.compile(r"<(?:\.\.\.|[A-Za-z])[^<>]*>")
+PLACEHOLDER = re.compile(r"%s|(?<![\w/.-])(?:TODO|TBD)(?![\w/-]|\.\w)|\?\?\?|NEEDS CLARIFICATION"
+                         % SLOT.pattern)
+CODE = re.compile(r"`[^`]*`")
 PIPED = re.compile(r"(?<!\|)\|(?![|&])\s*(tail|head|grep|less|tee)\b")
 
 
@@ -188,7 +191,11 @@ def leftovers(name, values):
     found = []
     for label in REQUIRED:
         value = values.get(label, "")
+        quoted = [span.span() for span in CODE.finditer(value)]
         for hit in PLACEHOLDER.finditer(value):
+            if SLOT.fullmatch(hit.group(0)) and any(a < hit.start() and hit.end() < b
+                                                    for a, b in quoted):
+                continue  # a command template such as `git show <sha>`
             found.append("%s: %s: placeholder left in: %s" % (name, label, hit.group(0)))
     value = values.get("Validation", "")
     if not re.search(r"pipefail|PIPESTATUS", value):
