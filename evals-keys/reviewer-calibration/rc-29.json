@@ -28,7 +28,20 @@
         "middle two",
         "middle values",
         "upper middle",
-        "2.5"
+        "2.5",
+        "is even",
+        "are even",
+        "even-numbered",
+        "even list",
+        "even lists",
+        "even inputs",
+        "central",
+        "middle pair",
+        "middle elements",
+        [
+          "even",
+          "len("
+        ]
       ],
       "alone": []
     },
@@ -60,7 +73,22 @@
         "caller's list",
         "as it was",
         "unchanged",
-        "reorders"
+        "reorders",
+        "modified",
+        "not modify",
+        "modifying",
+        "changes the input",
+        "changes its input",
+        "changes it",
+        "alters",
+        "reordered",
+        "same object",
+        "argument list",
+        "passed-in",
+        "gets sorted",
+        "sorts the input",
+        "sorts its input",
+        "ordered = values"
       ],
       "alone": []
     }

@@ -33,12 +33,12 @@ Rules, per valid run of a case:
   the right file does not match: case-insensitive whole words (`fold` is not in `folder`), never
   inside a line citation (`README.md:20` holds no `20`); a list term needs all its parts. Other
   blockers are counted as extra.
-- planted with several findings (the key's `findings`, each with its own `locations`, `terms`
-  and `alone` in place of the key's): each finding is matched as above, except that a cited
-  line alone matches none (the findings' ranges may be neighbours), so a finding needs a file
-  and one of its terms, or one of its `alone` terms; the run is `found` when
-  every finding is, `partial` when some are, `missed` when none is, and right only when found.
-  Recall counts findings, so such a case adds one per finding to its level.
+- planted with several findings (the key's `findings`, each with its own `locations`, `terms` and
+  `alone` in place of the key's): each finding is matched as above, except that a cited line or
+  range counts for a finding only when it lies inside that finding's range and touches no other
+  finding's range in the same file (the ranges may be neighbours: `stats.py:9-18` names neither);
+  the run is `found` when every finding is, `partial` when some are, `missed` when none is, and
+  right only when found. Recall counts findings, so such a case adds one per finding to its level.
 - decoy, clean: any blocker, or a CHANGES REQUIRED verdict, is a `false alarm`; else `pass`.
   A run without a verdict counts against recall but is left out of the false-alarm rate.
 - round2-fixed: right (`accepted`) when the verdict is PASS or PASS WITH NOTES and there is no
@@ -158,18 +158,29 @@ def parse(text):
     return {"verdict": verdict, "blockers": found}
 
 
-def cites_lines(blocker, path, lines):
-    """Whether the blocker cites `path:<n>` or `path:<a>-<b>` overlapping the key's range."""
-    if not lines:
-        return False
-    low, high = lines
+def citations(blocker, path):
+    """The line ranges (start, end) the blocker cites as `path:<n>` or `path:<a>-<b>`."""
     for name in {path, os.path.basename(path)}:
         for match in re.finditer(r"(?<![\w.-])" + re.escape(name) + r":(?:L)?([0-9]+)"
                                  r"(?:\s*[-–]\s*(?:L)?([0-9]+))?", blocker):
             start = int(match.group(1))
-            end = int(match.group(2) or start)
+            yield start, int(match.group(2) or start)
+
+
+def cites_lines(blocker, path, lines, others=None):
+    """Whether the blocker cites a line of `path` in the key's range: overlapping it, or (with
+    `others`, the ranges of the other findings in that file) inside it and touching none of
+    them."""
+    if not lines:
+        return False
+    low, high = lines
+    for start, end in citations(blocker, path):
+        if others is None:
             if start <= high and end >= low:
                 return True
+        elif low <= start and end <= high and not any(
+                start <= top and end >= bottom for bottom, top in others):
+            return True
     return False
 
 
@@ -206,10 +217,11 @@ def findings_of(key):
     return key["findings"] if "findings" in key else [key]
 
 
-def located(blocker, key, cited=True):
+def located(blocker, key, others=None):
     """Why one blocker names the planted bug of the answer key (or of one finding), or None: an
-    `alone` term, or a key file with a key term or (when `cited`) a cited line in the key's
-    range."""
+    `alone` term, or a key file with a key term or a cited line in the key's range. `others`,
+    the locations of the other findings, makes a citation count only when it is inside this
+    range and touches none of theirs in the same file."""
     for term in key.get("alone", []):
         if has_term(blocker, term):
             return "term %r" % shown(term)
@@ -219,17 +231,25 @@ def located(blocker, key, cited=True):
             continue
         if terms:
             return "%s + term %r" % (place["file"], shown(terms[0]))
-        if cited and cites_lines(blocker, place["file"], place["lines"]):
+        near = None if others is None else [
+            other["lines"] for other in others if other["file"] == place["file"]]
+        if cites_lines(blocker, place["file"], place["lines"], near):
             return "%s:%d-%d cited" % (place["file"], place["lines"][0], place["lines"][1])
     return None
 
 
 def matched(blocker, findings):
     """(why the blocker names a finding or None, the indexes of the findings it names); with
-    several findings each reason is labelled `finding <n>: ` and a cited line alone names none
-    (their ranges may be neighbours, so a citation could not tell which finding is meant)."""
+    several findings each reason is labelled `finding <n>: ` and a citation names a finding only
+    when it is inside its range and touches no other finding's range (their ranges may be
+    neighbours, so a citation across both could not tell which finding is meant)."""
     several = len(findings) > 1
-    whys = [(index, located(blocker, finding, cited=not several))
+
+    def others(index):
+        return [place for other, finding in enumerate(findings) if other != index
+                for place in finding.get("locations", [])] if several else None
+
+    whys = [(index, located(blocker, finding, others(index)))
             for index, finding in enumerate(findings)]
     whys = [(index, why) for index, why in whys if why]
     if several:

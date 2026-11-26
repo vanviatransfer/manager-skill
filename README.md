@@ -681,12 +681,13 @@ its kind, 2 decoys, 1 clean refactor of about 200 lines, and 1 nit: correct code
 flaw, where PASS or PASS WITH NOTES without a blocker is right and any blocker or CHANGES REQUIRED
 is over-blocking. Every rule above holds for it, tier included: nothing in a case tells it. A key
 of the hard tier says `"tier": "hard"` (none: the base tier) and may hold several `findings`, each
-matched like a single bug except that a cited line alone matches none (a finding needs its file and
-one of its terms, or an `alone` term): the run is `found` when all are, `partial` when some are, and
-recall counts each finding. `score.py` reports over-blocking of the nit on its own line, apart from
-the false-alarm rate, and gives the totals of each tier when a result holds both. Built and tested,
-not run. Estimated cost (an estimate from the base tier's 0.12-0.14 USD a case and the larger
-repositories, not a measurement): 0.25-0.45 USD a case at Sonnet, so 3-5.5 USD a run of the 12.
+matched like a single bug except that a cited line counts for a finding only inside its range and
+clear of the other findings' ranges in that file: the run is `found` when all are, `partial` when
+some are, and recall counts each finding. `score.py` reports over-blocking of the nit on its own
+line, apart from the false-alarm rate, and gives the totals of each tier when a result holds both.
+Built and tested, not run. Estimated cost (an estimate from the base tier's 0.12-0.14 USD a case and
+the larger repositories, not a measurement): 0.25-0.45 USD a case at Sonnet, so 3-5.5 USD a run of
+the 12.
 One run per case says little; a meaningful read needs `--runs 3`.
 
 The answer keys (`evals-keys/reviewer-calibration/<case>.json` at the repository root: the

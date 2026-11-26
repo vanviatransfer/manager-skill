@@ -982,6 +982,30 @@ class HardScoreTest(unittest.TestCase):
                 half = self.grade("l2-two-faults", blocker)
                 self.assertEqual((half["outcome"], half["right"], half["findings"]),
                                  ("partial", False, [1, 2]))
+        # Natural wordings of one bug credit that finding alone; a citation credits a finding
+        # only inside its range and clear of the other's (stats.py:9-18 names neither).
+        for number, blocker in (
+                (1, "B1. stats.py:18 — the median is wrong when len(values) is even"),
+                (1, "B1. stats.py — for even-numbered lists the median ignores the middle pair"),
+                (1, "B1. stats.py — the median should average the two central elements"),
+                (1, "B1. stats.py — median of [1, 2, 3, 4] gives 3 instead of 2.5; the code "
+                    "sorts values then indexes len // 2"),
+                (1, "B1. stats.py:18 — wrong value returned"),
+                (2, "B1. stats.py:17 — the input list is modified"),
+                (2, "B1. stats.py — the caller's values are reordered"),
+                (2, "B1. stats.py:16 — ordered is the same object as values, so .sort() "
+                    "changes it"),
+                (2, "B1. stats.py — `ordered = values` should be `ordered = sorted(values)`"),
+                (2, "B1. stats.py — summary alters the argument list"),
+                (2, "B1. stats.py — the passed-in list gets sorted"),
+                (2, "B1. stats.py:16-17 — wrong")):
+            with self.subTest(blocker=blocker):
+                half = self.grade("l2-two-faults", blocker)
+                self.assertEqual((half["outcome"], half["findings"]), ("partial", [1, 2]))
+                self.assertTrue(half["matches"][0][1].startswith("finding %d: " % number),
+                                half["matches"][0][1])
+        for blocker in ("B1. stats.py:9-18 — wrong", "B1. stats.py:16-18 — wrong"):
+            self.assertEqual(self.grade("l2-two-faults", blocker)["outcome"], "missed")
         self.assertEqual(self.grade("l1-off-by-one", "B1. off by one (pager.py)")["findings"],
                          [1, 1])
 
