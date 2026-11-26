@@ -2,12 +2,17 @@
 """skilltrain: check and measure a project's self-training skills.
 
 Usage:
-  skilltrain.py check SKILL_DIR [--root DIR] [--triggers-from REF]
+  skilltrain.py check SKILL_DIR [--root DIR] [--triggers-from REF] [--migrate]
                                                exit 0 if the skill is well formed, 1 with one
                                                line per problem, 2 for a bad path (or a REF
-                                               that isn't a commit, or no git)
+                                               that isn't a commit, or no git); --migrate first
+                                               adds lessons.md's confidence and last-confirmed
+                                               columns in place
   skilltrain.py stats SKILL_DIR [--root DIR]   records, outcomes and tags since the last
                                                training, and whether training is due
+  check and stats also take --stale-days N (90) and --stale-uses M (20): an active lesson
+  whose last-confirmed is more than N days old, or followed by more than M records rows, gets
+  one "stale lesson" line (never retired by the script)
   skilltrain.py due REPO_ROOT                  one line per marked skill under .claude/skills/:
                                                its training-due state
   skilltrain.py query REPO_ROOT [--] TERM      one line per line of a marked skill's files
@@ -33,8 +38,11 @@ references/ needs a "## Knowledge" bullet that starts with its path in backticks
 (`references/<file>` — read when ...), and every such bullet's path must exist (a path that
 starts with references/ is in the skill's folder, any other is from the repository root;
 backticked text with whitespace, ://, * or ?, or starting with <, is no path and not checked). Every
-lesson id a rule cites must be in lessons.md. With --triggers-from REF, every quoted phrase
-("..." or “...”) of the skill's description at REF, and of the description of the folder
+lesson id a rule cites must be in lessons.md and back it: not a hypothesis, and with a verifier
+outcome in its evidence (a records row cited as "<date> <context>: <outcome>" that the records
+hold, or an owner verdict quoted as owner: "<words>", <date>); a sourced lesson may back a rule
+without one while the changelog has only its first entry. With --triggers-from REF, every quoted
+phrase ("..." or “...”) of the skill's description at REF, and of the description of the folder
 <name>-trainer beside it at REF (the retired trainer), must still be in the current
 description. A skill missing at REF is new: a note, not a problem; a trainer missing at REF is
 skipped silently.
@@ -61,7 +69,13 @@ MARKER = "<!-- self-training-skill v1 -->"
 MARKER_RE = re.compile(r"^<!-- self-training-(skill|trainer) v\d+ -->$")
 SECTIONS = ("Purpose", "Steps", "Rules", "Knowledge", "Record", "Changelog")
 RECORDS_HEADER = ("date", "context", "outcome", "tags", "note")
-LESSONS_HEADER = ("id", "lesson", "label", "evidence", "status")
+LESSONS_HEADER = ("id", "lesson", "label", "evidence", "status", "confidence", "last-confirmed")
+# The header before 0.9.12: read as confidence low and last-confirmed unknown.
+OLD_LESSONS_HEADER = LESSONS_HEADER[:5]
+CONFIDENCE = ("high", "medium", "low")
+UNKNOWN = "unknown"
+STALE_DAYS = 90
+STALE_USES = 20
 OUTCOMES = ("pending-review", "pass", "changes-required", "owner-good", "owner-bad", "failed",
             "n/a")
 BAD_OUTCOMES = {"changes-required", "owner-bad", "failed"}
@@ -77,6 +91,12 @@ DATE = r"\d{4}-\d{2}-\d{2}"
 CHANGELOG_LINE = re.compile(r"^- v(\d+) (" + DATE + r"): \S")
 # the "— records: <n>" segment (an em dash or " - " before it); the last one counts
 CHANGELOG_RECORDS = re.compile(r"(?:—|\s-)\s*records:\s*(\d+)\b")
+# A verifier outcome a lesson's evidence cites: a records row by its date, context and outcome
+# (a review finding, a test or validation failure, an owner verdict), or an owner verdict quoted
+# with its date.
+VERIFIER_CITE = re.compile(r"\b(" + DATE + r") (phase [^\s:;,|()]+|owner session): "
+                           r"(pass|changes-required|failed|owner-good|owner-bad)\b")
+OWNER_VERDICT = re.compile(r"owner: (?:\"[^\"\n]+\"|\u201c[^\u201d\n]+\u201d), (" + DATE + r")\b")
 FENCE = re.compile(r"^\s*(```|~~~)")
 BULLET = re.compile(r"^(?:[-*+]|\d+[.)])\s+")
 # Inside a bullet, only these start a sub-bullet (CommonMark: "3." can't interrupt a paragraph).
@@ -328,6 +348,8 @@ class Skill:
         self.problems = []
         self.skipped = []  # file:line of records lines that don't parse
         self.record_lines = []  # file:line of each parsed records row
+        self.notes = []  # note: lines (an old lessons table, stale lessons)
+        self.lessons_old = False  # lessons.md has the header before 0.9.12
         text = read_rel(root, rel_dir + "/SKILL.md")
         self.meta, self.body = split_frontmatter(text)
         self.kind = marker_kind(self.body)
@@ -385,13 +407,75 @@ def load_lessons(sk):
         sk.problems.append("lessons: %s" % exc)
         return None
     ok, rows, _, bad = parse_table(text, LESSONS_HEADER)
+    sk.lessons_old = False
+    if not ok:
+        ok, rows, _, bad = parse_table(text, OLD_LESSONS_HEADER)
+        sk.lessons_old = ok
     if not ok:
         sk.problems.append("lessons: %s lacks the header | %s | and its separator"
                            % (rel, " | ".join(LESSONS_HEADER)))
         return None
     for n in bad:
         sk.problems.append("lessons: %s:%d is a row that doesn't parse" % (rel, n))
-    return {r[0]: r[4] for r in rows}
+    if sk.lessons_old:
+        sk.notes.append("note: %s has no confidence and last-confirmed columns: read as low "
+                        "and unknown (check --migrate adds them)" % rel)
+    out = {}
+    for r in rows:
+        out[r[0]] = {"label": r[2].lower(), "evidence": r[3], "status": r[4],
+                     "confidence": "low" if sk.lessons_old else r[5],
+                     "confirmed": UNKNOWN if sk.lessons_old else r[6]}
+    return out
+
+
+def support(evidence, rows):
+    """(records rows the evidence cites that the records hold, as (date, context, outcome),
+    the cites they don't hold as text, dates of quoted owner verdicts)."""
+    held = {(r[0], r[1], r[2]) for r in rows}
+    found, missing = [], []
+    for m in VERIFIER_CITE.finditer(evidence):
+        cite = (m.group(1), m.group(2), m.group(3))
+        (found if cite in held else missing).append(cite if cite in held else m.group(0))
+    return found, missing, OWNER_VERDICT.findall(evidence)
+
+
+def confidence(found, owner_dates):
+    """high: 2 or more independent verifier outcomes (distinct date and context) or an owner
+    verdict; medium: one; low: none."""
+    uses = {(d, c) for d, c, _ in found}
+    if owner_dates or any(o in OWNER_OUTCOMES for _, _, o in found) or len(uses) >= 2:
+        return "high"
+    return "medium" if uses else "low"
+
+
+def last_confirmed(found, owner_dates):
+    dates = [d for d, _, _ in found] + list(owner_dates)
+    return max(dates) if dates else UNKNOWN
+
+
+def today():
+    return datetime.date.today()
+
+
+def stale_lines(lessons, rows, days=STALE_DAYS, uses=STALE_USES):
+    """One line per active lesson whose last-confirmed is more than `days` old, or followed by
+    more than `uses` records rows (for an unknown one, all rows count)."""
+    out = []
+    now = today()
+    for lid, les in lessons.items():
+        if les["status"].lower() != "active":
+            continue
+        when = les["confirmed"]
+        if valid_date(when):
+            age = (now - datetime.date(int(when[:4]), int(when[5:7]), int(when[8:]))).days
+            later = sum(1 for r in rows if valid_date(r[0]) and r[0] > when)
+        else:
+            age, later = None, len(rows)
+        if (age is not None and age > days) or later > uses:
+            out.append("stale lesson %s (last-confirmed %s%s, %d uses since): keep, re-confirm "
+                       "or retire it in the next training"
+                       % (lid, when, "" if age is None else ", %d days ago" % age, later))
+    return out
 
 
 def changelog(sk):
@@ -443,6 +527,34 @@ def check_worker(sk):
             sk.problems.append("records: %s has an unknown outcome: %s (one of %s)"
                                % (where, row[2], ", ".join(OUTCOMES)))
     lessons = load_lessons(sk)
+    # the changelog's own problems keep their place after the rules' (as before 0.9.12)
+    mark = len(sk.problems)
+    entries = changelog(sk)
+    changelog_problems = sk.problems[mark:]
+    del sk.problems[mark:]
+    # An old (five-column) table is no error: its evidence gaps are notes until it is migrated.
+    gap = sk.notes.append if sk.lessons_old else sk.problems.append
+    note = "note: " if sk.lessons_old else ""
+    verified = {}
+    reported = set()
+    now = today().isoformat()
+    for lid, les in (lessons or {}).items():
+        if les["confidence"] not in CONFIDENCE:
+            sk.problems.append("lessons: %s has confidence %s (one of %s)"
+                               % (lid, les["confidence"] or "''", ", ".join(CONFIDENCE)))
+        if les["confirmed"] != UNKNOWN and not valid_date(les["confirmed"]):
+            sk.problems.append("lessons: %s has last-confirmed %s (YYYY-MM-DD or %s)"
+                               % (lid, les["confirmed"] or "''", UNKNOWN))
+        elif les["confirmed"] != UNKNOWN and les["confirmed"] > now:
+            sk.problems.append("lessons: %s has last-confirmed %s, later than today (%s)"
+                               % (lid, les["confirmed"], now))
+        if rows is not None:
+            found, missing, owner_dates = support(les["evidence"], rows)
+            verified[lid] = bool(found or owner_dates)
+            if missing:
+                reported.add(lid)  # one line for the lesson, not a second one for its rule
+                gap("%slessons: %s cites %s, which the records lack"
+                    % (note, lid, "; ".join(missing)))
     rules, stray = bullets(section(sk.secs, "Rules") or [])
     for line in stray:
         sk.problems.append("rule without a bullet/citation: %s" % line[:80])
@@ -454,11 +566,23 @@ def check_worker(sk):
                     continue
                 if lid not in lessons:
                     sk.problems.append("rule cites %s, which lessons.md lacks" % lid)
-                elif lessons[lid].lower() == "retired":
+                elif lessons[lid]["status"].lower() == "retired":
                     sk.problems.append("rule cites %s, which is retired" % lid)
+                elif lid in reported:
+                    continue
+                elif lessons[lid]["label"] == "hypothesis":
+                    reported.add(lid)
+                    sk.problems.append("rule cites %s, a hypothesis: a hypothesis never backs a "
+                                       "rule" % lid)
+                elif lid in verified and not verified[lid] and \
+                        not (lessons[lid]["label"] == "sourced" and len(entries) <= 1):
+                    reported.add(lid)
+                    gap("%srule cites %s, whose evidence cites no verifier outcome (a records "
+                        "row as <date> <context>: <outcome>, or owner: \"<words>\", <date>)"
+                        % (note, lid))
         elif not OWNER_CITE.search(b):
             sk.problems.append("rule cites no lesson or owner quote: %s" % b[:80])
-    entries = changelog(sk)
+    sk.problems.extend(changelog_problems)
     if section(sk.secs, "Changelog") is not None and not entries:
         sk.problems.append("changelog has no entry")
     for prev, cur in zip(entries, entries[1:]):
@@ -472,6 +596,72 @@ def check_worker(sk):
     if rows is not None and counts and counts[-1][1] > len(rows):
         sk.problems.append("changelog v%d records: %d, but the records file has %d rows"
                            % (counts[-1][0], counts[-1][1], len(rows)))
+    return rows, lessons
+
+
+def run_migrate(root, rel):
+    """Adds the confidence and last-confirmed columns to an old lessons table in place, their
+    values from each row's evidence and the records; every other byte stays. (exit code, done)"""
+    sk = load(root, rel)
+    if sk.kind != "skill":
+        return 0, False
+    lrel = rel + "/lessons.md"
+    rows = load_records(sk)
+    if rows is None:
+        for p in sk.problems:
+            print("%s: %s" % (rel, p))
+        print("%s: --migrate needs the records file" % rel)
+        return 1, False
+    try:
+        read_rel(root, lrel)  # refuses a symlink, a missing or an oversized file
+    except ValueError as exc:
+        print("%s: lessons: %s" % (rel, exc))
+        return 1, False
+    path = os.path.join(root, *lrel.split("/"))
+    with open(path, "rb") as fh:
+        raw = fh.read()
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        print("%s: lessons: %s is not UTF-8; refused" % (rel, lrel))
+        return 1, False
+    # Split on "\n" only: U+2028, NEL, FF and the like inside a cell are cell text.
+    lines = text.split("\n")
+    body = [ln[:-1] if ln.endswith("\r") else ln for ln in lines]
+    start = next((i for i, ln in enumerate(body) if ln.strip().startswith("|")), None)
+    head = cells(body[start].lstrip("\ufeff")) if start is not None else None
+    if head is not None and tuple(c.lower() for c in head) == LESSONS_HEADER:
+        print("%s: lessons: %s already has the confidence and last-confirmed columns"
+              % (rel, lrel))
+        return 0, False
+    if head is None or tuple(c.lower() for c in head) != OLD_LESSONS_HEADER or \
+            start + 1 >= len(body) or not is_separator(body[start + 1]):
+        print("%s: lessons: %s has no lessons table header to migrate" % (rel, lrel))
+        return 1, False
+    def add(i, extra):
+        """The line with extra right after its last pipe; what follows the pipe stays."""
+        at = body[i].rindex("|") + 1
+        return body[i][:at] + extra + body[i][at:]
+    new = {start: add(start, " confidence | last-confirmed |"),
+           start + 1: add(start + 1, "---|---|")}
+    for i in range(start + 2, len(body)):
+        if not body[i].strip():
+            continue
+        if not body[i].strip().startswith("|"):
+            break
+        r = cells(body[i])
+        if r is None or len(r) != len(OLD_LESSONS_HEADER):
+            print("%s: lessons: %s:%d doesn't have exactly %d cells; fix it, then migrate"
+                  % (rel, lrel, i + 1, len(OLD_LESSONS_HEADER)))
+            return 1, False
+        found, _, owner_dates = support(r[3], rows)
+        new[i] = add(i, " %s | %s |" % (confidence(found, owner_dates),
+                                         last_confirmed(found, owner_dates)))
+    out = [new[i] + ln[len(body[i]):] if i in new else ln for i, ln in enumerate(lines)]
+    with open(path, "wb") as fh:
+        fh.write("\n".join(out).encode("utf-8"))
+    print("migrated: %s (%d rows: confidence and last-confirmed added)" % (lrel, len(new) - 2))
+    return 0, True
 
 
 def reference_files(sk):
@@ -639,19 +829,21 @@ def load(root, rel):
         raise PathError(str(exc))
 
 
-def run_check(root, rel, triggers_from=None):
+def run_check(root, rel, triggers_from=None, stale=(STALE_DAYS, STALE_USES)):
     sha = resolve_ref(root, triggers_from) if triggers_from is not None else None
     sk = load(root, rel)
     if sk.kind is None:
         print("not a self-training skill")
         return 0
-    notes = []
+    notes = sk.notes
     if sk.kind == "near-miss":
         sk.problems.append(NEAR_MISS)
     elif sk.kind == "trainer":
         sk.problems.append(RETIRED)
     else:
-        check_worker(sk)
+        rows, lessons = check_worker(sk)
+        if rows is not None and lessons is not None:
+            notes.extend("note: " + ln for ln in stale_lines(lessons, rows, *stale))
         check_routing(sk)
         if sha:
             check_triggers(sk, triggers_from, sha, notes)
@@ -725,11 +917,11 @@ def measure(sk):
         "outcomes": outcomes, "tags": tags, "pending": pending, "effects": effects,
         "owner_since": sum(1 for r in since if r[2] in OWNER_OUTCOMES),
         "owner_total": sum(1 for r in rows if r[2] in OWNER_OUTCOMES), "reasons": reasons,
-        "skipped": sk.skipped,
+        "skipped": sk.skipped, "rows": rows,
     }
 
 
-def run_stats(root, rel):
+def run_stats(root, rel, stale=(STALE_DAYS, STALE_USES)):
     sk = load(root, rel)
     if sk.kind in ("near-miss", "trainer"):
         print("%s: %s" % (rel, NEAR_MISS if sk.kind == "near-miss" else RETIRED))
@@ -742,6 +934,7 @@ def run_stats(root, rel):
         for p in sk.problems:
             print("%s: %s" % (rel, p))
         return 1
+    lessons = load_lessons(sk)
     print("skill: %s" % rel)
     print("records: %d" % m["total"])
     print("last training: v%d %s" % m["last"])
@@ -761,6 +954,9 @@ def run_stats(root, rel):
         print("expected effect v%d %s (records: %d before, %d after): %s"
               % (v, date, nb, na, detail))
     print("training due: %s" % ("yes (%s)" % "; ".join(m["reasons"]) if m["reasons"] else "no"))
+    if lessons is not None:
+        for line in sk.notes + ["note: " + ln for ln in stale_lines(lessons, m["rows"], *stale)]:
+            print(line)
     return 0
 
 
@@ -1007,6 +1203,14 @@ def main(argv=None):
                     help="check: the quoted trigger phrases of the description at this git ref "
                     "(the skill's and its retired <name>-trainer's) must still be in it")
     ap.add_argument("--remove", action="store_true", help="rules-hint: remove the line")
+    ap.add_argument("--migrate", action="store_true",
+                    help="check: first add lessons.md's confidence and last-confirmed columns")
+    ap.add_argument("--stale-days", type=int, default=STALE_DAYS, metavar="N",
+                    help="check/stats: an active lesson last confirmed more than N days ago is "
+                    "stale (default %d)" % STALE_DAYS)
+    ap.add_argument("--stale-uses", type=int, default=STALE_USES, metavar="M",
+                    help="check/stats: an active lesson followed by more than M records rows "
+                    "since its last confirmation is stale (default %d)" % STALE_USES)
     args = ap.parse_args(argv)
     if (args.term is not None) != (args.action == "query"):
         ap.error("query takes one TERM; the other actions take none")
@@ -1014,6 +1218,12 @@ def main(argv=None):
         ap.error("--triggers-from is for check")
     if args.remove and args.action != "rules-hint":
         ap.error("--remove is for rules-hint")
+    if args.migrate and args.action != "check":
+        ap.error("--migrate is for check")
+    stale = (args.stale_days, args.stale_uses)
+    if (stale != (STALE_DAYS, STALE_USES) and args.action not in ("check", "stats")) or \
+            min(stale) < 0:
+        ap.error("--stale-days and --stale-uses are for check and stats, at least 0")
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(errors="backslashreplace")
@@ -1034,8 +1244,12 @@ def main(argv=None):
             return run_due(root)
         root, rel = resolve(args.path, args.root)
         if args.action == "check":
-            return run_check(root, rel, args.triggers_from)
-        return run_stats(root, rel)
+            if args.migrate:
+                code, _ = run_migrate(root, rel)
+                if code:
+                    return code
+            return run_check(root, rel, args.triggers_from, stale)
+        return run_stats(root, rel, stale)
     except PathError as exc:
         print("error: %s" % exc, file=sys.stderr)
         return 2

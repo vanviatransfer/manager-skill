@@ -1298,3 +1298,48 @@ data, not now).
   create-vault SKILL.md names `references/setup.md` for the rules block (7,302 → 7,299 chars).
   Entry 23's two lines over 100 columns are wrapped.
 - **Version.** plugin.json 0.9.11. README names both commands.
+
+### 25. Lessons need a verifier outcome; confidence and staleness (plugin 0.9.12)
+
+Evidence: SkillsBench (arXiv 2602.12670) measured curated skills at +16.2pp and self-generated,
+unverified ones at -1.3pp; claude-reflect keeps a confidence and a decay so stale lessons get
+pruned. Owner rule for this change: no added token cost.
+
+- **Already there.** `label` (`owner-reported` / `observed` / `sourced` / `hypothesis`) and
+  `evidence` columns; `check` required a rule's lesson ids to exist and not be `retired`;
+  `evidence-rules.md` said a single record is never a rule and a `sourced` lesson may seed one at
+  creation. Not enforced: a `hypothesis` (or any lesson without a verified outcome) could back a
+  rule, and nothing aged.
+- **Verifier outcome.** A rule's lesson must not be a `hypothesis`, and its `evidence` must cite a
+  records row as `<YYYY-MM-DD> <context>: <outcome>` (`pass`, `changes-required`, `failed`,
+  `owner-good`, `owner-bad`) that the records hold, or an owner verdict `owner: "<words>",
+  <date>`. A cited row the records lack is a problem. A `sourced` lesson may back a rule without
+  one only until the first training (the changelog has only its creation entry), so Create still
+  passes `check`.
+- **Columns.** `confidence` (`high`: 2 or more independent outcomes, i.e. distinct date and
+  context, or an owner verdict; `medium`: one; `low`: none) and `last-confirmed`
+  (`YYYY-MM-DD` or `unknown`). Append-only keeps one stated exception: a status change or a
+  re-confirmation may update these two fields in place.
+- **Stale.** `check` (as a `note:`) and `stats` print one `stale lesson L<n>` line per `active`
+  lesson last confirmed more than 90 days ago (`--stale-days`) or followed by more than 20
+  records rows (`--stale-uses`); Train puts it to the owner (keep, re-confirm, retire). Never
+  auto-retired; no line when nothing is stale; `due` is unchanged. A `last-confirmed` later than
+  today is a problem (it would hide the lesson from staleness).
+- **Migration.** A five-column table still works (read as `low` / `unknown`, one `note:` line);
+  its evidence gaps (a rule's lesson without a verifier outcome, a cited row the records lack)
+  are `note:` lines, not problems, until it is migrated (a `hypothesis` behind a rule is a
+  problem either way). `check --migrate` adds the two cells right after each line's last pipe,
+  filled from the evidence and the records; it splits on `\n` only, and every other byte stays
+  (test). A row with other than five cells is refused, nothing written.
+- **Cost argument.** No new model call, subagent, hook or step: the work runs inside `check` and
+  `stats`, which Create and Train already run. Output grows only by the stale and old-table lines.
+  self-training-skills SKILL.md 12,935 → 12,927 chars (the detail is in `lessons-format.md` and
+  `evidence-rules.md`); manager SKILL.md and the briefs untouched.
+- **Tests.** `test_skilltrain.py` `LessonEvidenceTest`: old and new tables, bad and future cells,
+  confidence rules, a rule citing a hypothesis or an unverified lesson, a cited row the records
+  lack, the `sourced` seed window, staleness by days and by uses (and the options), no line when
+  nothing is stale, old-table gaps as notes and migrated ones as problems, the changelog
+  problems' place, migration byte-identical (CRLF, trailing whitespace, U+2028 / NEL / FF / RS
+  in a cell, idempotent) and a refused migration.
+- **Also.** code-map `references/impact-budget.md` paragraph rewrapped to 100 columns (same
+  words). plugin.json 0.9.12; README names the verifier outcomes and stale lessons.

@@ -85,8 +85,9 @@ A Claude Code plugin with six skills:
   proposes at most three changes, and lands the owner's choice through a reviewed PR.
   A skill can never override the project rules, the plan or the manager's review and owner-authority
   rules. Its `skilltrain.py` (standard-library Python) checks the files (shape, routing of every
-  `references/` file from `## Knowledge`, cited lesson ids, and with `--triggers-from <ref>` the
-  description's quoted trigger phrases, including a retired trainer's), finds a term in every
+  `references/` file from `## Knowledge`, cited lesson ids and their verifier outcomes, and with
+  `--triggers-from <ref>` the description's quoted trigger phrases, including a retired
+  trainer's), flags stale lessons for the next training, finds a term in every
   skill's files (`query`), writes one instruction line into `CLAUDE.md` (`rules-hint`), and tells
   the manager which skills are due for training and which fail their check.
 
