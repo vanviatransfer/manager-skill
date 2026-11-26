@@ -289,7 +289,10 @@ class CodemapTest(unittest.TestCase):
             "No path: `and/or`, `os.path.join`, `0.9.13`, `true/false`, `/etc/hosts.conf`",
             "```", "`app/fenced.py`", "```", "Last: `tests/vanished.py`",
             "Another repository's: `lib/gone.py`, `.claude/CLAUDE.md`, [s](../../spec/api.yaml)",
-            ""]))
+            "Relative to a skill folder: `references/gone.md` (dead), `references/guide.md` and "
+            "[g](../../references/notes.txt) (alive)", ""]))
+        self.write("skills/a/references/guide.md", "# Guide\n")  # `references` is no root entry
+        self.write("skills/a/references/notes.txt", "notes\n")
         self.git("add", "-A")
         run("build", "--root", self.root)
         code, out = run("check", "--root", self.root)
@@ -299,7 +302,7 @@ class CodemapTest(unittest.TestCase):
                          + "".join("warning: dead source %s:%d -> %s (no such file)\n"
                                    % (page, ln, path) for ln, path in
                                    ((1, "app/api.yaml"), (1, "app/old.py"), (1, "web/gone/"),
-                                    (10, "tests/vanished.py")))
+                                    (10, "tests/vanished.py"), (12, "references/gone.md")))
                          + "current: docs/vault/map.md\n")
         self.assertEqual(run("check", "--quiet", "--root", self.root), (0, ""))
         self.write("app/old.py", "x = 1\n")  # back on disk (untracked): no longer dead

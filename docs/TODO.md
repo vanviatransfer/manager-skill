@@ -1450,19 +1450,20 @@ zero-tests sentence in both briefs).
 - **Dead sources in vault pages.** What: `codemap.py check` (not `--quiet`, not the map) prints
   `warning: dead source <page>:<line> -> <path> (no such file)` after the broken-link warnings, at
   most 20, only when any exist. Cited: a markdown link to a non-page file, and a code span with a
-  `/` that ends in `/` or in a file extension, only when the path's first part is a file or folder
-  at the repository root (review fix: 8 of 9 probe hits named other repositories' files).
-  Skipped: fenced code blocks, absolute paths,
-  placeholders (`<`, `>`, `*`, `{`, `$`, `...`, `path/to/`, a part named foo, bar or baz or holding
-  "example"). A link is alive when the path exists; a code span also when it is the end of a
-  tracked path (`scripts/<name>.py`) or a folder in one. Why: vault pages cite their sources, and a
-  moved file leaves a stale citation nobody checked. Cost: a `check` warning only; the map, `build`
-  and `--quiet` are unchanged; a clean vault prints the same bytes (golden test, also run against
-  0.9.13's script). Probe (`check --vault docs` on this repository, which has no vault): 9 lines
-  before the root rule, 0 after; the one real hit, `references/trainer-template.md` (a removed
-  file, cited relative to a skill folder), is dropped too, as `references` is no root folder.
-  False positives: another repository's file under a folder name this root also has; misses: a
-  bare file name, a code span without an extension, a path relative to a subfolder.
+  `/` that ends in `/` or in a file extension, only when the path's first part is an entry of the
+  repository root or a folder name anywhere in the tracked tree (review fix: the first version
+  checked every such path, and 8 of 9 probe hits named other repositories' files). Skipped: fenced
+  code blocks, absolute paths, placeholders (`<`, `>`, `*`, `{`, `$`, `...`, `path/to/`, a part
+  named foo, bar or baz or holding "example"). A path is alive when it is on disk from the root, or
+  a tracked path is it or ends with "/" and it (`scripts/<name>.py`, a path relative to a skill
+  folder), or, for a folder, holds it. Why: vault pages cite their sources, and a moved file leaves
+  a stale citation nobody checked. Cost: a `check` warning only; the map, `build` and `--quiet` are
+  unchanged; a clean vault prints the same bytes (golden test, also run against 0.9.13's script).
+  Probe (`check --vault docs` on this repository, which has no vault): 9 lines with the first
+  version, 1 now, the real one: the retired trainer template under a skill's references folder,
+  cited in item 15 (0 false hits). False positives: another repository's file under a folder name
+  this tree also has; misses: a bare file name, a code span without an extension, a moved file whose
+  name still ends some tracked path.
 - **Trigger-clause test.** `hooks/test_trigger_clauses.py`: every model-invoked skill's description
   keeps "Use when" / "Use for" (`disable-model-invocation: true` skills are exempt), every agent's
   its "Use ..." / "Used only when" clause. A test only.

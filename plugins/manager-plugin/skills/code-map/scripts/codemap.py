@@ -567,11 +567,11 @@ def command_label():
 # and inline code spans naming a tracked file are recorded as mentions of that file.
 # Dead sources (`check` only, beside the broken links): a cited path that no longer exists. A
 # link to a non-page file counts as cited, and so does a code span with a `/` that ends in `/` or
-# in a file extension, but only when the path's first part is a file or folder at the repository
-# root (else it likely names another repository's file); skipped: fenced code blocks,
-# placeholders (`<`, `>`, `*`, `{`, `$`, `...`, `path/to`, a part named foo, bar, baz or holding
-# "example"). A code span is alive when it is on disk from the root, or the end of a tracked path
-# (`scripts/x.py`), or a folder holding one.
+# in a file extension, but only when the path's first part is an entry of the repository root or
+# a folder name anywhere in the tracked tree (else it likely names another repository's file);
+# skipped: fenced code blocks, placeholders (`<`, `>`, `*`, `{`, `$`, `...`, `path/to`, a part
+# named foo, bar, baz or holding "example"). A cited path is alive when it is on disk from the
+# root, or a tracked path is it or ends with "/" + it (`scripts/x.py`), or, for a folder, holds it.
 WIKILINK = re.compile(r"\[\[([^\]|#\\]+?)(?:\\?\|[^\]]*|#[^\]]*)?\]\]")
 MD_LINK = re.compile(r"(?<!!)\[[^\]]*\]\(\s*(?:<([^<>\n]+)>|([^)\s]+))(?:\s+[^)]*)?\)")
 CODE_SPAN = re.compile(r"`([^`\n]+)`")
@@ -627,19 +627,17 @@ def placeholder_path(ref):
 def dead_sources(root, cited, known):
     """[(page, line, path)] of the cited paths that no longer exist (see the rule above)."""
     tracked = ["/" + f for f in sorted(known)]
-    tops = {f.split("/")[0] for f in known}
+    folders = {f.split("/")[0] for f in known}  # the root's entries, then every folder name
+    folders.update(part for f in known for part in f.split("/")[:-1])
     dead = []
-    for page, lineno, ref, exact in cited:
-        if ref.split("/")[0] not in tops and not os.path.lexists(os.path.join(root,
-                                                                            ref.split("/")[0])):
-            continue  # not rooted in this repository
+    for page, lineno, ref in cited:
+        if ref.split("/")[0] not in folders:
+            continue  # likely another repository's file
         if placeholder_path(ref) or os.path.lexists(os.path.join(root, *ref.split("/"))):
             continue
-        if ref.rstrip("/") in known:
-            continue
-        if not exact and any(("/" + ref) in f if ref.endswith("/") else f.endswith("/" + ref)
-                             for f in tracked):
-            continue
+        if any(("/" + ref) in f if ref.endswith("/") else f.endswith("/" + ref)
+               for f in tracked):
+            continue  # a tracked path is it, or ends with it
         dead.append((page, lineno, ref))
     return dead
 
@@ -698,7 +696,7 @@ def scan_vault(root, vault, files, generated):
                 if not target.lower().endswith(".md"):
                     if not dest.startswith("../") and not is_page(dest, vault):
                         mentions.setdefault(dest, set()).add((page, lineno))
-                        cited.append((page, lineno, dest, True))
+                        cited.append((page, lineno, dest))
                     continue
                 rooted = posixpath.normpath(posixpath.join("" if vault == "." else vault,
                                                            target.lstrip("/")))
@@ -713,7 +711,7 @@ def scan_vault(root, vault, files, generated):
                 if PATH_LIKE.match(ref) and ("/" in ref or "." in ref) and not is_page(ref, vault):
                     mentions.setdefault(ref, set()).add((page, lineno))
                     if CITED_FILE.search(ref) and not ref.startswith("/"):
-                        cited.append((page, lineno, ref, False))
+                        cited.append((page, lineno, ref))
     inbound = {p: 0 for p in pages}
     for page, dests in links.items():
         for d in dests:
