@@ -14,7 +14,8 @@ The plan has no phase section to read for it.
    run `build` again. Never run `install-hook`.
 3. `<code map> rules-hint` (it also replaces an outdated block); with `Code map: none`, write the
    block by hand (in place of an outdated one) from the `code-map`
-   skill's **The rules block** template into `AGENTS.md` and `CLAUDE.md`, with the same separator
+   skill's **The rules block** template (`../../code-map/references/setup.md`) into `AGENTS.md`
+   and `CLAUDE.md`, with the same separator
    lines `rules-hint` would add (nothing else changes there).
 4. Commit by path only the vault pages, `.codemap.json`, the generated pages and the two rules
    files. Validation: `<code map> check` (none without a command), plus any validation the project

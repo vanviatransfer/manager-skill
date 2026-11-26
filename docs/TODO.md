@@ -1148,7 +1148,7 @@ something to say).
   `orchestrator`; `inherit` turns the check off). Both sides are lower-cased and lose a context
   suffix such as `[1m]`, a trailing `-YYYYMMDD` or `@YYYYMMDD` date and a provider prefix (up to
   the last `.` or `/` before the first digit). A versioned name must then equal the id or end it on
-  a `-` boundary; a name of digits, dots and dashes only is marked; an alias (no digit, such as
+  a `-` boundary; a name with no letters is marked; an alias (no digit, such as
   `sonnet`) is a substring match. A suffix after the version, such as `-v1:0`, is marked (a false
   mark, never a false pass). When any request an agent ran used a model matching none of them, its
   `model` field ends in `!=MODEL` (the line keeps its 14 fields). `run-record.md` passes the
@@ -1203,3 +1203,55 @@ something to say).
   files. manager-retro SKILL.md 1,391 → 1,420 (not read in a manager run).
 - **Version.** plugin.json 0.9.9. README: the same-blockers brake, the model mark in the `usage`
   lines and the hooks' Python order.
+
+### 23. Rare-path text moved out of always-loaded SKILL.md bodies (plugin 0.9.10)
+
+Owner rule for this change: no added token cost. Only text whose path is rare in a normal run
+(first-time setup, Python install, hook install/uninstall, migration or adoption, error recovery,
+rarely used commands) moved, verbatim (re-wrapped; an antecedent such as "as above" named), into a
+`references/` file read only then; each moved block left one pointer naming its trigger and file.
+No rule was reworded, weakened or deleted; no read was added to a normal run.
+
+- **Character counts** (`len`, as `hooks/test_manager_compaction.py` measures; before → after):
+
+  | SKILL.md | before | after | saved |
+  |---|---|---|---|
+  | code-map | 19,999 | 9,108 | 54.5% |
+  | manager | 17,986 | 17,587 | 2.2% |
+  | self-training-skills | 13,720 | 12,935 | 5.7% |
+  | create-vault, living-plan, manager-retro | 7,302 / 8,317 / 9,123 | unchanged | 0 |
+
+- **code-map: moved.** Where it writes (detection order, map locations, `.codemap.json` rules) →
+  `references/layout.md` (no `.codemap.json` yet, `detect`, first `build`, `build --redetect`, a
+  refused `build`); the Python install offer → `references/python-install.md` (no Python);
+  Setting it up and **The rules block** with its template → `references/setup.md` (setup, a block
+  written by hand, an outdated block); both commit hooks' detail → `references/commit-hooks.md`
+  (turning one on or off, a commit one stopped); the search nudge's state, switch, failure modes,
+  what counts as broad and known gaps → `references/search-nudge.md` (turning it off, a search it
+  blocked or allowed unexpectedly). **Kept:** what the map holds and how it is built, the command
+  resolution and every command, the nudge's scope and one-time block, Rules, In the manager.
+- **manager: moved.** "No living plan" / "work not split into phases" → `references/no-plan.md`
+  (read only at step 0 when there is no plan or the work is unsplit); a refused or blocked landing,
+  with the branch-protection line from **GitHub CI is not a gate** → `references/refused-landing.md`
+  (read only when a landing is refused or blocked). Not into `landing.md` (read at every phase's
+  landing) or `establish-state.md` (read at step 0, after each compaction, and again at loop steps
+  1 and 2 when the default head moved): there the moved text would be paid more than once per run.
+  Both files are byte for byte as at 0.9.9 (`landing.md` 2,192 chars, `establish-state.md` 5,127). **Kept, normal path or a tested invariant:**
+  ground rules, subagents, model strategy and run marker, step 0 items, every loop step, brakes,
+  owner decisions, talking to the owner, run record, stop conditions. 15% was not reachable: the
+  body is already mostly invariants the tests pin to SKILL.md and pointers; the remaining rare
+  branches (the designated-branch exception, the brake-reset exception, the fix-round fallback
+  when the implementer can't be resumed) are either pinned invariants or too short to save more
+  than their pointer costs.
+- **self-training-skills: moved.** Adopt mode → `references/adopt.md`.
+- **Ceilings.** code-map SKILL.md 20,000 → 9,500 (new size rounded up to the next 500); manager
+  SKILL.md stays 18,000 (17,587 rounds up to 18,000). New test `test_rare_path_pointers_resolve`:
+  every `references/<file>` code-map and self-training-skills name exists, and every file there is
+  named. `test_codemap.py` reads the rules-block template from `references/setup.md`.
+  `brief-code-map-setup.md` names the template's new file.
+- **usage.py.** `expect()`: with `=` but every name (`inherit` aside) empty after normalising
+  (`a1=`, `a1=,`, `.`, `[1m]`, `-20260101`), the line is marked `!=unknown` instead of the check
+  being turned off (`ExpectedModelTest.test_names_that_are_empty_once_normalised_are_marked`).
+  Header, entry 22 and the test docstring say "a name with no letters is marked"; the header's
+  141-character line re-wrapped to 100 columns.
+- **Version.** plugin.json 0.9.10.

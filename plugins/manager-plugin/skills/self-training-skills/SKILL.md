@@ -113,16 +113,7 @@ branch as before), apart from the code map's own one-time block, and `"search_nu
       root>`. With a code map, run its
       `build` and commit the result too. Then land through a reviewed PR (as in Train, step 8), or
       as the living plan's skill phase when the manager runs it.
-3. **Adopt.** For an existing skill made without this plugin, keep its structure and files and
-   leave it as it is. `check` applies only to marked skills, so an unmarked one is never checked
-   or trained by this skill. Adding the marker means bringing the skill into the template's shape
-   too: the six sections in order, a citation on every rule, a `Records:` line, `lessons.md` and
-   the changelog. Do that only with the owner's agreement; otherwise it stays unmarked. A project
-   tool that already checks or maps its skills (as in Create, step 1) is used, not duplicated;
-   replacing it is an owner decision. After marking, run `<cmd> check <skill dir> --triggers-from
-   <base ref>` (the branch's base, e.g. `origin/<default>`; mandatory here: it holds the
-   description's trigger phrases, the skill's own and a retired trainer's) and `<cmd> rules-hint
-   <repo root>`.
+3. **Adopt.** For an existing skill made without this plugin: read `references/adopt.md` first.
 4. **Record** (done by whoever uses a worker skill: the owner's session, or a manager implementer).
    Append exactly one row to the records table in the format of `references/records-format.md`,
    with the facts known then:

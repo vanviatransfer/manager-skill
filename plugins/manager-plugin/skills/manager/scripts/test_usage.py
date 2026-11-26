@@ -590,6 +590,7 @@ class ExpectedModelTest(Fixture):
         self.assertNotIn("!=", lines(SESSION, "h8=big-4.6")[0])
 
     def test_a_bare_version_is_marked(self):
+        """A name with no letters (`4-6`, `4.6`) names no family: it is marked, never a pass."""
         self.agent(self.new, "g7", None, (request(5, "q1", 1, 0, 1, 1,
                                                   model="vendor-small-4-6"),))
         for name in ("4-6", "6", "4.6", "-4-6"):
@@ -606,7 +607,22 @@ class ExpectedModelTest(Fixture):
         self.assertEqual(lines(SESSION, "zz=sonnet"), ["usage | zz | unknown" + UNKNOWN])
         self.assertEqual(lines("no-such-session", "orchestrator=sonnet"),
                          ["usage | orchestrator | main" + UNKNOWN])
-        self.assertEqual(lines(SESSION, "a1=", "a1=,"), [IMPLEMENTER])  # no model named
+        self.assertEqual(lines(SESSION, "a1"), [IMPLEMENTER])  # no `=`: no model named
+
+    def test_names_that_are_empty_once_normalised_are_marked(self):
+        """`=` with every name empty after `family` (`.`, `[1m]`, a date, `,`) names no model: the
+        line is marked `!=unknown`, never left unchecked; `inherit` still turns the check off, and
+        one real name among empty ones is checked as usual."""
+        marked = [IMPLEMENTER.replace("| model-a |", "| model-a!=unknown |")]
+        for arg in ("a1=", "a1=,", "a1=.", "a1=[1m]", "a1=-20260101", "a1=@20260101",
+                    "a1=.,[1m],-20260101"):
+            self.assertEqual(usage.expect(arg), ("a1", ("",)), arg)
+            self.assertEqual(lines(SESSION, arg), marked, arg)
+        for arg in ("a1=inherit", "a1=,inherit", "a1=[1m],model-a", "a1=model-a,"):
+            self.assertEqual(lines(SESSION, arg), [IMPLEMENTER], arg)
+        self.assertEqual(lines(SESSION, "a1=,sonnet"),
+                         [IMPLEMENTER.replace("| model-a |", "| model-a!=sonnet |")])
+        self.assertEqual(lines(SESSION, "zz=,"), ["usage | zz | unknown" + UNKNOWN])
 
     def test_a_name_with_a_model_is_still_never_a_path(self):
         self.assertEqual(lines(SESSION, "../a1=model-a", "a*=x"),

@@ -1157,9 +1157,10 @@ class HookTest(unittest.TestCase):
             self.assertEqual(fh.read(), "precious\n")
 
     def test_skill_doc_template_matches_the_block(self):
-        skill = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "SKILL.md")
+        skill = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "references",
+                             "setup.md")  # the template, moved out of SKILL.md (a rare path)
         with open(skill, encoding="utf-8") as fh:
-            self.assertTrue("\n".join(codemap.RULES_BLOCK) in fh.read(), "SKILL.md template")
+            self.assertTrue("\n".join(codemap.RULES_BLOCK) in fh.read(), "setup.md template")
         block = "\n".join(codemap.RULES_BLOCK)
         self.assertIn("without the Skill tool, run the exact `query` command the plugin's search "
                       "hook prints", block)

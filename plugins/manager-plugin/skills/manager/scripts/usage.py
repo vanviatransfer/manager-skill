@@ -11,12 +11,14 @@ strategy's, as dispatched: `sonnet`, a full model id; several: `a,b`; `inherit`:
 check): when a request it counts ran on a model matching none of them, its `model` field ends in
 `!=MODEL`. Both sides are lower-cased and lose a context suffix (`[1m]`), a trailing `-YYYYMMDD`
 or `@YYYYMMDD` date and a provider prefix (up to the last `.` or `/` before the first digit). A
-name with a version digit must then equal the id or end it after a `-`; a name of digits, dots and
-dashes only never matches; an alias (no digit: `sonnet`) need only be part of it. A suffix after
-the version (`-v1:0`) is a mismatch: a false mark, never a false pass. With `--since WHEN` a line counts only the records stamped at or after
-WHEN, a file's modification time (the manager's run marker: the run, not the whole session) or
-an ISO 8601 time; the first request counted is then no resume. Each line, with ` | ` between its
-fields:
+name with a version digit must then equal the id or end it after a `-`; a name with no letters
+never matches (it is marked); an alias (no digit: `sonnet`) need only be part of it. A suffix
+after the version (`-v1:0`) is a mismatch: a false mark, never a false pass. When every name given
+(`inherit` aside) is empty after that (`=`, `=,`, `=.`, `=[1m]`, `=-20260101`), the line is marked
+`!=unknown`: the check is never turned off by a name that names nothing. With `--since WHEN` a
+line counts only the records stamped at or after WHEN, a file's modification time (the manager's
+run marker: the run, not the whole session) or an ISO 8601 time; the first request counted is
+then no resume. Each line, with ` | ` between its fields:
 
   usage | agent | role | model | requests | input | cache read | cache write 5m | cache write 1h |
   output | context at return | warm resumes | cold resumes | seconds
@@ -323,10 +325,14 @@ def render(agent, kind, totals, expected=()):
 
 def expect(arg):
     """`AGENT[=MODEL[,MODEL...]]`: (AGENT, the models as `family` gives them). `inherit` (the
-    session's model, whatever it is) expects nothing, and makes the agent's line unmarked."""
-    name, _, models = arg.partition("=")
+    session's model, whatever it is) expects nothing, and makes the agent's line unmarked. With
+    `=` but every name empty after `family` (`a1=`, `a1=,`, `a1=[1m]`), it expects `("",)`, which
+    matches no model: the line is marked, never silently unchecked."""
+    name, sep, models = arg.partition("=")
     names = tuple(family(m) for m in models.split(","))
-    return name, () if "inherit" in names else tuple(m for m in names if m)
+    if "inherit" in names or not sep:
+        return name, ()
+    return name, tuple(m for m in names if m) or ("",)
 
 
 def moment(text):
