@@ -40,11 +40,14 @@ Rules, per valid run of a case:
 
 Totals: recall per level (L1-L4, guard) and overall, the false-alarm rate (decoys and clean
 diffs, apart and together), round-2 correctness, runs without a verdict, invalid runs, and per
-run the cost (the result's `costUsd`) and tokens (input, cache read, cache write, output; summed
-over the trace's assistant messages, each message id once; `reviewer` is the reviewer agent's
-share). It also writes `audit.md` beside the result (in the answer folder for a folder): one row
-per blocker of each run with the match decision (the term or line that matched) and the invalid
-reasons, so a person can check the numbers by hand. Exit 0 when every run was scored; 1 when a
+run the cost (the result's `costUsd`) and tokens (input, cache read, cache write, output). Tokens
+come from the trace's final `result` event when it has `modelUsage` (the whole session, summed
+over models; `reviewer` is that minus the result's `usage`, the main thread's share, so it holds
+every subagent's tokens). The assistant events' usage is only the fallback: their snapshots
+under-count output, and the reviewer's last message has none. It also writes `audit.md`
+beside the result (in the answer folder for a folder): one row per blocker of each run with
+the match decision (the term or line that matched) and the invalid reasons, so a person can
+check the numbers by hand. Exit 0 when every run was scored; 1 when a
 run is invalid; 2 on a usage or input error. Standard library only, Python 3.8+.
 """
 import json
@@ -243,6 +246,32 @@ def text_of(content):
     return ""
 
 
+MODEL_USAGE = (("input", "inputTokens"), ("cache read", "cacheReadInputTokens"),
+               ("cache write", "cacheCreationInputTokens"), ("output", "outputTokens"))
+
+
+def session_tokens(events, reviewers):
+    """{agent: {token field: n}} from the last `result` event's `modelUsage` (all) and `usage`
+    (main thread), or None when the trace has no `modelUsage`."""
+    results = [e for e in events if e.get("type") == "result"
+               and isinstance(e.get("modelUsage"), dict) and e["modelUsage"]]
+    if not results:
+        return None
+    last, every = results[-1], {}
+    for model in last["modelUsage"].values():
+        for label, field in MODEL_USAGE:
+            value = model.get(field) if isinstance(model, dict) else None
+            if isinstance(value, int):
+                every[label] = every.get(label, 0) + value
+    main = last.get("usage") if isinstance(last.get("usage"), dict) else {}
+    rest = {}
+    if reviewers and main:
+        for label, field in TOKEN_KEYS:
+            if isinstance(main.get(field), int) and label in every:
+                rest[label] = max(every[label] - main[field], 0)
+    return {"all": every, "reviewer": rest}
+
+
 def from_trace(events):
     """(the reviewer's answer or the final message, {agent: {token field: n}})."""
     reviewers, answer, final = set(), None, None
@@ -261,6 +290,9 @@ def from_trace(events):
                 answer = text_of(block.get("content"))
         if event.get("type") == "result" and isinstance(event.get("result"), str):
             final = event["result"]
+    exact = session_tokens(events, reviewers)
+    if exact:
+        return (answer if answer is not None and VERDICT.search(answer) else final or answer), exact
     tokens, seen = {"all": {}, "reviewer": {}}, set()
     for event in events:
         message = event.get("message")

@@ -1644,8 +1644,14 @@ No change to the reviewer, its brief, the manager skill or a hook; nothing runs 
     (found, L3); the second was an extra missing-test blocker.
   - Trace and clean-up: copied, and the sandbox was removed. No blind string; the init event
     lists one manager-plugin, the one under test.
-  - Two things to check in the full run's audit. The reviewer's token count (68 output tokens)
-    looks under-counted, so read the totals, not that column. As root the harness could not seal
-    the kept sandbox, which leaves only the blind grader as the check.
-- **Cost.** None for normal runs. By the pilot, a 20-case Sonnet run is about 3-5 USD, below the
-  earlier 5-10 estimate.
+  - Tokens: `score.py` summed the assistant events' usage, which under-counts output (their
+    snapshots are not final) and misses the reviewer's last message: the pilot printed 952
+    output tokens, 68 of them the reviewer's, against 2895 in the result's `modelUsage`. It now
+    reads the final `result` event (`modelUsage` for the whole session; the reviewer is that
+    minus the result's `usage`, the main thread's share), the old sum only as a fallback.
+    Grading never used tokens.
+  - As root the harness could not seal the kept sandbox: a step after the run, warning not to
+    run git in it. The Bash sandbox's read denials are bwrap mounts, which hold under root too;
+    only closures by file mode do not.
+- **Cost.** None for normal runs. One short case cost 0.13 USD, so a 20-case Sonnet run is about
+  3-5 USD, maybe up to about 8 with round-2 and larger cases (from one case only).

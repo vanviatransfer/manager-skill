@@ -793,6 +793,26 @@ class ScoreTest(unittest.TestCase):
                                   capture_output=True)
             self.assertEqual(done.returncode, 2, bad)
 
+    def test_tokens_come_from_the_result_event_when_it_has_model_usage(self):
+        """The assistant snapshots under-count output and miss the reviewer's last message, so
+        the session's `modelUsage` wins; the reviewer is that minus the main thread's `usage`."""
+        events = [
+            {"type": "assistant", "parent_tool_use_id": None, "message": {
+                "id": "m1", "usage": {"input_tokens": 1, "output_tokens": 1}, "content": [{
+                    "type": "tool_use", "id": "toolu_r", "name": "Agent",
+                    "input": {"subagent_type": "manager-plugin:reviewer"}}]}},
+            {"type": "result", "result": "VERDICT: PASS", "usage": {
+                "input_tokens": 6, "cache_read_input_tokens": 400,
+                "cache_creation_input_tokens": 100, "output_tokens": 1300},
+             "modelUsage": {"a": {"inputTokens": 10, "cacheReadInputTokens": 1000,
+                                  "cacheCreationInputTokens": 300, "outputTokens": 2800},
+                            "b": {"inputTokens": 6, "outputTokens": 95}}}]
+        self.assertEqual(score.from_trace(events)[1], {
+            "all": {"input": 16, "cache read": 1000, "cache write": 300, "output": 2895},
+            "reviewer": {"input": 10, "cache read": 600, "cache write": 200, "output": 1595}})
+        events[0]["message"]["content"][0]["input"]["subagent_type"] = "other"
+        self.assertEqual(score.from_trace(events)[1]["reviewer"], {})
+
 
 class RunnerTest(unittest.TestCase):
     """run.py builds the command; nothing here starts a run."""
@@ -877,6 +897,16 @@ class RunnerTest(unittest.TestCase):
         self.assertTrue(os.path.isdir(other), "a sandbox the result does not name stays")
         self.assertTrue(os.path.isfile(os.path.join(plain, "trace.jsonl")),
                         "a folder not named like a sandbox stays")
+
+    def test_home_falls_back_to_the_user_folder(self):
+        seen = []
+        with mock.patch.dict(os.environ, {"HOME": ""}), \
+                mock.patch.object(runner.os.path, "expanduser", return_value="/u/me"), \
+                mock.patch.object(runner, "preflight",
+                                  side_effect=lambda r, t, h: seen.append(h) or ([], [])), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(runner.main(["--max-cost-usd", "1", "--dry-run"]), 0)
+        self.assertEqual(seen, ["/u/me"])
 
     def test_preflight(self):
         blind = runner.blind_pattern()
