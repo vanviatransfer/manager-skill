@@ -46,7 +46,7 @@ case "${1:-}" in
 manager-plugin: a manager run is in progress in this session. In the summary, under a heading
 "Manager working notes", keep every working-notes line of the run verbatim, one per line, each as
 it was last written:
-- `Run <id>: model strategy ...` and `Run <id>: code map ...`;
+- `Run <id>: model strategy ...`, `Run <id>: code map ...` and `Run <id>: improvement pass: ...`;
 - the `Project rules` paths and the Rulings added to every dispatch;
 - each `D<n> → <answer>: "<owner's words>"` line (an owner answer not yet persisted) and the plan
   records still to be written;

@@ -130,6 +130,22 @@ class TemplateShapeTest(unittest.TestCase):
             self.assertIn("\n" + dropped, "\n" + self.plan)
             self.assertNotIn(dropped, head + first + tenth)
 
+    def test_phase_prints_the_strategy_line_with_or_without_the_pass_suffix(self):
+        """The manager's improvement-pass suffix (on, off, or absent in older records: off) is
+        part of the strategy line: `check` accepts each form and `phase` prints it verbatim."""
+        section = self.part("## Model strategy", "## Binding decisions")
+        self.assertIn("; improvement pass: <on | off>", section)
+        base = ('Model strategy: Sonnet \u2014 scope: run R2026-01-01-0000 \u2014 owner: '
+                '"Sonnet" (2026-01-01)')
+        for suffix in ("; improvement pass: on", "; improvement pass: off", ""):
+            line = base + suffix
+            plan = self.plan.replace(section, "## Model strategy\n%s\n\n" % line)
+            with self.subTest(suffix=suffix):
+                self.assertEqual(run("check", text=plan), (0, "ok: 3 phases\n", ""))
+                code, out, err = run("phase", "P1", text=plan)
+                self.assertEqual((code, err), (0, ""))
+                self.assertIn("\n## Model strategy\n%s\n\n" % line, out)
+
     def test_phase_without_a_section_for_the_id(self):
         """A plan-only PR's phase id, a phase the plan doesn't have, another id's prefix: the rest
         is printed, with exit code 1 and a line on standard error."""

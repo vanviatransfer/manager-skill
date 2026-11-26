@@ -1778,7 +1778,8 @@ the 20 base cases or their keys, or any cost ceiling.
 - **rc-28 is a case defect, not a reviewer error.** Its blocker (rows shorter than the headers
   now raise IndexError; the old code did not) is true, and the acceptance's "every table"
   allowed that reading. The acceptance is clarified in this change ("every row as long as the
-  headers"; the code is unchanged, so the SHAs of rc-28 changed). Counted: 0 real false alarms.
+  headers"; the code is unchanged: the SHAs of rc-28 changed because the plan's acceptance text
+  changed). Counted: 0 real false alarms.
 - **Checked by hand.** Every match in audit.md names the planted fault (rc-23 by release.py and
   KeyError; rc-29 finding 2 by the aliasing blocker, finding 1 by the even-count one).
 - **Reading.** The hard tier is at the ceiling for Sonnet too (textbook Python traps and small
@@ -1799,7 +1800,46 @@ the 20 base cases or their keys, or any cost ceiling.
   blockers; rc-29 finding 2's prose terms (`copy`, `unchanged`, `modified`, `alters`) are wider
   than item 32 says; a planted case counts as found under a PASS verdict; blockers that name no
   file are missed; `--case` outside `--tier` runs nothing, silently; per-tier totals arise only
-  from a hand-built answer folder. Fixed here: the `lines: null` crash (a location without
-  lines inside a multi-finding key raised TypeError in `located` and `cites_lines`; rc-01 uses
-  such a location).
+  from a hand-built answer folder; in rc-29 the even-count blocker also got finding-2 credit by
+  citing stats.py:16-17 (the citation-overlap rule), with no change to the outcome. Fixed here:
+  the `lines: null` crash (a location without lines inside a multi-finding key raised TypeError
+  in `located` and `cites_lines`; rc-01 uses such a location).
 - plugin.json 0.9.19.
+
+### 34. Manager improvement pass (plugin 0.9.20), built, not run live
+
+Why: item 33's side comparison showed an Opus reviewer given a free-form prompt finding verified
+defects and workflow-specific ideas the Sonnet one did not, while the gate itself showed no
+difference. The owner approved one optional Opus pass per manager run, at the end, not per PR.
+No change to the reviewer agent, its brief, the implementer brief, `retro.sh`, the run record
+rules, the eval suites, any cost ceiling, or any strategy's per-phase models and efforts.
+
+- **Opt-in, default off.** The model-strategy gate asks one more Turkish line ("Sonda Opus
+  iyileştirme turu ... Evet / Hayır"). On only when the owner says yes (or a `standing` line
+  carries it); never inferred. Recorded as a suffix, `; improvement pass: on|off`, on the plan's
+  `Model strategy:` line and the working-notes line; absent (every older record) means off.
+- **Parsers checked.** No script parses that line's fields: `plan.py phase` prints the whole
+  `## Model strategy` section, the compaction hook prints the notes file verbatim and lists the
+  lines a summary keeps (now with `Run <id>: improvement pass: ...`), and the evals' test only
+  matches the line's prefix. New tests: `plan.py` check and phase with the suffix on, off and
+  absent; the hook keeps each form verbatim; the documented grammar (absent or unknown is off);
+  the eval fixtures' strategy lines leave the pass off; the per-role model and effort rules read
+  as before, and only the pass's own rules name `model: opus`.
+- **When and what.** After the last ready phase is closed and any bookkeeping PR has landed,
+  before the final report, once per run (a working-notes state line stops a second dispatch after
+  a compaction), only when a phase PR landed. One `manager-plugin:researcher`, `model: opus`,
+  effort `high`, from `references/brief-improvement.md`: the run's range diff and log, the
+  plan's goal, constraints and binding decisions, the carried-forward notes; read-only on the
+  project, validation and probes only in a scratch clone, the ignored-data guard around it.
+- **Output.** At most 7 ranked items (problem, `file:line`, evidence, action, value, cost; no
+  "for awareness" or cosmetic items), then what it did not check. The final report's
+  "İyileştirme önerileri" lists them with the report path and token use. Nothing enters the plan
+  automatically; a failure is one line, no retry.
+- **Size.** The manager skill's character ceiling rises from 17,600 to 17,700 (the suffix and the
+  pointer add 101 characters); the rules live in `references/improvement-pass.md`. The step-0
+  listing now holds seven `brief-*.md` files.
+- **Limits.** Not run live; the token estimate (100-200k) is a guess from item 33's single 81k
+  sample. The researcher agent's own rule forbids executing the code it researches; the brief
+  makes the one exception for validation and probes in a scratch clone, which an agent may still
+  decline.
+- plugin.json 0.9.20; README: the option, default off, its estimated cost.

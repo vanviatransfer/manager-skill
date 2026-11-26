@@ -105,7 +105,8 @@ class ManagerRunCompactHookTest(unittest.TestCase):
         self.assertIn("re-read the manager skill", text)
         corpus = " ".join(manager_texts().values())
         spans = re.findall(r"`([^`]+)`", out)
-        for line in ("Run <id>: model strategy ...", "Run <id>: code map ...", "Project rules",
+        for line in ("Run <id>: model strategy ...", "Run <id>: code map ...",
+                     "Run <id>: improvement pass: ...", "Project rules",
                      "D<n> → <answer>: \"<owner's words>\"", "<phase>: rotated at round <k>",
                      "Risks:", "subagent_tokens"):
             self.assertIn(line, spans)
@@ -259,6 +260,20 @@ class ManagerRunCompactHookTest(unittest.TestCase):
         self.notes("")
         self.assertEqual(self.hook("SessionStart")[1], alone + header + "\n")
 
+    def test_session_start_keeps_the_improvement_pass_suffix(self):
+        """The strategy line with the pass on, off or without the suffix (an older run: off), and
+        the pass's own state line, come back exactly as written."""
+        self.mark()
+        for suffix in ("; improvement pass: on", "; improvement pass: off", ""):
+            text = ("Run R2026-01-01-0000: model strategy Sonnet (owner: \"Sonnet\")%s\n"
+                    "Run R2026-01-01-0000: improvement pass: dispatched — 0123abc..4567def, "
+                    "report /tmp/r/improvement.md\n" % suffix)
+            self.notes(text)
+            code, out, err = self.hook("SessionStart")
+            with self.subTest(suffix=suffix):
+                self.assertEqual((code, err), (0, ""))
+                self.assertEqual(out.split("\n", 2)[2], text)
+
     def test_session_start_caps_the_notes(self):
         self.mark()
         for row in ("x" * 99, "ş" * 99, "→" * 60):
@@ -346,7 +361,8 @@ class SizeCeilingTest(unittest.TestCase):
     ceiling by what it adds. Words are counted as `str.split()` does (`wc -w` in a UTF-8 locale)."""
 
     def test_manager_skill_fits_the_reattach_budget(self):
-        self.assertLessEqual(len(read(os.path.join(MANAGER, "SKILL.md"))), 17600)
+        """17,587 characters at 0.9.19; 0.9.20's improvement-pass suffix and pointer add 101."""
+        self.assertLessEqual(len(read(os.path.join(MANAGER, "SKILL.md"))), 17700)
 
     def test_code_map_skill(self):
         """9,108 characters at 0.9.10, after its rare paths moved to `references/`; 9,347 at
@@ -393,7 +409,9 @@ class ReferencePointerTest(unittest.TestCase):
         for name in self.texts:
             if name == "SKILL.md":
                 continue
-            if name.startswith("brief-"):
+            if name == "brief-improvement.md":  # a researcher's brief, named by the pass's rules
+                self.assertIn("references/%s>" % name, self.texts["improvement-pass.md"])
+            elif name.startswith("brief-"):
                 self.assertIn("`%s`" % name, briefs, name)
             else:
                 self.assertIn(name, named, "%s: no pointer from the skill" % name)
@@ -402,7 +420,8 @@ class ReferencePointerTest(unittest.TestCase):
 
     def test_references_state_their_trigger(self):
         for name in ("approach-check.md", "code-map-check.md", "dispatch.md", "establish-state.md",
-                     "final-report.md", "landing.md", "model-strategy.md", "no-report.md",
+                     "final-report.md", "improvement-pass.md", "landing.md",
+                     "model-strategy.md", "no-report.md",
                      "plan-only-pr.md", "recurring-blocker.md", "review-round.md",
                      "run-record.md", "self-training-due.md", "session-check.md",
                      "verify-candidate.md"):
@@ -626,7 +645,7 @@ class StepZeroCommandTest(unittest.TestCase):
                 self.assertLessEqual({"implementer-brief.md", "reviewer-brief.md",
                                       "github-backends.md", "establish-state.md"}, set(lines[2:]))
                 self.assertEqual(len([name for name in lines[2:]
-                                      if name.startswith("brief-")]), 6)
+                                      if name.startswith("brief-")]), 7)
                 self.assertEqual(snapshot(self.tmp), before)
 
     def plan_state(self, plan):
@@ -685,6 +704,114 @@ class StepZeroCommandTest(unittest.TestCase):
         self.assertIn("when the default head has moved since the `Project rules` line was taken, "
                       "list the rules files again as on it (`references/establish-state.md`",
                       skill)
+
+
+class ImprovementPassTest(unittest.TestCase):
+    """The opt-in end-of-run improvement pass (0.9.20): asked at the gate, off unless the owner
+    says yes, recorded as a suffix older records lack, read from one reference before the final
+    report, one read-only Opus researcher, no retry."""
+
+    SUFFIX = re.compile(r"; improvement pass: (on|off)$")
+
+    def setUp(self):
+        self.texts = manager_texts()
+        self.strategy = self.texts["model-strategy.md"]
+
+    def improvement_pass(self, line):
+        """The pass's setting, as the skill defines the suffix: absent is off."""
+        found = self.SUFFIX.search(line)
+        return found.group(1) if found else "off"
+
+    def test_the_suffix_is_on_off_or_absent(self):
+        plan = ('Model strategy: Sonnet — scope: run R2026-01-01-0000 — owner: '
+                '"Sonnet" | standing (2026-01-01)')
+        notes = 'Run R2026-01-01-0000: model strategy Sonnet (owner: "Sonnet")'
+        for line in (plan, notes):
+            self.assertEqual(self.improvement_pass(line + "; improvement pass: on"), "on")
+            self.assertEqual(self.improvement_pass(line + "; improvement pass: off"), "off")
+            self.assertEqual(self.improvement_pass(line), "off")
+            # an older reader's view: the prefix is unchanged, the suffix only follows it
+            self.assertTrue((line + "; improvement pass: on").startswith(line))
+        self.assertEqual(self.improvement_pass(plan + "; improvement pass: maybe"), "off")
+        for line in ("`; improvement pass: on` or `; improvement pass: off`; absent (every older "
+                     "record) means off.",
+                     "Never inferred.",
+                     "Anything else is off: no answer, a strategy given without that line being "
+                     "asked, a line without the suffix."):
+            self.assertIn(line, self.strategy, line)
+        self.assertIn('Working-notes line: `Run <id>: model strategy <strategy> (owner: "<quote>" '
+                      '| standing)`, then `; improvement pass: on|off`.', self.texts["SKILL.md"])
+
+    def test_the_fixtures_strategy_lines_leave_the_pass_off(self):
+        """The eval fixtures record standing strategies without the suffix: no eval run starts a
+        paid Opus pass."""
+        evals = os.path.join(HERE, "..", "evals")
+        for name in ("manager-run", "reviewer-calibration"):
+            text = read(os.path.join(evals, name, "fixture.sh"))
+            lines = re.findall(r"Model strategy: [^\n']*", text)
+            self.assertTrue(lines, name)
+            for line in lines:
+                self.assertEqual(self.improvement_pass(line.replace("\\n", "")), "off", line)
+
+    def test_the_gate_asks_it_and_the_skill_points_to_it(self):
+        self.assertIn("Sonda Opus iyileştirme turu (tek ajan, salt okunur, öneriler rapora; "
+                      "~100–200k token): Evet / Hayır Model tercihiniz hangisi?", self.strategy)
+        self.assertIn("Improvement pass on → also read `references/improvement-pass.md`.",
+                      self.texts["SKILL.md"])
+        self.assertIn("`İyileştirme önerileri` section or its one line "
+                      "(`references/improvement-pass.md`)", self.texts["final-report.md"])
+
+    def test_the_pass_rules(self):
+        rules = self.texts["improvement-pass.md"]
+        for words in ("`subagent_type: manager-plugin:researcher`, `model: opus`, `effort: high`",
+                      "**Ignored-data guard** before and after",
+                      "only when at least one phase PR (not a setup or plan-only PR) landed",
+                      "never dispatch it again",
+                      "No retry, no second dispatch, no fallback agent",
+                      "Nothing goes into the plan automatically",
+                      "the pass's token use"):
+            self.assertIn(words, rules, words)
+        brief = self.texts["brief-improvement.md"]
+        for words in ("at most 7 items, ranked by value", "End with what you did not check.",
+                      "Never copy, link or read the checkout's git-ignored data",
+                      "You write only the report file.", "No \"for awareness\" items",
+                      "Range: <default head at the run's step 0>..<default head now>",
+                      "Notes carried forward: <the run's non-blocking review notes | none>"):
+            self.assertIn(words, brief, words)
+
+    def test_the_pass_leaves_every_strategy_s_phase_models_alone(self):
+        """Purely additive: the per-role model and effort rules read as in 0.9.19, the pass's
+        Opus and `high` are only its own dispatch's, and the gate's recommendation guide (all
+        Opus, all Sonnet, mixed by `Risk`) names no pass."""
+        for words in ("**Applying.** The approved strategy fixes, per role (and per phase or "
+                      "condition for a mixed one), the `model` and the `effort` (`medium`, a "
+                      "`critical` phase's reviewer `high`, unless the strategy or the owner says "
+                      "otherwise). It covers every dispatch of the run: phases, fix rounds, "
+                      "integrations, plan-only PRs, brake retries.",
+                      "Default to mixed by the plan's `Risk` field: `standard` phases Sonnet for "
+                      "both roles, `critical` phases Opus for both, unmarked phases standard",
+                      "The pass's own dispatch is outside the strategy: `model: opus`, `effort: "
+                      "high`, by the owner's yes."):
+            self.assertEqual(self.strategy.count(words), 1, words)
+        guide = self.strategy.split("Guide for the recommendation:")[1].split("**Applying.**")[0]
+        applying = self.strategy.split("**Applying.**")[1].split("Both lines, and the")[0]
+        for text in (guide, applying):
+            self.assertNotIn("improvement", text)
+        self.assertIn("It is purely additive: on or off, every strategy (all Opus, all Sonnet or "
+                      "mixed) gives each phase's implementer and reviewer exactly the model and "
+                      "effort it gives without the pass (**Applying**); the pass only adds its "
+                      "own dispatch at the end.", self.texts["improvement-pass.md"])
+        # The pass's model appears only in its own rules and its own line in model-strategy.md.
+        for name, text in self.texts.items():
+            if "model: opus" in text:
+                self.assertIn(name, ("improvement-pass.md", "model-strategy.md"), name)
+
+    def test_new_text_fits_100_columns(self):
+        for name in ("improvement-pass.md", "brief-improvement.md", "model-strategy.md"):
+            for number, line in enumerate(read(os.path.join(REFS, name)).splitlines(), 1):
+                if line.startswith("[") or line.startswith("Bu çalışma"):
+                    continue  # the gate template's older lines
+                self.assertLessEqual(len(line), 100, "%s:%d" % (name, number))
 
 
 if __name__ == "__main__":

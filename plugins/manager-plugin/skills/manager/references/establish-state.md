@@ -19,7 +19,7 @@ ls "${CLAUDE_SKILL_DIR}/references"
   Note that line for the final report. `on` → this run keeps a run record (**Run record**);
   anything else, an error or no output included → no run record and no `usage.py`.
 - Note the plugin version (the `version` line, if the file resolves) for the final report.
-- The listing must hold both brief files, the six `brief-*.md` files and `github-backends.md`: a
+- The listing must hold both brief files, the seven `brief-*.md` files and `github-backends.md`: a
   missing one means an incomplete plugin copy (environment failure: report it). A listing that
   fails as a whole (a sandboxed shell that can't read the plugin's folder) settles nothing: look
   for those files with Glob instead.
