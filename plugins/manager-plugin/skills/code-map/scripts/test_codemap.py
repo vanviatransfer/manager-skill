@@ -270,6 +270,39 @@ class CodemapTest(unittest.TestCase):
         text = self.read("docs/vault/map.md")
         self.assertIn("0 broken links; 0 orphan pages", text)
 
+    def test_check_of_a_clean_vault_is_unchanged(self):
+        """No dead source: `check` prints what 0.9.13 printed (golden)."""
+        self.vault_setup()
+        run("build", "--root", self.root)
+        self.assertEqual(run("check", "--root", self.root),
+                         (0, "warning: broken link docs/vault/topics/mimari.md:1 -> [[yok]]\n"
+                             "current: docs/vault/map.md\n"))
+
+    def test_check_names_dead_sources(self):
+        self.vault_setup()
+        self.write("docs/vault/sources.md", "\n".join([
+            "Moved: `app/old.py`, `lib/gone/`, [the spec](../../spec/api.yaml).",  # 1: dead
+            "Alive: `app/util.py`, `util.py`, `tests/`, `vault/index.md`, [m](../../app/main.py)",
+            "Alive by its end: `vault/topics/mimari.md` and `app/` and `web/lib.ts:x`",
+            "Placeholders: `<dir>/x.py`, `src/foo.py`, `foo/bar`, `docs/example/a.md`,",
+            "`path/to/file.py`, `app/*.py`, `src/.../x.py`, `${ROOT}/a.py`, [e](<dir>/x.py)",
+            "No path: `and/or`, `os.path.join`, `0.9.13`, `true/false`, `/etc/hosts.conf`",
+            "```", "`app/fenced.py`", "```", "Last: `scripts/vanished.py`", ""]))
+        self.git("add", "-A")
+        run("build", "--root", self.root)
+        code, out = run("check", "--root", self.root)
+        self.assertEqual(code, 0)
+        page = "docs/vault/sources.md"
+        self.assertEqual(out, "warning: broken link docs/vault/topics/mimari.md:1 -> [[yok]]\n"
+                         + "".join("warning: dead source %s:%d -> %s (no such file)\n"
+                                   % (page, ln, path) for ln, path in
+                                   ((1, "spec/api.yaml"), (1, "app/old.py"), (1, "lib/gone/"),
+                                    (10, "scripts/vanished.py")))
+                         + "current: docs/vault/map.md\n")
+        self.assertEqual(run("check", "--quiet", "--root", self.root), (0, ""))
+        self.write("app/old.py", "x = 1\n")  # back on disk (untracked): no longer dead
+        self.assertNotIn("app/old.py", run("check", "--root", self.root)[1])
+
     def test_escaped_triple_quote_and_form_feed(self):
         text = 'x = """a \\""" b"""\n\x0c\ndef later():\n    pass\n'
         symbols, _ = codemap.python_info(text)

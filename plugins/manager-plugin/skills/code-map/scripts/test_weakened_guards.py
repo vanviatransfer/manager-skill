@@ -198,6 +198,18 @@ class MarkerUnitTest(unittest.TestCase):
             "    if a: pytest.skip('x')\n    t.Skip()\n", True),
             ({"t.Skip(": 1}, {"noqa": 3}, 0))
 
+    def test_a_noqa_is_exempt_only_when_e402_is_its_sole_code(self):
+        for line in ("import x  # noqa: E402", "import x  # noqa:E402  (after the path setup)",
+                     "import x  # NOQA: e402", "import x  # noqa: E402\t(in the plugin folder)"):
+            self.assertEqual(codemap.guard_marks(line + "\n", False), ({}, {}, 0), line)
+        for line in ("import x  # noqa: E402 F401", "import x  # noqa: E402  F401",
+                     "import x  # noqa: E402\tF401", "import x  # noqa: F401 # noqa: E402",
+                     "import x  # noqa: E402, F401", "import x  # noqa: E402,F401",
+                     "import x  # noqa: E402;W291", "import x  # noqa: F401, E402",
+                     "import x  # noqa", "import x  # noqa: E4021"):
+            self.assertEqual(codemap.guard_marks(line + "\n", False), ({}, {"noqa": 1}, 0),
+                             line)
+
     def test_check_config(self):
         for path, kind in ((".github/workflows/ci.yml", "CI"), (".gitlab-ci.yml", "CI"),
                            (".pre-commit-config.yaml", "pre-commit"), ("setup.cfg", "lint/test"),

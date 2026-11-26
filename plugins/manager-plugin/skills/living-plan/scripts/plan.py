@@ -39,6 +39,12 @@ And as a warning: two phases, neither done (a `Status` that starts with `done`) 
 depending on the other (other phases between them included), whose `Scope` (up to an `Out of
 scope`) names the same path. A path is a word with a `/` or a file extension; a folder and
 something under it count as the same.
+Also as warnings, one line per hit with the phase id and the field, after the ones above:
+- a placeholder left in a required field: a template slot (`<` then `...` or a letter, up to the
+  next `>`), `TODO` or `TBD` as a word of its own (not part of a path such as `docs/TODO.md`),
+  `???`, `NEEDS CLARIFICATION`; inside backticks too (the template doesn't call them literal);
+- a `Validation` command piped into `tail`, `head`, `grep`, `less` or `tee`, which hides its exit
+  code, unless the field names `pipefail` or `PIPESTATUS`.
 
 Only the Python standard library is used (Python 3.8+). Nothing is written, executed or sent
 anywhere. CRLF plans are accepted.
@@ -54,6 +60,9 @@ HEADING = re.compile(r"### ([^\s.]+)\.(?:\s|$)")
 LABEL = re.compile(r"(%s):(?:\s|$)" % "|".join(REQUIRED + ("Notes", "Out of scope")))
 WORD = re.compile(r"[\w.~*/-]+")
 EXTENSION = re.compile(r"\.[A-Za-z]\w+$")
+PLACEHOLDER = re.compile(r"<(?:\.\.\.|[A-Za-z])[^<>]*>|(?<![\w/.-])(?:TODO|TBD)(?![\w/-]|\.\w)"
+                         r"|\?\?\?|NEEDS CLARIFICATION")
+PIPED = re.compile(r"(?<!\|)\|(?![|&])\s*(tail|head|grep|less|tee)\b")
 
 
 def phase(lines, wanted):
@@ -168,7 +177,25 @@ def check(lines):
             if same:
                 warnings.append("%s and %s name the same path in Scope and neither depends on "
                                 "the other: %s" % (one, other, ", ".join(same)))
+    for name, (_, values) in found.items():
+        warnings.extend(leftovers(name, values))
     return errors, warnings, len(found)
+
+
+def leftovers(name, values):
+    """Warnings for a phase's placeholders left in its required fields and for a validation
+    command whose exit code a pipe hides."""
+    found = []
+    for label in REQUIRED:
+        value = values.get(label, "")
+        for hit in PLACEHOLDER.finditer(value):
+            found.append("%s: %s: placeholder left in: %s" % (name, label, hit.group(0)))
+    value = values.get("Validation", "")
+    if not re.search(r"pipefail|PIPESTATUS", value):
+        for hit in PIPED.finditer(value):
+            found.append("%s: Validation: `| %s` hides the exit code of the command before it "
+                         "(no `set -o pipefail` or `PIPESTATUS`)" % (name, hit.group(1)))
+    return found
 
 
 def write(stream, lines):

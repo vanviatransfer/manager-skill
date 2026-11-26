@@ -92,7 +92,9 @@ their trigger holds (again after compaction):
    this phase's diff matches it, re-judged each fix round or integration; list skips and why under
    Validation), output to a file (`timeout -k 30 1800 cmd > /tmp/<name>.log 2>&1; echo $?`; long
    probes too; without `timeout`, plain `cmd`; plan or project limits win; 124/137 = fail); only the
-   exit code and failure summary enter context. Known-flaky: only tests on the project's documented
+   exit code and failure summary enter context. A test command that exits 0 while its log shows
+   zero tests run (`Ran 0 tests`, `no test files`, `collected 0 items`, `# tests 0`, `0 passing`)
+   is a fail. Known-flaky: only tests on the project's documented
    list (never edited for your failures); rerun such a command at most once, naming them known
    flaky. An unlisted failure, or a listed test whose covered code your diff touches, is real: fix
    it. Rerun the full set only after a change affecting it. No CI.

@@ -7,7 +7,9 @@ A Claude Code plugin with six skills:
   `plan.py` (standard-library Python) checks the plan before its PR: every phase id used once,
   every `Depends on` naming phases of the plan (or `none`), no dependency cycle, every phase with
   its seven required lines, and a warning when two phases that are not done and don't depend on
-  each other name the same path in their scope.
+  each other name the same path in their scope, when a required line still holds a placeholder
+  (`<...>`, `TODO`, `TBD`, `???`, `NEEDS CLARIFICATION`), or when a validation command is piped
+  into `tail`, `head`, `grep`, `less` or `tee` without `pipefail`.
 - **`manager`** — runs that plan to completion.
 - **`create-vault`** — creates a project vault in `docs/vault/`, or adopts or refreshes an existing
   one: short linked pages of durable facts about the code (index, glossary, decision records, topic
@@ -26,7 +28,8 @@ A Claude Code plugin with six skills:
   lint or CI configuration edited; approximate, so never a filter on what is reviewed). Two more
   run only when asked: `impact` lists what depends on files (importers up to a depth, their
   tests, the files naming their definitions) and `query --budget` ranks a long
-  query and cuts it at about that many tokens. It finds an existing vault wherever it is (a
+  query and cuts it at about that many tokens. `check` also warns of dead sources: file paths a
+  vault page cites that no longer exist. It finds an existing vault wherever it is (a
   `.obsidian/` folder, a known folder name, or the folder with most `[[wikilinks]]`), including
   vaults made without this plugin, and records the layout in `.codemap.json`. It is the plugin's own
   standard-library Python script (3.8+; no packages, nothing sent anywhere; files that may hold
@@ -89,7 +92,8 @@ A Claude Code plugin with six skills:
   rules. Its `skilltrain.py` (standard-library Python) checks the files (shape, routing of every
   `references/` file from `## Knowledge`, cited lesson ids and their verifier outcomes, and with
   `--triggers-from <ref>` the description's quoted trigger phrases, including a retired
-  trainer's; invisible or direction-changing Unicode characters are reported), flags stale
+  trainer's; invisible or direction-changing Unicode characters in the skill's files and its
+  `references/*.md` are reported), flags stale
   lessons for the next training, finds a term in every skill's files (`query`), writes one
   instruction line into `CLAUDE.md` (`rules-hint`), and tells
   the manager which skills are due for training and which fail their check.
@@ -129,7 +133,9 @@ other things to re-tune the rotation thresholds. The lines need Python: on a mac
 record gets none, and the final report says so. Limits: the transcript format is undocumented, so a
 line or a field that can't be read is skipped and a missing value is `unknown`; the script is tested
 on synthetic transcripts and was run on one real session's; and no threshold has been changed from
-these figures yet.
+these figures yet. Run by hand, `usage.py <session> --streaks` adds one line per agent: how many
+times it made the same failing tool call three or more times in a row, and the longest such run
+(tool name only); a run never asks for it.
 
 Two things learn from the record:
 
