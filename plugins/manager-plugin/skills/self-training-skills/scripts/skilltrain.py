@@ -527,8 +527,17 @@ def check_worker(sk):
             sk.problems.append("records: %s has an unknown outcome: %s (one of %s)"
                                % (where, row[2], ", ".join(OUTCOMES)))
     lessons = load_lessons(sk)
+    # the changelog's own problems keep their place after the rules' (as before 0.9.12)
+    mark = len(sk.problems)
     entries = changelog(sk)
+    changelog_problems = sk.problems[mark:]
+    del sk.problems[mark:]
+    # An old (five-column) table is no error: its evidence gaps are notes until it is migrated.
+    gap = sk.notes.append if sk.lessons_old else sk.problems.append
+    note = "note: " if sk.lessons_old else ""
     verified = {}
+    reported = set()
+    now = today().isoformat()
     for lid, les in (lessons or {}).items():
         if les["confidence"] not in CONFIDENCE:
             sk.problems.append("lessons: %s has confidence %s (one of %s)"
@@ -536,15 +545,19 @@ def check_worker(sk):
         if les["confirmed"] != UNKNOWN and not valid_date(les["confirmed"]):
             sk.problems.append("lessons: %s has last-confirmed %s (YYYY-MM-DD or %s)"
                                % (lid, les["confirmed"] or "''", UNKNOWN))
+        elif les["confirmed"] != UNKNOWN and les["confirmed"] > now:
+            sk.problems.append("lessons: %s has last-confirmed %s, later than today (%s)"
+                               % (lid, les["confirmed"], now))
         if rows is not None:
             found, missing, owner_dates = support(les["evidence"], rows)
             verified[lid] = bool(found or owner_dates)
-            for cite in missing:
-                sk.problems.append("lessons: %s cites %s, which the records lack" % (lid, cite))
+            if missing:
+                reported.add(lid)  # one line for the lesson, not a second one for its rule
+                gap("%slessons: %s cites %s, which the records lack"
+                    % (note, lid, "; ".join(missing)))
     rules, stray = bullets(section(sk.secs, "Rules") or [])
     for line in stray:
         sk.problems.append("rule without a bullet/citation: %s" % line[:80])
-    reported = set()
     for b in rules:
         m = LESSON_CITE.search(b)
         if m:
@@ -564,11 +577,12 @@ def check_worker(sk):
                 elif lid in verified and not verified[lid] and \
                         not (lessons[lid]["label"] == "sourced" and len(entries) <= 1):
                     reported.add(lid)
-                    sk.problems.append("rule cites %s, whose evidence cites no verifier outcome "
-                                       "(a records row as <date> <context>: <outcome>, or "
-                                       "owner: \"<words>\", <date>)" % lid)
+                    gap("%srule cites %s, whose evidence cites no verifier outcome (a records "
+                        "row as <date> <context>: <outcome>, or owner: \"<words>\", <date>)"
+                        % (note, lid))
         elif not OWNER_CITE.search(b):
             sk.problems.append("rule cites no lesson or owner quote: %s" % b[:80])
+    sk.problems.extend(changelog_problems)
     if section(sk.secs, "Changelog") is not None and not entries:
         sk.problems.append("changelog has no entry")
     for prev, cur in zip(entries, entries[1:]):
@@ -611,19 +625,25 @@ def run_migrate(root, rel):
     except UnicodeDecodeError:
         print("%s: lessons: %s is not UTF-8; refused" % (rel, lrel))
         return 1, False
-    lines = text.splitlines(True)
-    body = [ln.rstrip("\r\n") for ln in lines]
+    # Split on "\n" only: U+2028, NEL, FF and the like inside a cell are cell text.
+    lines = text.split("\n")
+    body = [ln[:-1] if ln.endswith("\r") else ln for ln in lines]
     start = next((i for i, ln in enumerate(body) if ln.strip().startswith("|")), None)
     head = cells(body[start].lstrip("\ufeff")) if start is not None else None
     if head is not None and tuple(c.lower() for c in head) == LESSONS_HEADER:
-        print("lessons: %s already has the confidence and last-confirmed columns" % lrel)
+        print("%s: lessons: %s already has the confidence and last-confirmed columns"
+              % (rel, lrel))
         return 0, False
     if head is None or tuple(c.lower() for c in head) != OLD_LESSONS_HEADER or \
             start + 1 >= len(body) or not is_separator(body[start + 1]):
         print("%s: lessons: %s has no lessons table header to migrate" % (rel, lrel))
         return 1, False
-    new = {start: body[start].rstrip() + " confidence | last-confirmed |",
-           start + 1: body[start + 1].rstrip() + "---|---|"}
+    def add(i, extra):
+        """The line with extra right after its last pipe; what follows the pipe stays."""
+        at = body[i].rindex("|") + 1
+        return body[i][:at] + extra + body[i][at:]
+    new = {start: add(start, " confidence | last-confirmed |"),
+           start + 1: add(start + 1, "---|---|")}
     for i in range(start + 2, len(body)):
         if not body[i].strip():
             continue
@@ -635,13 +655,11 @@ def run_migrate(root, rel):
                   % (rel, lrel, i + 1, len(OLD_LESSONS_HEADER)))
             return 1, False
         found, _, owner_dates = support(r[3], rows)
-        new[i] = body[i].rstrip() + " %s | %s |" % (confidence(found, owner_dates),
-                                                     last_confirmed(found, owner_dates))
-    out = []
-    for i, ln in enumerate(lines):
-        out.append(new[i] + ln[len(body[i]):] if i in new else ln)
+        new[i] = add(i, " %s | %s |" % (confidence(found, owner_dates),
+                                         last_confirmed(found, owner_dates)))
+    out = [new[i] + ln[len(body[i]):] if i in new else ln for i, ln in enumerate(lines)]
     with open(path, "wb") as fh:
-        fh.write("".join(out).encode("utf-8"))
+        fh.write("\n".join(out).encode("utf-8"))
     print("migrated: %s (%d rows: confidence and last-confirmed added)" % (lrel, len(new) - 2))
     return 0, True
 
@@ -937,7 +955,7 @@ def run_stats(root, rel, stale=(STALE_DAYS, STALE_USES)):
               % (v, date, nb, na, detail))
     print("training due: %s" % ("yes (%s)" % "; ".join(m["reasons"]) if m["reasons"] else "no"))
     if lessons is not None:
-        for line in sk.notes + stale_lines(lessons, m["rows"], *stale):
+        for line in sk.notes + ["note: " + ln for ln in stale_lines(lessons, m["rows"], *stale)]:
             print(line)
     return 0
 

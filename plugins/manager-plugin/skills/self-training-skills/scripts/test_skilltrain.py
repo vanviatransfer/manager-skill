@@ -819,7 +819,7 @@ class LessonEvidenceTest(Fixture):
         code, out = run("check", self.dir)
         self.assertEqual(code, 1, out)
         self.assertIn("lessons: L1 cites 2026-11-02 phase P3: pass, which the records lack", out)
-        self.assertIn("rule cites L1, whose evidence cites no verifier outcome", out)
+        self.assertEqual(out.count(" L1"), 1, out)  # one line for the lesson, none for its rule
         self.rows(("2026-11-02", "phase P3", "pass", "breaking", "ok"))
         self.assertEqual(run("check", self.dir)[0], 0)
 
@@ -851,7 +851,7 @@ class LessonEvidenceTest(Fixture):
                       "since): keep, re-confirm or retire it in the next training\n", out)
         self.assertNotIn("L2 (", out)  # 89 days
         self.assertNotIn("L3 (", out)  # not active
-        self.assertIn("stale lesson L1", run("stats", self.dir)[1])
+        self.assertIn("\nnote: stale lesson L1 (", run("stats", self.dir)[1])
         out = run("check", self.dir, "--stale-days", "200")[1]
         self.assertNotIn("stale", out)
         self.assertIn("stale lesson L2", run("check", self.dir, "--stale-days", "30")[1])
@@ -928,9 +928,80 @@ class LessonEvidenceTest(Fixture):
         self.assertEqual(skilltrain.load_lessons(sk)["L2"]["confidence"], "high")
         code, out = run("check", self.dir, "--migrate")
         self.assertEqual(code, 0, out)
-        self.assertIn("already has the confidence and last-confirmed columns", out)
+        self.assertIn(".claude/skills/release-notes: lessons: .claude/skills/release-notes/"
+                      "lessons.md already has the confidence and last-confirmed columns", out)
         with open(path, "rb") as fh:
             self.assertEqual(fh.read(), after)
+
+    def test_old_table_evidence_gaps_are_notes_until_migrated(self):
+        self.rows(("2026-11-02", "phase P3", "pass", "breaking", "ok"))
+        rows = (("L1", "a", "observed", "2 runs looked better", "active"),
+                ("L2", "b", "observed", "2026-11-04 phase P9: pass", "active"),
+                ("L3", "c", "hypothesis", "2026-11-02 phase P3: pass", "active"))
+        self.rules("- Lead with user-visible changes. (L1, L2)\n", TRAINED)
+        self.lessons(*rows, old=True)
+        code, out = run("check", self.dir)
+        self.assertEqual(code, 0, out)  # an old table: notes, not problems
+        self.assertIn("note: rule cites L1, whose evidence cites no verifier outcome", out)
+        self.assertIn("note: lessons: L2 cites 2026-11-04 phase P9: pass, which the records "
+                      "lack", out)
+        self.assertEqual(out.count(" L2"), 1, out)
+        self.lessons(*[r + ("low", "unknown") for r in rows])
+        code, out = run("check", self.dir)
+        self.assertEqual(code, 1, out)  # a migrated table: problems
+        self.assertIn(".claude/skills/release-notes: rule cites L1, whose evidence cites no "
+                      "verifier outcome", out)
+        self.assertIn(".claude/skills/release-notes: lessons: L2 cites 2026-11-04 phase P9: "
+                      "pass, which the records lack", out)
+        self.assertNotIn("note: rule cites", out)
+        for old in (True, False):  # a hypothesis is a problem in both
+            self.rules("- Lead with user-visible changes. (L3)\n", TRAINED)
+            self.lessons(*[r if old else r + ("medium", "2026-11-02") for r in rows], old=old)
+            code, out = run("check", self.dir)
+            self.assertEqual(code, 1, out)
+            self.assertIn(".claude/skills/release-notes: rule cites L3, a hypothesis", out)
+
+    def test_last_confirmed_after_today_is_a_problem(self):
+        self.lessons(("L1", "a", "owner-reported", 'owner: "x", 2026-11-01', "active", "high",
+                      "2026-11-21"),
+                     ("L2", "b", "owner-reported", 'owner: "y", 2026-11-01', "active", "high",
+                      "2026-11-20"),
+                     ("L3", "c", "owner-reported", 'owner: "z", 2026-11-01', "active", "high",
+                      "2026-11-01"))
+        code, out = run("check", self.dir)
+        self.assertEqual(code, 1, out)
+        self.assertIn("lessons: L1 has last-confirmed 2026-11-21, later than today (2026-11-20)",
+                      out)
+        self.assertNotIn("L2 has", out)  # today is fine
+
+    def test_changelog_problems_keep_their_place(self):
+        self.rules("- Lead with user-visible changes.\n", "- v1 1 Nov: created")
+        code, out = run("check", self.dir)
+        self.assertEqual(code, 1, out)
+        self.assertLess(out.index("rule cites no lesson"), out.index("changelog line doesn't"))
+
+    def test_migrate_splits_on_newlines_only_and_keeps_every_byte(self):
+        odd = "a\u2028b\x85c\x0cd\x1ee"  # line breaks to str.splitlines, cell text here
+        old = ("\ufeff# lessons \x0c\r\n\r\n| id | lesson | label | evidence | status |  \r\n"
+               "|---|---|---|---|---|\t\n"
+               "| L1 | %s | sourced | docs/vault/releases.md | active | \n"
+               "| L2 | b | owner-reported | owner: \"x\", 2026-11-01 | active |\r\n"
+               "\n| L3 | c | hypothesis | none | retired |" % odd)
+        self.write(LESSONS_FILE, old)
+        self.rules("- Lead with user-visible changes. (L2)\n")
+        code, out = run("check", self.dir, "--migrate")
+        self.assertEqual(code, 0, out)
+        self.assertIn("(3 rows", out)
+        with open(os.path.join(self.dir, "lessons.md"), "rb") as fh:
+            after = fh.read().decode("utf-8")
+        expected = ("\ufeff# lessons \x0c\r\n\r\n| id | lesson | label | evidence | status |"
+                    " confidence | last-confirmed |  \r\n"
+                    "|---|---|---|---|---|---|---|\t\n"
+                    "| L1 | %s | sourced | docs/vault/releases.md | active | low | unknown | \n"
+                    "| L2 | b | owner-reported | owner: \"x\", 2026-11-01 | active | high | "
+                    "2026-11-01 |\r\n"
+                    "\n| L3 | c | hypothesis | none | retired | low | unknown |" % odd)
+        self.assertEqual(after, expected)
 
     def test_migrate_refuses_a_row_it_cant_split(self):
         self.write(LESSONS_FILE, OLD_LESSONS.replace("| none yet |", "| none | yet |"))

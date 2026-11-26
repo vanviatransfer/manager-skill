@@ -31,18 +31,23 @@ first training (while the changelog has only its creation entry). `check` report
 breaks this.
 
 **Stale.** `check` and `stats` print one `stale lesson L<n>` line for an `active` lesson whose
-`last-confirmed` is more than 90 days old (`--stale-days N`) or followed by more than 20 records
-rows (`--stale-uses M`; for `unknown`, every row counts), whichever comes first. Train puts each
+`last-confirmed` is more than 90 days old (`--stale-days N`) or has more than 20 records rows
+dated after it (`--stale-uses M`; same-day rows don't count; for `unknown`, every row counts),
+whichever comes first. A `last-confirmed` later than today is a problem. Train puts each
 one to the owner: keep, re-confirm or retire. The script never retires a lesson.
 
-Append-only: old rows are never edited, with one exception: a status change, or a
-re-confirmation (a new supporting record, cited in that training's changelog entry), may update
-`confidence` and `last-confirmed` in place, besides `status`. A changed lesson is a new row, and
-the old one becomes `superseded by L<n>`. When a contradiction demotes a lesson to `hypothesis`,
-add a new row with that label and supersede the old one.
+Append-only: old rows are never edited, with one exception: a status change, or a re-confirmation (a
+new supporting record, cited in that training's changelog entry), may update `confidence` and
+`last-confirmed` in place, besides `status`. A re-confirmation alone never fixes a "no verifier
+outcome" problem: the `evidence` cell is unchanged. A changed lesson is a new row, and the old one
+becomes `superseded by L<n>`. When a contradiction demotes a lesson to `hypothesis`, add a new row
+with that label and supersede the old one.
 
 **Old tables.** A table with only the first five columns still works: its lessons read as
 `confidence` `low` and `last-confirmed` `unknown`, reported once as a `note:` line, not as a
-problem. `<cmd> check <skill dir> --migrate` adds the two columns in place, filled from each row's
-evidence and the records, and leaves every other cell byte-identical; like any lessons edit,
-only with the owner's agreement.
+problem; a rule citing a lesson without a verifier outcome, or a cited row the records lack, is a
+`note:` line too (a `hypothesis` behind a rule stays a problem). Migrating turns those notes into
+problems; the fix is a superseding `observed` row whose evidence cites the records. `<cmd> check
+<skill dir> --migrate` adds the two columns in place, filled from each row's evidence and the
+records, and leaves every other byte as it was; like any lessons edit, only with the owner's
+agreement.
