@@ -192,10 +192,11 @@ class MarkerUnitTest(unittest.TestCase):
         self.assertEqual(codemap.guard_marks("x.only(1)\nexpect(a)\n", False), ({}, {}, 0))
         self.assertEqual(codemap.guard_marks(
             "import x  # noqa: E402\nimport y  # noqa: F401, E402\nimport z  # noqa\n"
+            "import w  # noqa: E402, F401\nimport v  # noqa:E402  (after the path setup)\n"
             "@unittest.skipIf(a, 'b')\n@pytest.mark.skipif(a)\ndef f():\n    try:\n"
             "        g()\n    except OSError:\n        self.skipTest('no')\n"
             "    if a: pytest.skip('x')\n    t.Skip()\n", True),
-            ({"t.Skip(": 1}, {"noqa": 1}, 0))
+            ({"t.Skip(": 1}, {"noqa": 3}, 0))
 
     def test_check_config(self):
         for path, kind in ((".github/workflows/ci.yml", "CI"), (".gitlab-ci.yml", "CI"),

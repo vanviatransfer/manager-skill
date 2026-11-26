@@ -1362,28 +1362,31 @@ Owner rule for this change: no added token cost.
   edited, added or deleted lint, format, type-check, test or CI configuration file, and a
   `pyproject.toml` whose `[tool.*]` tables differ. Not counted (fix round, to cut noise):
   conditional skips (`skipIf`, `skipUnless`, `pytest.mark.skipif`, a skip call after an `if` on its
-  line or in an `if` / `else` / `except` / `catch` / `case` block, found by indentation), a `noqa`
-  naming E402, and assert lines in a test folder's data files (only languages the map parses count
-  as test code; the simpler of the two options, chosen). Why: the reviewer already runs `changed`; a
-  weakened test or check is easy to miss in a long diff. Counts compare the two versions of each
-  file (a moved line counts for nothing); prose files and files that may hold secrets are not read.
-  Without a finding the output is byte-identical to 0.9.12 (golden test; the 0.9.12 range of this
-  repository gives the same bytes with both versions).
+  line or in a block opened by `if`, `elif`, `else`, `except`, `catch`, `case`, `when` or `unless`,
+  found by indentation; known gaps: the condition is not read, so `if True:` and `skipIf(True, ...)`
+  are not counted either), a `noqa` whose only code is E402 (`# noqa: E402, F401` still counts), and
+  assert lines in a test folder's data files (only languages the map parses count as test code; the
+  simpler of the two options, chosen). Why: the reviewer already runs `changed`; a weakened test or
+  check is easy to miss in a long diff. Counts compare the two versions of each file (a moved line
+  counts for nothing); prose files and files that may hold secrets are not read. Without a finding
+  the output is byte-identical to 0.9.12 (golden test; the 0.9.12 range of this repository gives the
+  same bytes with both versions).
 - **Invisible-Unicode check.** What: `skilltrain.invisible_chars` (stdlib) finds U+200B-200D,
-  U+2060-2064, U+FEFF, U+202A-202E, U+2066-2069, U+115F, U+1160, U+3164, U+FFA0, U+FE00-FE0F and
-  U+E0000-E007F. Always allowed: a BOM as a file's first character (`read_rel` already accepts one)
-  and a ZWJ between two emoji (the next character, and the previous one past variation selectors and
-  skin-tone modifiers, in the emoji blocks). `strict=True` (the default) allows nothing else:
-  `test_invisible_unicode.py` uses it on every text file of the plugin and the repository's root
-  `*.md` and `docs/` (file:line:col and the code point). `skilltrain.py check` uses `strict=False`,
-  so existing skills don't newly fail (as 0.9.12 kept old tables working): it also allows a
-  variation selector right after an emoji or a keycap base (`0-9#*`, then U+20E3), a ZWNJ / ZWJ
-  between two non-ASCII letters or combining marks (Persian, Indic scripts; a mark because a
-  Devanagari ZWJ follows a virama), and a well-formed emoji tag sequence (U+1F3F4, tag characters,
-  U+E007F). Per line of SKILL.md, lessons.md and the records file it then prints a problem (exit 1)
-  when the line holds a bidi control (U+202A-202E, U+2066-2069) or a tag character outside such a
-  sequence, else a `note:` line (exit unchanged); never stripped. Why: such characters can hide
-  instructions from whoever reviews a skill.
+  U+2060-2064, U+FEFF, U+202A-202E, U+2066-2069, U+115F, U+1160, U+3164, U+FFA0, U+FE00-FE0F,
+  U+E0000-E007F and U+E0100-E01EF. Always allowed: a BOM as a file's first character (`read_rel`
+  already accepts one) and a ZWJ between two emoji (the next character, and the previous one past
+  variation selectors and skin-tone modifiers, in the emoji blocks). `strict=True` (the default)
+  allows nothing else: `test_invisible_unicode.py` uses it on every text file of the plugin and the
+  repository's root `*.md` and `docs/` (file:line:col and the code point). `skilltrain.py check`
+  uses `strict=False`, so existing skills don't newly fail (as 0.9.12 kept old tables working): it
+  also allows a variation selector right after an emoji or a keycap base (`0-9#*`, then U+20E3), a
+  ZWNJ / ZWJ inside a non-ASCII word (the character before it, past any combining marks such as a
+  Devanagari virama, and the one after it are non-ASCII letters: Persian, Indic scripts), and the
+  tag characters of the three RGI subdivision flags, England, Scotland and Wales, as exact sequences
+  (review fix: any other tag payload is a problem). Per line of SKILL.md, lessons.md and the records
+  file it then prints a problem (exit 1) when the line holds a bidi control (U+202A-202E,
+  U+2066-2069) or a tag character outside those three flags, else a `note:` line (exit unchanged);
+  never stripped. Why: such characters can hide instructions from whoever reviews a skill.
 - **Hook silence test.** `hooks/test_hook_silence.py` runs every command hooks.json registers as
   Claude Code does (`sh -c`, CLAUDE_PLUGIN_ROOT set), for every matcher alternative: an input no
   guard acts on gives no stdout, no stderr, exit 0; each hook whose script can exit 2

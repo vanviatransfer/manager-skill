@@ -9,9 +9,10 @@ then path, at most 8, then `… <k> more` (9 are all shown: a more-line stands f
 - `skip marker`: more lines with `@unittest.skip`, `skipTest(`, `pytest.mark.skip`,
   `pytest.mark.xfail`, `@Disabled` or `t.Skip(` than before; in a test file also `.only(`, `xit(`,
   `xdescribe(` and `.skip(`. Conditional skips don't count: `skipIf` / `skipUnless`,
-  `pytest.mark.skipif`, and a skip call (`skipTest(`, `t.Skip(`, `.skip(`) after an `if` on its
-  line or inside an `if`, `else`, `except`, `catch` or `case` block (the nearest line above with
-  less indentation).
+  `pytest.mark.skipif`, and a skip call (`skipTest(`, `t.Skip(`, `.skip(`) after an `if` on its line
+  or inside a block opened by `if`, `elif`, `else`, `except`, `catch`, `case`, `when` or `unless`
+  (the nearest line above with less indentation). Known gaps: the condition is not read, so a skip
+  under `if True:` or a `skipIf(True, ...)` doesn't count either.
 - `asserts`: a test file with fewer lines holding `assert` or the word `expect` than before. Only
   test code counts: a file under a test folder in a language the map parses, not its data files
   (JSON, YAML, text fixtures).
@@ -19,9 +20,9 @@ then path, at most 8, then `… <k> more` (9 are all shown: a more-line stands f
   (`.github/workflows/`, `.pre-commit-config*`, `setup.cfg`, `tox.ini`, `.flake8`, `mypy.ini`,
   `ruff.toml`, `.eslintrc*`, `tsconfig*.json`, `.golangci*`, ...), and a `pyproject.toml` whose
   `[tool.*]` tables differ.
-- `suppression`: more lines with `noqa`, `type: ignore`, `eslint-disable`, `@ts-ignore`, `nolint`
-  or `pragma: no cover` than before; a `noqa` naming E402 (an import after a `sys.path` setup)
-  doesn't count.
+- `suppression`: more lines with `noqa`, `type: ignore`, `eslint-disable`, `@ts-ignore`, `nolint` or
+  `pragma: no cover` than before; a `noqa` whose only code is E402 (an import after a `sys.path`
+  setup) doesn't count, while `# noqa: E402, F401` does.
 
 Counts compare the two versions of each file, so a moved line counts for nothing. Prose files
 (`.md`, `.rst`, `.txt`, ...) and files that may hold secrets are not read. Approximate, never a

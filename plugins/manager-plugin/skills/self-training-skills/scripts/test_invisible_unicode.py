@@ -46,14 +46,15 @@ class HelperTest(unittest.TestCase):
     def test_every_listed_code_point_is_found(self):
         points = [0x200B, 0x200C, 0x200D, 0x2060, 0x2061, 0x2062, 0x2063, 0x2064, 0xFEFF,
                   0x202A, 0x202B, 0x202C, 0x202D, 0x202E, 0x2066, 0x2067, 0x2068, 0x2069,
-                  0x115F, 0x1160, 0x3164, 0xFFA0, 0xFE00, 0xFE0F, 0xE0000, 0xE0041, 0xE007F]
+                  0x115F, 0x1160, 0x3164, 0xFFA0, 0xFE00, 0xFE0F, 0xE0000, 0xE0041, 0xE007F,
+                  0xE0100, 0xE01EF]
         for cp in points:
             self.assertEqual(skilltrain.invisible_chars("ab%scd" % chr(cp)), [(1, 3, cp)],
                              hex(cp))
 
     def test_neighbours_are_not(self):
         for cp in (0x200A, 0x200E, 0x200F, 0x2065, 0x2029, 0x202F, 0x206A, 0xFDFF, 0xFE10,
-                   0xE0080, 0x1161, 0x3165, 0xFFA1, 0xA0, 0xAD):
+                   0xE0080, 0xE00FF, 0xE01F0, 0x1161, 0x3165, 0xFFA1, 0xA0, 0xAD):
             self.assertEqual(skilltrain.invisible_chars("a%sb" % chr(cp)), [], hex(cp))
         text = "k\u0131sa tut \u2014 \u201cok\u201d \u2713 \U0001F916\n"
         self.assertEqual(skilltrain.invisible_chars(text), [])
@@ -85,7 +86,9 @@ ALLOWED = (
     ("red heart", "\u2764\ufe0f"),
     ("keycap one", "1\ufe0f\u20e3"),
     ("health worker", "\U0001F9D1\u200d\u2695\ufe0f"),
+    ("flag of England", "\U0001F3F4\U000E0067\U000E0062\U000E0065\U000E006E\U000E0067\U000E007F"),
     ("flag of Scotland", "\U0001F3F4\U000E0067\U000E0062\U000E0073\U000E0063\U000E0074\U000E007F"),
+    ("flag of Wales", "\U0001F3F4\U000E0067\U000E0062\U000E0077\U000E006C\U000E0073\U000E007F"),
     ("Persian word with ZWNJ", "\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645"),
     ("Devanagari word with ZWJ", "\u0915\u094d\u200d\u0937"),
 )
@@ -116,6 +119,34 @@ class CheckTest(Fixture):
         self.assertEqual(code, 1, out)
         self.assertIn("U+E0041 TAG LATIN CAPITAL LETTER A at column 32, U+E0067 TAG LATIN SMALL "
                       "LETTER G at column 49", out)
+
+    def test_only_the_three_rgi_flags_may_hold_tags(self):
+        def flag(payload):
+            return "\U0001F3F4" + "".join(chr(0xE0000 + ord(c)) for c in payload) + "\U000E007F"
+        for payload in ("abcdefghijklmnopqrstuvwxyz", "GBSCT", "usca", "gbnir", "abcdef"):
+            code, out = self.check("A %s flag." % flag(payload))
+            self.assertEqual(code, 1, (payload, out))
+            self.assertIn("SKILL.md:19 holds invisible characters", out, payload)
+            self.assertIn("TAG LATIN", out, payload)
+        code, out = self.check("Two flags %s%s here." % (flag("gbwls"), flag("gbeng")))
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("invisible", out)
+
+    def test_a_joiner_is_allowed_only_inside_a_non_ascii_word(self):
+        for text in ("de\u013a\u200d\u0301ete", "del\u0301\u200d\u0301ete", "a\u0300\u200cb",
+                     "\u00e0\u200cb", "\u200c\u0645", "\u0645\u200c"):
+            code, out = self.check("See %s here." % text)
+            self.assertEqual(code, 0, (text, out))
+            self.assertIn("note: .claude/skills/release-notes/SKILL.md:19 holds invisible", out,
+                          ascii(text))
+        code, out = self.check("See \u0915\u094d\u200d\u0937 here.")
+        self.assertNotIn("invisible", out)
+
+    def test_a_variation_selector_supplement_character_is_a_note(self):
+        code, out = self.check("See a\U000E0100b here.")
+        self.assertEqual(code, 0, out)
+        self.assertIn("note: .claude/skills/release-notes/SKILL.md:19 holds invisible characters "
+                      "(U+E0100 VARIATION SELECTOR-17 at column 29)", out)
 
     def test_other_characters_are_notes_and_nothing_is_stripped(self):
         skill = SKILL.replace("Group them by area.", "Group them by\u200barea.")

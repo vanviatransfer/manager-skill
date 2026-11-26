@@ -130,7 +130,7 @@ RULES_TITLE = "# Project instructions"
 # can hide words from whoever reviews it. invisible_chars() also serves the plugin's own text test.
 INVISIBLE = ((0x200B, 0x200D), (0x2060, 0x2064), (0xFEFF, 0xFEFF), (0x202A, 0x202E),
              (0x2066, 0x2069), (0x115F, 0x1160), (0x3164, 0x3164), (0xFFA0, 0xFFA0),
-             (0xFE00, 0xFE0F), (0xE0000, 0xE007F))
+             (0xFE00, 0xFE0F), (0xE0000, 0xE007F), (0xE0100, 0xE01EF))
 ZWJ = "\u200d"
 # Code points taken as emoji for the ZWJ exception (pictographs, symbols, dingbats, arrows and
 # shapes blocks; skin-tone modifiers and regional indicators are inside the first range).
@@ -138,8 +138,10 @@ EMOJI = ((0x1F000, 0x1FAFF), (0x2600, 0x27BF), (0x2300, 0x23FF), (0x2B00, 0x2BFF
          (0x00A9, 0x00A9), (0x00AE, 0x00AE), (0x203C, 0x203C), (0x2049, 0x2049),
          (0x2122, 0x2122), (0x2139, 0x2139))
 BIDI = ((0x202A, 0x202E), (0x2066, 0x2069))  # a problem in check; the rest of INVISIBLE: a note
-TAG_CHARS = ((0xE0000, 0xE007F),)  # a problem in check outside a TAG_SEQUENCE
-TAG_SEQUENCE = re.compile("\U0001F3F4[\U000E0020-\U000E007E]+\U000E007F")  # a subdivision flag
+TAG_CHARS = ((0xE0000, 0xE007F),)  # a problem in check outside an RGI_FLAGS sequence
+# The only tag sequences allowed: the three RGI subdivision flags (England, Scotland, Wales).
+RGI_FLAGS = tuple("\U0001F3F4" + "".join(chr(0xE0000 + ord(c)) for c in code) + "\U000E007F"
+                  for code in ("gbeng", "gbsct", "gbwls"))
 SELECTORS = "\ufe0e\ufe0f"
 KEYCAP_BASES = "0123456789#*"
 
@@ -198,9 +200,19 @@ def in_ranges(ch, ranges):
     return any(lo <= cp <= hi for lo, hi in ranges)
 
 
-def word_char(ch):
-    """A non-ASCII letter, or a combining mark (a Devanagari virama before a ZWJ)."""
-    return ord(ch) > 127 and (ch.isalpha() or unicodedata.category(ch).startswith("M"))
+def letter(ch):
+    """A non-ASCII letter."""
+    return ord(ch) > 127 and ch.isalpha()
+
+
+def word_join(line, i):
+    """Whether the ZWNJ or ZWJ at line[i] stands inside a non-ASCII word: the character before it,
+    past any combining marks (a Devanagari virama), is a non-ASCII letter, and so is the one
+    after it."""
+    before = i - 1
+    while before >= 0 and unicodedata.category(line[before]).startswith("M"):
+        before -= 1
+    return before >= 0 and i + 1 < len(line) and letter(line[before]) and letter(line[i + 1])
 
 
 def emoji_join(line, i):
@@ -219,14 +231,17 @@ def invisible_chars(text, strict=True):
     first character and a ZWJ between two emoji (emoji_join). Strict (the plugin's own text test)
     allows nothing else. Not strict (`check` on a project's skills) also allows a variation
     selector right after an EMOJI character or a keycap base (0-9 # * then U+20E3), a ZWNJ or
-    ZWJ between two word_char characters (Persian, Indic scripts), and a well-formed emoji tag
-    sequence (TAG_SEQUENCE)."""
+    ZWJ inside a non-ASCII word (word_join: Persian, Indic scripts), and the tag characters of
+    the three RGI subdivision flags (RGI_FLAGS)."""
     found = []
     for n, line in enumerate(text.split("\n"), 1):
         tagged = set()
         if not strict:
-            for m in TAG_SEQUENCE.finditer(line):
-                tagged.update(range(m.start() + 1, m.end()))
+            for flag in RGI_FLAGS:
+                at = line.find(flag)
+                while at >= 0:
+                    tagged.update(range(at + 1, at + len(flag)))
+                    at = line.find(flag, at + len(flag))
         for i, ch in enumerate(line):
             if not in_ranges(ch, INVISIBLE) or (n == 1 and i == 0 and ch == "\ufeff"):
                 continue
@@ -238,8 +253,7 @@ def invisible_chars(text, strict=True):
                 if ch in SELECTORS and i > 0 and (in_ranges(line[i - 1], EMOJI) or (
                         line[i - 1] in KEYCAP_BASES and line[i + 1:i + 2] == "\u20e3")):
                     continue
-                if ch in "\u200c\u200d" and 0 < i < len(line) - 1 and word_char(line[i - 1]) \
-                        and word_char(line[i + 1]):
+                if ch in "\u200c\u200d" and word_join(line, i):
                     continue
             found.append((n, i + 1, ord(ch)))
     return found

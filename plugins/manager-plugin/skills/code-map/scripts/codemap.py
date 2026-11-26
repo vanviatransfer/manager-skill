@@ -1043,7 +1043,8 @@ SKIP_MARKS = (  # (label, pattern, in test files only, a call); a line counts fo
 # of these opens: the nearest line above it with less indentation.
 CONDITION = re.compile(r"^\s*(?:\}\s*)?(?:if|elif|else|except|catch|case|when|unless)\b")
 IF_BEFORE = re.compile(r"\bif\b")
-NOQA_IMPORT = re.compile(r"#\s*noqa:[\w\s,]*\bE402\b", re.I)  # an import after sys.path setup
+# A `noqa` whose only code is E402 (an import after a sys.path setup).
+NOQA_IMPORT = re.compile(r"#\s*noqa:\s*E402\b(?!\s*,)", re.I)
 SUPPRESSIONS = (
     ("noqa", re.compile(r"#\s*noqa\b", re.I)),
     ("type: ignore", re.compile(r"#\s*type:\s*ignore\b")),
@@ -1146,8 +1147,8 @@ def weakened_lines(root, base, head, diff, out_rel):
     """The `possible weakened guards` section of `changed`, [] when nothing is found: test files
     deleted, renamed or moved; skip markers and suppressions added; net-removed assert/expect
     lines in a test file; edited lint, format, type-check, test or CI configuration. At most
-    MAX_GUARD_LINES findings, then a count of the rest (all of them when one more would fit). Files that may hold secrets are never
-    read."""
+    MAX_GUARD_LINES findings, then a count of the rest (all of them when one more would fit).
+    Files that may hold secrets are never read."""
     entries = [e for e in diff if not is_map_page(e[1], out_rel)]
     moves = [(o, n) for o, n in renamed_paths(root, base, head)
              if not is_map_page(o, out_rel) and not is_map_page(n, out_rel)]
