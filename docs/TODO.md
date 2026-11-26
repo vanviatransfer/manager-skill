@@ -1144,10 +1144,13 @@ something to say).
   line (an incomplete one) → titles compared as before. Cost: a few output tokens in a line the
   reviewer already writes; no extra call; the orchestrator matches tags instead of judging prose.
   SKILL.md untouched (the definition lives in `review-round.md`, read at every review step).
-- **Model check.** `usage.py` takes `AGENT=MODEL` (several: `a,b`; matched as a case-insensitive
-  part of the model id, so `sonnet` matches a full Sonnet id; a context suffix such as `[1m]` and a
-  trailing `-YYYYMMDD` date are ignored on both sides, and `inherit` expects nothing; subagents
-  only, not `orchestrator`); when any request it counts ran on a model matching none of them, its
+- **Model check.** `usage.py` takes `AGENT=MODEL` (several: `a,b`; subagents only, not
+  `orchestrator`; `inherit` turns the check off). Both sides are lower-cased and lose a context
+  suffix such as `[1m]`, a trailing `-YYYYMMDD` or `@YYYYMMDD` date and a provider prefix (up to
+  the last `.` or `/` before the first digit). A versioned name must then equal the id or end it on
+  a `-` boundary; a name of digits, dots and dashes only is marked; an alias (no digit, such as
+  `sonnet`) is a substring match. A suffix after the version, such as `-v1:0`, is marked (a false
+  mark, never a false pass). When any request an agent ran used a model matching none of them, its
   `model` field ends in `!=MODEL` (the line keeps its 14 fields). `run-record.md` passes the
   strategy's model with each agent; `manager-retro` counts the marked agents per role and run. Cost:
   none in context (the line is appended to the record file in a Bash call that already runs). With

@@ -526,9 +526,9 @@ class ResumeTest(Fixture):
 
 
 class ExpectedModelTest(Fixture):
-    """`AGENT=MODEL`: the model the strategy gave the agent. A request counted on a model whose id
-    contains none of the expected names (case-insensitive) ends the `model` field in `!=MODEL`;
-    the line keeps its fields, and nothing else changes."""
+    """`AGENT=MODEL`: the model the strategy gave the agent. A request counted on a model that
+    matches none of the expected names (as `usage.matches` says) ends the `model` field in
+    `!=MODEL`; the line keeps its fields, and nothing else changes."""
 
     def test_a_match_leaves_the_line_as_it_was(self):
         for arg in ("a1=model-a", "a1=MODEL-A", "a1=model", "a1=other,model-a"):
@@ -588,6 +588,13 @@ class ExpectedModelTest(Fixture):
                                                   model="prov.vendor-big-4.6@20260101"),))
         self.assertNotIn("!=", lines(SESSION, "h8=vendor-big-4.6")[0])
         self.assertNotIn("!=", lines(SESSION, "h8=big-4.6")[0])
+
+    def test_a_bare_version_is_marked(self):
+        self.agent(self.new, "g7", None, (request(5, "q1", 1, 0, 1, 1,
+                                                  model="vendor-small-4-6"),))
+        for name in ("4-6", "6", "4.6", "-4-6"):
+            self.assertIn("!=" + name + " |", lines(SESSION, "g7=" + name)[0], name)
+        self.assertNotIn("!=", lines(SESSION, "g7=4-6,small")[0])  # another name still matches
 
     def test_a_trailing_provider_suffix_is_marked(self):
         # A false mark is the safe side: `-v1:0` after the version never passes.

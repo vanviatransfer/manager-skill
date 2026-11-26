@@ -7,10 +7,13 @@ Usage:
 Prints one line for the session's main conversation (`orchestrator`) and one per subagent, oldest
 first; with AGENT names (`orchestrator`, or a subagent's id as the Agent tool returns it) only
 those, in that order. `AGENT=MODEL` names the model the agent should have run on (the model
-strategy's, as dispatched: `sonnet`, a full model id; several: `a,b`; `inherit`: none): when a
-request it counts ran on a model whose id contains none of them (case-insensitive; a context
-suffix such as `[1m]` and a trailing `-YYYYMMDD` date ignored on both sides), its `model` field
-ends in `!=MODEL`. With `--since WHEN` a line counts only the records stamped at or after
+strategy's, as dispatched: `sonnet`, a full model id; several: `a,b`; `inherit`: none, no
+check): when a request it counts ran on a model matching none of them, its `model` field ends in
+`!=MODEL`. Both sides are lower-cased and lose a context suffix (`[1m]`), a trailing `-YYYYMMDD`
+or `@YYYYMMDD` date and a provider prefix (up to the last `.` or `/` before the first digit). A
+name with a version digit must then equal the id or end it after a `-`; a name of digits, dots and
+dashes only never matches; an alias (no digit: `sonnet`) need only be part of it. A suffix after
+the version (`-v1:0`) is a mismatch: a false mark, never a false pass. With `--since WHEN` a line counts only the records stamped at or after
 WHEN, a file's modification time (the manager's run marker: the run, not the whole session) or
 an ISO 8601 time; the first request counted is then no resume. Each line, with ` | ` between its
 fields:
@@ -296,6 +299,8 @@ def matches(name, model):
     """A name with a version digit must equal the id or end it after a `-`; an alias need only
     be in it. Anything after the version (`-v1:0`) is a mismatch: a false mark, never a pass."""
     model = family(model)
+    if not any(c.isalpha() for c in name):
+        return False  # a bare version (`4-6`, `4.6`) names no family: marked, never a pass
     if any(c.isdigit() for c in name):
         return model == name or model.endswith("-" + name)
     return name in model
