@@ -1,9 +1,0 @@
-{
-  "case": "rc-clean-readme-option",
-  "kind": "clean",
-  "level": null,
-  "summary": "correct",
-  "locations": [],
-  "terms": [],
-  "probe": "assert \"(default: 10)\" in open(\"README.md\").read()"
-}

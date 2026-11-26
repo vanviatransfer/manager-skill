@@ -662,25 +662,30 @@ from the plugin's GitHub operation map, not captured from the real server.
 judged by data. Each of its 20 cases builds a tiny synthetic Python repository (`scaffold.sh`: a
 base commit on `main`, the candidate of pull request #1 on `phase/P1`, a one-phase living plan
 with acceptance criteria, under 150 lines in all) and has the session send one
-`manager-plugin:reviewer` the reviewer dispatch for it. The cases: 8 planted bugs over four
-levels (L1 obvious: `rc-l1-off-by-one`, `rc-l1-wrong-operator`; L2 logic: `rc-l2-empty-input`,
-`rc-l2-wrong-condition`; L3 cross-file: `rc-l3-caller-not-updated`, `rc-l3-contract-change`; L4
-doc or record drift: `rc-l4-readme-drift`, `rc-l4-plan-drift`), 2 guard cases (`rc-weakened-test`:
-a failing test skipped as flaky; `rc-zero-tests`: the tests renamed out of discovery, so the
-validation exits 0 with 0 tests run), 4 decoys of correct code that looks wrong
-(`rc-decoy-fallthrough`, `rc-decoy-guarded-none`, `rc-decoy-for-else`, `rc-decoy-ceil-idiom`), 4
-clean diffs (`rc-clean-clamp`, `rc-clean-retry`, `rc-clean-readme-option`,
-`rc-clean-slug-limit`) and 2 round-2 cases with a previous blocker (`rc-round2-fixed`,
-`rc-round2-unfixed`: a fix that only looks done). The validation passes at every candidate, so no
-planted bug is caught by the tests alone. Each case's `answer.json` (its kind, level, the bug's
-files and line ranges, key terms and a probe) stays out of the run; the run's graders check that
-the reviewer got the candidate, its verdict and that no `answer.json` was read, and `score.py`
-grades the reviewer's answer from the run's trace: a planted bug is found when a blocker names
-its file and a line in the key's range or a key term; a decoy or clean case with any blocker is a
-false alarm; round 2 must accept the real fix and refuse the other. It reports each run, recall
-per level, the false-alarm rate, round-2 results, cost and tokens. A paid run, by hand only, with
-a required cost ceiling (Sonnet by default, `--model opus` for the other tier, `--runs 1`,
-`-j 1`):
+`manager-plugin:reviewer` the reviewer dispatch for it. The mix: 8 planted bugs over four levels
+(2 each of L1 obvious, L2 logic, L3 cross-file, L4 doc or record drift), 2 guard cases (a failing
+test skipped as flaky; the tests renamed out of discovery, so the validation exits 0 with 0 tests
+run), 4 decoys of correct code that looks wrong, 4 clean diffs and 2 round-2 cases with a
+previous blocker (a real fix, and a fix that only looks done). The cases are named `rc-01` to
+`rc-20` in a shuffled order, and nothing in a case (its description, tag, prompt, files, commit
+messages or branches) tells its kind; which case is which lives only in the answer keys. The
+validation passes at every candidate, so no planted bug is caught by the tests alone.
+
+The answer keys (`evals-keys/reviewer-calibration/<case>.json` at the repository root: the
+case's kind, level, the bug's files and line ranges, key terms and a probe) stay outside the
+plugin folder, which is all a run's session is pointed at. The run's graders check that the
+reviewer got the candidate, that the final message relays its answer, and that the trace names
+none of `reviewer-calibration`, `evals-keys`, `evals-results`, `evals/results`, `score.py`,
+`test_reviewer_calibration` or `answer.json`; none grades the verdict, which would tell a reader
+of the case the expected answer. `score.py` grades the reviewer's answer from the run's trace: a
+planted bug is found when a blocker names its file and a line in the key's range or a key term (a
+guard case: a key term alone); a decoy or clean case with any blocker is a false alarm; round 2
+must accept the real fix (PASS or PASS WITH NOTES, no blocker) and refuse the other. It reports
+each run, recall per level, the false-alarm rate, round-2 results, cost and tokens. A paid run,
+by hand only, with a required cost ceiling (Sonnet by default, `--model opus` for the other tier,
+`--runs 1`, `-j 1`); its results go to `evals-results/<UTC time>/` at the repository root, which
+git ignores. run.py passes no `--trust-plugin`, so the first run asks you to trust the plugin
+interactively:
 
 ```
 python3 plugins/manager-plugin/evals/reviewer-calibration/run.py --max-cost-usd 15
@@ -689,3 +694,5 @@ python3 plugins/manager-plugin/evals/reviewer-calibration/run.py --max-cost-usd 
 `--dry-run` prints the `claude plugin eval` and `score.py` commands it would run.
 `python3 -m unittest discover -s plugins/manager-plugin/evals` checks the cases, builds every
 fixture, runs its validation and probe, and scores hand-written answers, all without a paid run.
+Limits: a run's session can still read your home folder, so blindness rests on the blind grader
+catching a read of the keys or results, not on the keys being out of reach.

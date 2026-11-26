@@ -8,18 +8,27 @@ RESULT is the `aggregate-result.json` that `claude plugin eval` writes (`run.py`
 folder of answer files `<case>.txt` / `<case>.<run>.txt` holding a reviewer's answer each (for
 answers collected by hand). From a run's result, each run's answer is read from its trace (the
 result's `tracePath`): the text the `manager-plugin:reviewer` agent returned to the orchestrator,
-else the run's final message. The answer keys (`<case>/answer.json` beside this script) are read
-here only; the reviewer never sees them.
+else the run's final message. The answer keys, one `<case>.json` per case, live outside the
+plugin folder (KEYS: `evals-keys/reviewer-calibration/` at the repository root, found from this
+file's path), so the run's session does not find them beside the cases; the case names (`rc-01`
+...) say nothing of the kind, which only the keys hold.
 
 Rules, per run of a case:
-- The answer's `VERDICT:` line and its `Blockers:` entries (`B<n>.` up to the next section) are
-  parsed; markdown emphasis and code fences around them are ignored. No verdict line: `no verdict`.
+- The answer's `VERDICT:` line and its `Blockers:` entries are parsed. An entry starts with
+  `B<n>.`, `- `, `* ` or `<n>.` / `<n>)` and runs to the next entry or section; markdown emphasis
+  (`*`, `_`, backticks) and code fences are ignored, and an entry or section remainder that is
+  then `none`, `-` or an em dash is no blocker. No verdict line: `no verdict`.
 - planted: `found` when a blocker names one of the key's files (its path or file name) and either
   cites a line of that file inside the key's line range (`file:12` or `file:10-14`) or holds one
-  of the key's terms (case-insensitive); otherwise `missed`. Other blockers are counted as extra.
+  of the key's terms; a guard case's term counts without a file too. Otherwise `missed`. A term is
+  bug-specific (a wrong blocker on the right file must not match it): case-insensitive, not inside
+  a longer word or number at its start, not followed by a digit when it ends in one (`20` is not
+  `2026`), a stem when it ends in a letter (`skip` holds `skipped`); a list term needs all its
+  parts. Other blockers are counted as extra.
 - decoy, clean: any blocker, or a CHANGES REQUIRED verdict, is a `false alarm`; else `pass`.
   A run without a verdict counts against recall but is left out of the false-alarm rate.
-- round2-fixed: `accepted` (right) with a PASS verdict and no blocker, else `rejected` (wrong).
+- round2-fixed: `accepted` (right) with a PASS or PASS WITH NOTES verdict and no blocker, else
+  `rejected` (wrong).
 - round2-unfixed: `rejected` (right) with a CHANGES REQUIRED verdict, else `accepted` (wrong);
   whether a blocker names the bug is shown as for a planted case.
 
@@ -35,6 +44,8 @@ import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(HERE))))
+KEYS = os.path.join(REPO, "evals-keys", "reviewer-calibration")
 LEVELS = ("L1", "L2", "L3", "L4", "guard")
 KINDS = ("planted", "decoy", "clean", "round2-fixed", "round2-unfixed")
 REVIEWER = "manager-plugin:reviewer"
@@ -46,17 +57,28 @@ VERDICT = re.compile(r"^[\s>*_`#]*VERDICT:[*_`\s]*(PASS WITH NOTES|PASS|CHANGES 
 SECTION = re.compile(r"^[\s>*_`#-]*(Blockers|Notes|Acceptance|Validation|Not checked|"
                      r"Previous blockers|Checkout untouched|Reviewed SHA|Base SHA)\b[^:\n]*:",
                      re.I)
-ENTRY = re.compile(r"^[\s>*_`#-]*B[0-9]+\s*[.):]", re.I)
+ENTRY = re.compile(r"^\s*[*_`]*(?:B[0-9]+\s*[.):]|[-*](?:\s+|(?=[*_`]*B[0-9]))|[0-9]+[.)]\s+)",
+                   re.I)
+NONE = re.compile(r"(?:\(?none\b.*|[-–—]+)$", re.I | re.S)
 
 
-def answer_keys(folder=HERE):
-    """{case name: its answer.json} of every case folder beside this script."""
+def clean(text):
+    """The text without surrounding whitespace, `*`, `_` and backticks."""
+    return text.strip().strip("*_` \t").strip()
+
+
+def is_none(text):
+    return not clean(text) or bool(NONE.match(clean(text)))
+
+
+def answer_keys(folder=None):
+    """{case name: its key} of every `<case>.json` in the key folder (none without one)."""
+    folder = folder or KEYS
     keys = {}
-    for name in sorted(os.listdir(folder)):
-        path = os.path.join(folder, name, "answer.json")
-        if os.path.isfile(path):
-            with open(path, encoding="utf-8") as fh:
-                keys[name] = json.load(fh)
+    for name in sorted(os.listdir(folder)) if os.path.isdir(folder) else []:
+        if name.endswith(".json"):
+            with open(os.path.join(folder, name), encoding="utf-8") as fh:
+                keys[name[:-len(".json")]] = json.load(fh)
     return keys
 
 
@@ -67,32 +89,43 @@ def parse(text):
     verdict = match.group(1).upper() if match else None
     blockers, inside, current = [], False, None
     for line in text.split("\n"):
-        section = SECTION.match(line)
+        if line.strip().startswith("```"):
+            continue
+        entry = inside and ENTRY.match(line)
+        section = None if entry else SECTION.match(line)
         if section:
             if current is not None:
                 blockers.append(current)
                 current = None
             inside = section.group(1).lower() == "blockers"
-            rest = line[section.end():].strip()
-            if inside and rest and not re.match(r"[*_`(]*none\b", rest, re.I):
+            rest = clean(line[section.end():])
+            if inside and not is_none(rest):
                 current = rest
             continue
         if not inside:
             continue
-        if ENTRY.match(line):
+        if entry:
             if current is not None:
                 blockers.append(current)
-            current = line.strip()
-        elif current is not None and line.strip() and not line.strip().startswith("```"):
-            current += " " + line.strip()
+            current = clean(line)
+        elif current is not None and line.strip():
+            current += " " + clean(line)
+        elif line.strip() and not is_none(line):
+            current = clean(line)
     if current is not None:
         blockers.append(current)
-    blockers = [b for b in blockers if not re.match(r"[*_`(]*none\b", b, re.I)]
-    return {"verdict": verdict, "blockers": blockers}
+    found = []
+    for blocker in blockers:
+        body = clean(re.sub(r"^[-*]\s+|^[0-9]+[.)]\s+", "", clean(blocker)))
+        if not is_none(body):
+            found.append(clean(blocker))
+    return {"verdict": verdict, "blockers": found}
 
 
 def cites_lines(blocker, path, lines):
     """Whether the blocker cites `path:<n>` or `path:<a>-<b>` overlapping the key's range."""
+    if not lines:
+        return False
     low, high = lines
     for name in {path, os.path.basename(path)}:
         for match in re.finditer(r"(?<![\w.-])" + re.escape(name) + r":(?:L)?([0-9]+)"
@@ -109,15 +142,26 @@ def names_file(blocker, path):
                for name in {path, os.path.basename(path)})
 
 
+def has_term(text, term):
+    """Whether `text` holds the term (a string, or a list whose parts must all be there)."""
+    if isinstance(term, list):
+        return all(has_term(text, part) for part in term)
+    pattern = re.escape(term)
+    if re.match(r"\w", term):
+        pattern = r"(?<![A-Za-z0-9_])" + pattern
+    if re.search(r"[0-9]$", term):
+        pattern += r"(?![0-9])"
+    return bool(re.search(pattern, text, re.I))
+
+
 def located(blocker, key):
     """Whether one blocker names the planted bug of the answer key."""
-    lowered = blocker.lower()
+    term = any(has_term(blocker, t) for t in key.get("terms", []))
+    if term and key.get("level") == "guard":
+        return True
     for place in key.get("locations", []):
-        if not names_file(blocker, place["file"]):
-            continue
-        if cites_lines(blocker, place["file"], place["lines"]):
-            return True
-        if any(term.lower() in lowered for term in key.get("terms", [])):
+        if names_file(blocker, place["file"]) and (
+                term or cites_lines(blocker, place["file"], place["lines"])):
             return True
     return False
 

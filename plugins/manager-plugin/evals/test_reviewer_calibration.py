@@ -1,20 +1,24 @@
 """The reviewer-calibration suite (`reviewer-calibration/`), checked without a paid run:
 python3 -m unittest discover -s <this folder>
 
-- Every case is a valid `claude plugin eval` case (the format of `test_evals.py`), tagged
-  `reviewer-calibration` only, with the same prompt, graders and answer-key shape; the mix is the
-  one the suite promises (8 planted bugs over L1-L4, 2 guard cases, 4 decoys, 4 clean diffs, 2
-  round-2 cases).
+- Every case is a valid `claude plugin eval` case (the format of `test_evals.py`), named `rc-01`
+  to `rc-20` in a shuffled order and tagged `reviewer-calibration` only, with the same prompt and
+  graders; nothing in a case tells its kind; the answer keys (`evals-keys/reviewer-calibration/`
+  at the repository root, outside the plugin folder) hold the mix the suite promises (8 planted
+  bugs over L1-L4, 2 guard cases, 4 decoys, 4 clean diffs, 2 round-2 cases).
+- The blind grader's pattern is in none of what a run reads: the prompt, the manager's briefs,
+  the reviewer agent, the workspace (files, commit messages, branches, git config) and the plan's
+  phase section.
 - Every scaffold builds the same two (round 2: three) commits every time, leaves the checkout on
   the candidate with a clean tree, refuses a folder that holds a repository and keeps its
   repository small; the base plan passes `plan.py check`; the commits the prompt names are the
   ones it builds; validation exits 0 at every candidate (the zero-tests case: with 0 tests run),
   so no planted bug is caught by the tests alone; each answer key's probe fails at a planted or
-  unfixed candidate and passes at the others; each key's line range holds its marker text; no
-  answer key reaches the workspace.
-- score.py grades hand-written answers right (found, missed, false alarm, round 2, no verdict),
-  reads a run's result and trace, and run.py builds the command with its defaults and a
-  required cost ceiling.
+  unfixed candidate and passes at the others; each key's line range holds its marker text.
+- score.py grades hand-written answers right (found, missed, false alarm, round 2, no verdict,
+  markdown answers, a wrong fault on the right file), reads a run's result and trace, and run.py
+  builds the command with its defaults, a required cost ceiling and the results folder.
+Without the key folder (the plugin copied alone) the tests that need the keys are skipped.
 Standard library only, Python 3.8+.
 """
 import contextlib
@@ -30,9 +34,10 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SUITE = os.path.join(HERE, "reviewer-calibration")
+PLUGIN = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 sys.path.insert(0, SUITE)
-sys.path.insert(0, os.path.dirname(HERE))  # portability.py, in the plugin folder
+sys.path.insert(0, PLUGIN)  # portability.py, in the plugin folder
 import portability  # noqa: E402
 import run as runner  # noqa: E402
 import score  # noqa: E402
@@ -41,10 +46,18 @@ from test_evals import (CALIBRATION, INVARIANTS, PLAN_PY, README, case_folders, 
 
 KINDS = {"planted": 10, "decoy": 4, "clean": 4, "round2-fixed": 1, "round2-unfixed": 1}
 LEVELS = {"L1": 2, "L2": 2, "L3": 2, "L4": 2, "guard": 2}
-GRADERS = ("answer-relayed", "blind", "reviewer-dispatched", "verdict")
+GRADERS = ("answer-relayed", "blind", "reviewer-dispatched")
 REFUSE = ("planted", "round2-unfixed")
 DISPATCH = re.compile(r"Base SHA: ([0-9a-f]{40})   Candidate SHA: ([0-9a-f]{40})\n")
+HINT = re.compile(r"(?<![A-Za-z0-9])(planted|decoy|clean|guard|round ?-?2|L[1-4]|calibration|"
+                  r"drift|bug|trap|answer key|false alarm|off-by-one|weakened|zero-tests)"
+                  r"(?![A-Za-z0-9])", re.I)
+BLIND = ("reviewer-calibration", "evals-keys", "evals-results", "evals/results", "score.py",
+         "test_reviewer_calibration", "answer.json")
 MAX_LINES = 150
+KEYS = score.answer_keys()
+NAMES = {key["name"]: case for case, key in KEYS.items()}
+needs_keys = unittest.skipUnless(KEYS, "no answer keys beside this plugin copy")
 
 
 def suite_cases():
@@ -52,8 +65,17 @@ def suite_cases():
 
 
 def key_of(folder):
-    with open(os.path.join(HERE, *folder.split("/"), "answer.json"), encoding="utf-8") as fh:
-        return json.load(fh)
+    return KEYS[folder.split("/")[-1]]
+
+
+def case_of(name):
+    """The id of the case whose key is labelled `name`."""
+    return NAMES[name]
+
+
+def blind_pattern():
+    case = load(suite_cases()[0])
+    return re.compile([g for g in case["graders"] if g["name"] == "blind"][0]["pattern"])
 
 
 def build(folder, into):
@@ -86,37 +108,29 @@ def git(work, *args):
     return done.stdout.decode("utf-8").strip()
 
 
-def python(work, *args):
+def python(work, *args, **kwargs):
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
     return subprocess.run([sys.executable] + list(args), cwd=work, env=env,
-                          capture_output=True, timeout=120)
+                          capture_output=True, timeout=120, **kwargs)
 
 
 class CaseTest(unittest.TestCase):
-    """The case files and answer keys, without a scaffold."""
+    """The case files, without a scaffold."""
 
     @classmethod
     def setUpClass(cls):
         cls.folders = suite_cases()
         cls.cases = {folder: load(folder) for folder in cls.folders}
-        cls.keys = {folder: key_of(folder) for folder in cls.folders}
 
-    def test_the_mix(self):
-        kinds = [key["kind"] for key in self.keys.values()]
-        self.assertEqual({kind: kinds.count(kind) for kind in set(kinds)}, KINDS)
-        levels = [key["level"] for key in self.keys.values() if key["kind"] == "planted"]
-        self.assertEqual({level: levels.count(level) for level in set(levels)}, LEVELS)
-        self.assertTrue(all(key["level"] is None for key in self.keys.values()
-                            if key["kind"] != "planted"))
-        names = {folder.split("/")[-1] for folder in self.folders}
-        self.assertLessEqual({"rc-weakened-test", "rc-zero-tests"}, names)
+    def test_neutral_ids(self):
+        names = sorted(folder.split("/")[-1] for folder in self.folders)
+        self.assertEqual(names, ["rc-%02d" % n for n in range(1, 21)])
 
     def test_every_case_is_a_valid_case_of_this_suite_only(self):
         for folder, case in self.cases.items():
             with self.subTest(case=folder):
                 self.assertEqual(problems(case), [])
                 self.assertEqual(case["name"], folder.split("/")[-1])
-                self.assertTrue(case["name"].startswith("rc-"))
                 self.assertEqual(case["tags"], [CALIBRATION])
                 self.assertNotIn(CALIBRATION, INVARIANTS)
                 self.assertEqual((case["runs"], case["execution"]["model"]), (1, "sonnet"))
@@ -125,23 +139,39 @@ class CaseTest(unittest.TestCase):
                                  sorted(["Agent", "Bash", "Read", "Glob", "Grep", "ToolSearch"]))
                 self.assertFalse(os.path.isdir(os.path.join(HERE, *folder.split("/"), "mocks")))
         names = [case["name"] for case in self.cases.values()]
-        self.assertEqual(len(set(names)), len(names))
         self.assertEqual(sorted(set(f.split("/")[-1] for f in case_folders()) & set(names)), [],
                          "the invariant cases' tests must not take these in")
+
+    def test_no_case_tells_its_kind(self):
+        descriptions = set()
+        for folder, case in self.cases.items():
+            name = folder.split("/")[-1]
+            descriptions.add(case["description"].replace(name, "<id>"))
+            files = os.listdir(os.path.join(HERE, *folder.split("/")))
+            scaffold = read(os.path.join(HERE, *folder.split("/"), "scaffold.sh"))
+            commits = re.findall(r"(?m)^rc_commit [0-9]+ '([^']*)'", scaffold)
+            with self.subTest(case=folder):
+                self.assertTrue(commits)
+                for text in [case["description"], case["execution"]["prompt"],
+                             " ".join(files)] + commits:
+                    self.assertIsNone(HINT.search(text), text)
+                self.assertEqual(sorted(os.listdir(os.path.join(HERE, *folder.split("/"),
+                                                                "graders"))),
+                                 sorted(g + ".md" for g in GRADERS))
+        self.assertEqual(descriptions, {"Review of pull request 1 in a practice repository (<id>)"})
+        fixture = read(os.path.join(SUITE, "fixture.sh"))
+        self.assertNotIn("answer.json", fixture)
 
     def test_the_prompt_is_the_dispatch_and_tells_nothing(self):
         prompts = {}
         for folder, case in self.cases.items():
-            prompt, key = case["execution"]["prompt"], self.keys[folder]
+            prompt = case["execution"]["prompt"]
             with self.subTest(case=folder):
                 self.assertEqual(len(DISPATCH.findall(prompt)), 1)
                 self.assertIn("`manager-plugin:reviewer`", prompt)
-                previous = re.findall(r"(?m)^ *Previous blockers: (B1\. .+)$", prompt)
-                self.assertEqual(bool(previous), key["kind"].startswith("round2"))
-                for word in ("VERDICT", "answer.json", "planted", "decoy", "calibration",
-                             key["kind"]):
+                self.assertIn("`git config eval.reviewerbrief`", prompt)
+                for word in ("VERDICT", "answer.json", "expected", "calibration", "planted"):
                     self.assertNotIn(word.lower(), prompt.lower())
-                self.assertNotIn(case["description"].lower(), prompt.lower())
                 prompts[folder] = DISPATCH.sub("", re.sub(r"(?m)^ *Previous blockers: .*\n", "",
                                                           prompt))
         self.assertEqual(len(set(prompts.values())), 1, "one prompt, apart from the commits")
@@ -150,19 +180,15 @@ class CaseTest(unittest.TestCase):
         for folder, case in self.cases.items():
             graders = {grader["name"]: grader for grader in case["graders"]}
             candidate = DISPATCH.search(case["execution"]["prompt"]).group(2)
-            refuse = self.keys[folder]["kind"] in REFUSE
             with self.subTest(case=folder):
                 self.assertEqual(sorted(graders), sorted(GRADERS))
                 self.assertEqual(graders["reviewer-dispatched"]["tool"], "Agent")
                 self.assertTrue(graders["reviewer-dispatched"]["input_match"].endswith(
                     "Candidate SHA: " + candidate))
-                self.assertEqual(graders["verdict"]["pattern"], r"^\W*VERDICT: %s\b" % (
-                    "CHANGES REQUIRED" if refuse else "PASS"))
                 self.assertEqual((graders["blind"]["target"], graders["blind"]["match"]),
                                  ("trace", "not_contains"))
-                for name in ("answer-relayed", "verdict"):
-                    self.assertEqual((graders[name]["target"], graders[name]["flags"]),
-                                     ("last_message", "m"))
+                self.assertEqual((graders["answer-relayed"]["target"],
+                                  graders["answer-relayed"]["flags"]), ("last_message", "m"))
         relayed = re.compile(graders["answer-relayed"]["pattern"], re.M)
         for text in ("VERDICT: PASS", "**VERDICT: CHANGES REQUIRED**", "VERDICT: PASS WITH NOTES"):
             self.assertTrue(relayed.search("```\n%s\nReviewed SHA: x\n" % text), text)
@@ -174,25 +200,87 @@ class CaseTest(unittest.TestCase):
         self.assertTrue(dispatched.search(call))
         self.assertFalse(dispatched.search(call.replace("manager-plugin:reviewer",
                                                         "general-purpose")))
+        blind = blind_pattern()
+        for word in BLIND:
+            self.assertTrue(blind.search("cat /x/%s/y" % word), word)
+        self.assertFalse(blind.search("Read and follow /p/skills/manager/references/"
+                                      "reviewer-brief.md"))
+
+    def test_the_blind_pattern_is_in_nothing_a_run_reads(self):
+        blind = blind_pattern()
+        references = os.path.join(PLUGIN, "skills", "manager", "references")
+        paths = [os.path.join(references, name) for name in sorted(os.listdir(references))
+                 if name == "reviewer-brief.md" or name.startswith("brief-")]
+        paths += [os.path.join(PLUGIN, "agents", "reviewer.md"),
+                  os.path.join(PLUGIN, "skills", "manager", "SKILL.md")]
+        self.assertIn(os.path.join(references, "reviewer-brief.md"), paths)
+        for path in paths:
+            with self.subTest(path=os.path.relpath(path, PLUGIN)):
+                self.assertIsNone(blind.search(read(path)))
+        for folder, case in self.cases.items():
+            with self.subTest(case=folder):
+                self.assertIsNone(blind.search(case["execution"]["prompt"]))
+        self.assertIsNone(blind.search(read(os.path.join(SUITE, "fixture.sh"))))
+
+
+@needs_keys
+class KeyTest(unittest.TestCase):
+    """The answer keys: outside the plugin, the promised mix, a shuffled order."""
+
+    def test_the_keys_live_outside_the_plugin(self):
+        self.assertFalse(os.path.abspath(score.KEYS).startswith(os.path.abspath(PLUGIN) + os.sep))
+        self.assertEqual(os.path.basename(score.KEYS), CALIBRATION)
+        self.assertEqual(os.path.basename(os.path.dirname(score.KEYS)), "evals-keys")
+        for top, dirs, files in os.walk(PLUGIN):
+            dirs[:] = [d for d in dirs if d not in ("results", "__pycache__", ".git")]
+            for name in files:
+                with self.subTest(file=os.path.relpath(os.path.join(top, name), PLUGIN)):
+                    self.assertNotEqual(name, "answer.json")
+                    if name.endswith(".json"):
+                        self.assertNotIn('"terms"', read(os.path.join(top, name)))
+        self.assertEqual(sorted(KEYS), sorted(f.split("/")[-1] for f in suite_cases()))
+
+    def test_the_mix(self):
+        kinds = [key["kind"] for key in KEYS.values()]
+        self.assertEqual({kind: kinds.count(kind) for kind in set(kinds)}, KINDS)
+        levels = [key["level"] for key in KEYS.values() if key["kind"] == "planted"]
+        self.assertEqual({level: levels.count(level) for level in set(levels)}, LEVELS)
+        self.assertTrue(all(key["level"] is None for key in KEYS.values()
+                            if key["kind"] != "planted"))
+        self.assertLessEqual({"weakened-test", "zero-tests", "l1-off-by-one"}, set(NAMES))
+        self.assertEqual(len(NAMES), len(KEYS))
+
+    def test_a_shuffled_order(self):
+        kinds = [KEYS[case]["kind"] for case in sorted(KEYS)]
+        self.assertFalse([n for n in range(1, len(kinds)) if kinds[n] == kinds[n - 1]], kinds)
+        levels = [KEYS[case]["level"] for case in sorted(KEYS) if KEYS[case]["level"]]
+        self.assertNotEqual(levels, sorted(levels))
 
     def test_the_answer_keys(self):
-        for folder, key in self.keys.items():
-            with self.subTest(case=folder):
-                self.assertEqual(sorted(key), ["case", "kind", "level", "locations", "probe",
-                                               "summary", "terms"])
-                self.assertEqual(key["case"], folder.split("/")[-1])
+        for case, key in KEYS.items():
+            with self.subTest(case=case):
+                self.assertEqual(sorted(key), ["case", "kind", "level", "locations", "name",
+                                               "probe", "summary", "terms"])
+                self.assertEqual(key["case"], case)
                 self.assertIn(key["kind"], score.KINDS)
                 self.assertTrue(key["summary"] and key["probe"])
-                compile(key["probe"], folder, "exec")
+                compile(key["probe"], case, "exec")
                 located = key["kind"] in REFUSE
                 self.assertEqual(bool(key["locations"]), located)
                 self.assertEqual(bool(key["terms"]), located)
                 for place in key["locations"]:
                     self.assertEqual(sorted(place), ["file", "lines", "text"])
+                    if place["lines"] is None:
+                        self.assertIsNone(place["text"])
+                        continue
                     low, high = place["lines"]
                     self.assertTrue(1 <= low <= high, place)
-        self.assertEqual(sorted(score.answer_keys()), sorted(f.split("/")[-1]
-                                                             for f in self.folders))
+                for term in key["terms"]:
+                    for part in term if isinstance(term, list) else [term]:
+                        self.assertFalse(re.search(r"^[\w/]+\.(py|md)$", part), part)
+                        self.assertNotIn(part.lower(), ("test", "tests", "bug", "wrong",
+                                                        "missing", "default", "docstring"))
+        self.assertEqual(score.answer_keys(os.path.join(SUITE, "no-such-folder")), {})
 
 
 @unittest.skipUnless(portability.bash() and shutil.which("git"),
@@ -210,8 +298,9 @@ class ScaffoldTest(unittest.TestCase):
 
     def test_the_commits_the_prompt_names(self):
         for folder, work in self.work.items():
-            base, candidate = DISPATCH.search(load(folder)["execution"]["prompt"]).groups()
-            round2 = key_of(folder)["kind"].startswith("round2")
+            prompt = load(folder)["execution"]["prompt"]
+            base, candidate = DISPATCH.search(prompt).groups()
+            round2 = "Previous blockers:" in prompt
             with self.subTest(case=folder):
                 self.assertEqual(git(work, "rev-parse", "HEAD"), candidate)
                 self.assertEqual(git(work, "rev-parse", "origin/phase/P1"), candidate)
@@ -219,12 +308,19 @@ class ScaffoldTest(unittest.TestCase):
                 self.assertEqual(git(work, "rev-parse", "main"), base)
                 self.assertEqual(git(work, "symbolic-ref", "refs/remotes/origin/HEAD"),
                                  "refs/remotes/origin/main")
-                self.assertEqual(git(work, "rev-list", "--reverse", "%s..%s" % (base, candidate))
-                                 .split()[-1:], [candidate])
                 self.assertEqual(len(git(work, "rev-list", "%s..%s" % (base, candidate)).split()),
                                  2 if round2 else 1)
                 self.assertEqual(git(work, "rev-list", "--count", base), "1")
                 self.assertEqual(git(work, "status", "--porcelain", "--ignored"), "")
+                if KEYS:
+                    self.assertEqual(round2, key_of(folder)["kind"].startswith("round2"))
+
+    def test_the_brief_path_in_the_git_config(self):
+        brief = os.path.join(PLUGIN, "skills", "manager", "references", "reviewer-brief.md")
+        for folder, work in self.work.items():
+            with self.subTest(case=folder):
+                self.assertTrue(os.path.samefile(git(work, "config", "eval.reviewerbrief"),
+                                                 brief))
 
     def test_a_scaffold_builds_the_same_commits_every_time(self):
         for number, folder in enumerate(self.folders):
@@ -241,16 +337,29 @@ class ScaffoldTest(unittest.TestCase):
                                                          "a repository or a fixture file\n"))
         self.assertEqual(git(work, "rev-parse", "HEAD"), head)
 
-    def test_small_synthetic_repositories_without_the_key(self):
+    def test_small_synthetic_repositories_that_tell_nothing(self):
+        blind = blind_pattern()
         for folder, work in self.work.items():
             files = git(work, "ls-files").split("\n")
             history = git(work, "log", "--all", "--name-only", "--format=").split()
+            messages = git(work, "log", "--all", "--format=%B")
+            branches = git(work, "for-each-ref", "--format=%(refname)")
+            config = git(work, "config", "--local", "--list")
+            plan = git(work, "show", "HEAD:docs/LIVING_PLAN.md") + "\n"
+            phase = python(work, PLAN_PY, "phase", "P1", input=plan.encode("utf-8"))
             total = sum(len(read(os.path.join(work, path)).split("\n")) - 1 for path in files)
             with self.subTest(case=folder):
+                self.assertEqual(phase.returncode, 0, phase.stderr)
                 self.assertLessEqual(total, MAX_LINES)
-                self.assertFalse([p for p in files + history if p.endswith("answer.json")])
                 self.assertIn("CLAUDE.md", files)
                 self.assertIn("run_tests.py", files)
+                for text in [messages, branches, " ".join(files + history)]:
+                    self.assertIsNone(HINT.search(text), text)
+                for text in [messages, branches, config, " ".join(files + history),
+                             phase.stdout.decode("utf-8")] + [
+                                 read(os.path.join(work, path)) for path in files]:
+                    self.assertIsNone(blind.search(text), text[:200])
+                self.assertNotIn(os.path.basename(SUITE), work)
 
     def test_the_base_plan_passes_plan_check(self):
         for folder, work in self.work.items():
@@ -264,6 +373,7 @@ class ScaffoldTest(unittest.TestCase):
                 self.assertIn("Status: done (PR #1)",
                               git(work, "show", "HEAD:docs/LIVING_PLAN.md"))
 
+    @needs_keys
     def test_validation_passes_at_every_candidate_and_the_probe_tells_the_bug(self):
         for folder, work in self.work.items():
             key = key_of(folder)
@@ -274,17 +384,22 @@ class ScaffoldTest(unittest.TestCase):
             with self.subTest(case=folder):
                 self.assertEqual(validation.returncode, 0, log)
                 self.assertTrue(ran, log)
-                self.assertEqual(int(ran.group(1)) == 0, folder.endswith("/rc-zero-tests"), log)
+                self.assertEqual(int(ran.group(1)) == 0, key["name"] == "zero-tests", log)
                 self.assertEqual(probe.returncode != 0, key["kind"] in REFUSE,
                                  probe.stderr.decode("utf-8", "replace"))
                 self.assertEqual(git(work, "status", "--porcelain", "--ignored"), "")
 
+    @needs_keys
     def test_each_key_s_lines_hold_its_marker(self):
         for folder, work in self.work.items():
+            base = DISPATCH.search(load(folder)["execution"]["prompt"]).group(1)
             for place in key_of(folder)["locations"]:
-                lines = git(work, "show", "HEAD:" + place["file"]).split("\n")
-                low, high = place["lines"]
                 with self.subTest(case=folder, file=place["file"]):
+                    if place["lines"] is None:  # a file the candidate removed
+                        self.assertTrue(git(work, "show", "%s:%s" % (base, place["file"])))
+                        continue
+                    lines = git(work, "show", "HEAD:" + place["file"]).split("\n")
+                    low, high = place["lines"]
                     self.assertLessEqual(high, len(lines))
                     self.assertTrue(any(place["text"] in line for line in lines[low - 1:high]))
 
@@ -308,15 +423,16 @@ def answer(verdict, *blockers):
                      "  none", "not met" if blockers else "met")
 
 
+
+@needs_keys
 class ScoreTest(unittest.TestCase):
     """score.py on hand-written answers."""
 
-    @classmethod
-    def setUpClass(cls):
-        cls.keys = score.answer_keys()
+    def grade(self, name, text):
+        return score.grade(KEYS[case_of(name)], text)
 
-    def grade(self, case, text):
-        return score.grade(self.keys[case], text)
+    def outcome(self, name, *blockers):
+        return self.grade(name, answer("CHANGES REQUIRED", *blockers))["outcome"]
 
     def test_parse(self):
         review = score.parse(answer("CHANGES REQUIRED",
@@ -335,15 +451,45 @@ class ScoreTest(unittest.TestCase):
         self.assertEqual(score.parse("Blockers:\n  - **B1.** bad — a.py:2\nNotes: none\n")
                          ["blockers"], ["- **B1.** bad — a.py:2"])
 
+    def test_parse_markdown_with_no_blocker(self):
+        for blockers in ("**Blockers:** none", "**Blockers:**\nnone", "Blockers:\n  none.",
+                         "Blockers: —", "Blockers: -", "**Blockers:** _none_",
+                         "## Blockers\n\n`none`\n", "Blockers:\n  —", "**Blockers**: None found"):
+            text = "**VERDICT: PASS**\n\n%s\n\n**Notes (non-blocking):**\n- N1. x — a.py:1\n" \
+                   "**Acceptance:** met\n" % blockers
+            with self.subTest(blockers=blockers):
+                self.assertEqual(score.parse(text), {"verdict": "PASS", "blockers": []})
+
+    def test_parse_markdown_entries(self):
+        for entries in ("1. bad — a.py:2\n2. worse — b.py:3", "- bad — a.py:2\n- worse — b.py:3",
+                        "* bad — a.py:2\n* worse — b.py:3", "1) bad — a.py:2\n2) worse — b.py:3",
+                        "- **B1.** bad — a.py:2\n- **B2.** worse — b.py:3",
+                        "**B1.** bad — a.py:2\n**B2.** worse — b.py:3"):
+            text = "VERDICT: CHANGES REQUIRED\n**Blockers:**\n%s\n**Notes:** none\n" % entries
+            with self.subTest(entries=entries):
+                found = score.parse(text)["blockers"]
+                self.assertEqual(len(found), 2, found)
+                self.assertIn("a.py:2", found[0])
+                self.assertIn("b.py:3", found[1])
+
+    def test_a_bolded_markdown_review_scores_found(self):
+        line = KEYS[case_of("l1-off-by-one")]["locations"][0]["lines"][0]
+        text = ("**VERDICT: CHANGES REQUIRED**\n\n**Reviewed SHA:** `%s`\n\n**Blockers:**\n\n"
+                "1. **Page count** — reproducible bug — `pager.py:%d` — 10 items of 5 give 3 "
+                "pages\n\n**Notes (non-blocking):** none\n\n**Acceptance:** not met\n"
+                % ("1" * 40, line))
+        result = self.grade("l1-off-by-one", text)
+        self.assertEqual((result["outcome"], result["right"], result["extra"]), ("found", True, 0))
+
     def test_found_by_line_or_by_term(self):
-        line = self.keys["rc-l1-off-by-one"]["locations"][0]["lines"][1]
+        line = KEYS[case_of("l1-off-by-one")]["locations"][0]["lines"][1]
         for blocker in ("B1. page count — reproducible bug — pager.py:%d — 10 items give 3" % line,
                         "B1. page count — bug — `pager.py:%d-%d`" % (line - 5, line + 1),
                         "B1. wrong count — unmet acceptance criterion — /tmp/x/pager.py — "
                         "page_count(10, 5) returns 3",
                         "B1. page_count is off by one for an exact multiple (pager.py)"):
             with self.subTest(blocker=blocker):
-                result = self.grade("rc-l1-off-by-one", answer("CHANGES REQUIRED", blocker))
+                result = self.grade("l1-off-by-one", answer("CHANGES REQUIRED", blocker))
                 self.assertEqual((result["outcome"], result["right"], result["extra"]),
                                  ("found", True, 0))
 
@@ -354,62 +500,90 @@ class ScoreTest(unittest.TestCase):
                                                 "— off by one in the name"),
                      answer("CHANGES REQUIRED", "B1. wrong import — bug — pager.py:1 — unused")):
             with self.subTest(text=text.split("Blockers:")[1][:60]):
-                result = self.grade("rc-l1-off-by-one", text)
+                result = self.grade("l1-off-by-one", text)
                 self.assertEqual((result["outcome"], result["right"]), ("missed", False))
-        result = self.grade("rc-l1-off-by-one", "The reviewer did not answer.")
+        result = self.grade("l1-off-by-one", "The reviewer did not answer.")
         self.assertEqual((result["outcome"], result["right"]), ("no verdict", False))
 
+    def test_a_wrong_fault_on_the_right_file_is_missed(self):
+        for name, blocker in (
+                ("l3-caller-not-updated", "B1. No test for the CLI — cli.py:1"),
+                ("l3-contract-change", "B1. Missing type hints — store.py:12 — find should "
+                                       "record its return type"),
+                ("l2-wrong-condition", "B1. docstring does not mention max_attempts — "
+                                       "retry.py:12"),
+                ("l4-readme-drift", "B1. README.md:3 — the default heading wording is vague")):
+            with self.subTest(case=name):
+                self.assertEqual(self.outcome(name, blocker), "missed")
+
     def test_cross_file_and_doc_and_guard_cases(self):
-        for case, blocker in (
-                ("rc-l3-caller-not-updated", "B1. caller — bug — cli.py:8 — passes a string"),
-                ("rc-l3-contract-change", "B1. KeyError — bug — service.py — record() breaks"),
-                ("rc-l4-readme-drift", "B1. wrong default — record misstatement — README.md:7 — "
-                                       "says 20, code uses 10"),
-                ("rc-l4-plan-drift", "B1. change log — plan misstatement — "
-                                     "docs/LIVING_PLAN.md:32 — no accent folding"),
-                ("rc-weakened-test", "B1. skipped test — missing required test — "
-                                     "tests/test_phone.py:20 — @unittest.skip hides a failure"),
-                ("rc-zero-tests", "B1. zero tests — validation failure — run_tests.py — "
-                                  "Ran 0 tests after the rename to tests/slug_test.py")):
-            with self.subTest(case=case):
-                self.assertEqual(self.grade(case, answer("CHANGES REQUIRED", blocker))["outcome"],
-                                 "found")
+        for name, blocker in (
+                ("l3-caller-not-updated", "B1. caller — bug — cli.py:8 — passes a string"),
+                ("l3-caller-not-updated", "B1. load() now takes a list but cli.py hands it "
+                                          "argv[1], so it iterates the characters"),
+                ("l3-contract-change", "B1. KeyError — bug — service.py — record() breaks"),
+                ("l3-contract-change", "B1. service.py still does an is None check, and the "
+                                       "first visit of a page now raises"),
+                ("l2-wrong-condition", "B1. retry.py — a 429 never counts against the attempt "
+                                       "limit, so it retries forever"),
+                ("l4-readme-drift", "B1. wrong default — record misstatement — README.md:7 — "
+                                    "says 20, code uses 10"),
+                ("l4-readme-drift", "B1. README.md says the page size defaults to 20; the "
+                                    "code's default is 10"),
+                ("l4-plan-drift", "B1. change log — plan misstatement — "
+                                  "docs/LIVING_PLAN.md:32 — no accent folding"),
+                ("weakened-test", "B1. skipped test — missing required test — "
+                                  "tests/test_phone.py:20 — @unittest.skip hides a failure"),
+                ("zero-tests", "B1. zero tests — validation failure — run_tests.py — "
+                               "Ran 0 tests after the rename to tests/slug_test.py"),
+                ("zero-tests", "B1. tests/test_slug.py was renamed and is not discovered"),
+                ("zero-tests", "B1. validation failure — the suite ran 0 tests"),
+                ("weakened-test", "B1. the international-number test is skipped")):
+            with self.subTest(case=name, blocker=blocker):
+                self.assertEqual(self.outcome(name, blocker), "found")
+        self.assertEqual(self.outcome("zero-tests", "B1. tests/test_slug.py:4 — weak assert"),
+                         "missed")
 
     def test_false_alarms(self):
-        for case in ("rc-decoy-for-else", "rc-clean-clamp"):
-            with self.subTest(case=case):
-                self.assertEqual(self.grade(case, answer("PASS"))["outcome"], "pass")
-                self.assertEqual(self.grade(case, answer("PASS WITH NOTES"))["right"], True)
-                alarm = self.grade(case, answer("CHANGES REQUIRED", "B1. x — bug — args.py:9"))
+        for name in ("decoy-for-else", "clean-clamp"):
+            with self.subTest(case=name):
+                self.assertEqual(self.grade(name, answer("PASS"))["outcome"], "pass")
+                self.assertEqual(self.grade(name, answer("PASS WITH NOTES"))["right"], True)
+                alarm = self.grade(name, answer("CHANGES REQUIRED", "B1. x — bug — args.py:9"))
                 self.assertEqual((alarm["outcome"], alarm["right"]), ("false alarm", False))
-                odd = self.grade(case, answer("PASS", "B1. x — bug — args.py:9"))
+                odd = self.grade(name, answer("PASS", "B1. x — bug — args.py:9"))
                 self.assertEqual(odd["outcome"], "false alarm")
 
     def test_round_2(self):
-        fixed = self.grade("rc-round2-fixed", answer("PASS"))
-        self.assertEqual((fixed["outcome"], fixed["right"]), ("accepted", True))
-        refused = self.grade("rc-round2-fixed", answer("CHANGES REQUIRED", "B1. x — bug — a.py"))
+        for verdict in ("PASS", "PASS WITH NOTES"):
+            fixed = self.grade("round2-fixed", answer(verdict))
+            self.assertEqual((fixed["outcome"], fixed["right"]), ("accepted", True))
+        refused = self.grade("round2-fixed", answer("CHANGES REQUIRED", "B1. x — bug — a.py"))
         self.assertEqual((refused["outcome"], refused["right"]), ("rejected", False))
-        caught = self.grade("rc-round2-unfixed", answer(
+        caught = self.grade("round2-unfixed", answer(
             "CHANGES REQUIRED", "B1. B1 still present — bug — ports.py:14 — 65536 accepted"))
         self.assertEqual((caught["outcome"], caught["right"], caught["named"]),
                          ("rejected", True, True))
-        fooled = self.grade("rc-round2-unfixed", answer("PASS"))
+        fooled = self.grade("round2-unfixed", answer("PASS"))
         self.assertEqual((fooled["outcome"], fooled["right"]), ("accepted", False))
 
     def test_report_from_a_folder(self):
         tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, tmp)
-        files = {"rc-l1-off-by-one.txt": answer("CHANGES REQUIRED", "B1. off by one (pager.py)"),
-                 "rc-l2-empty-input.txt": answer("PASS"),
-                 "rc-decoy-for-else.1.txt": answer("PASS"),
-                 "rc-decoy-for-else.2.txt": answer("CHANGES REQUIRED", "B1. x — bug — args.py"),
-                 "rc-round2-unfixed.txt": answer("CHANGES REQUIRED", "B1. x — y — ports.py"),
-                 "rc-clean-clamp.txt": "no answer", "notes.txt": "ignored"}
+        files = {"l1-off-by-one.txt": answer("CHANGES REQUIRED", "B1. off by one (pager.py)"),
+                 "l2-empty-input.txt": answer("PASS"),
+                 "decoy-for-else.1.txt": answer("PASS"),
+                 "decoy-for-else.2.txt": answer("CHANGES REQUIRED", "B1. x — bug — args.py"),
+                 "round2-unfixed.txt": answer("CHANGES REQUIRED", "B1. x — y — ports.py"),
+                 "clean-clamp.txt": "no answer"}
         for name, text in files.items():
-            with open(os.path.join(tmp, name), "w", encoding="utf-8") as fh:
+            label, rest = name.split(".", 1)
+            with open(os.path.join(tmp, case_of(label) + "." + rest), "w",
+                      encoding="utf-8") as fh:
                 fh.write(text)
-        lines, totals = score.report(score.runs_from_folder(tmp, self.keys), self.keys)
+        with open(os.path.join(tmp, "notes.txt"), "w", encoding="utf-8") as fh:
+            fh.write("ignored")
+        lines, totals = score.report(score.runs_from_folder(tmp, KEYS), KEYS)
         self.assertEqual(totals["runs"], 6)
         self.assertEqual(totals["recall"]["L1"], [1, 1])
         self.assertEqual(totals["recall"]["L2"], [0, 1])
@@ -457,19 +631,19 @@ class ScoreTest(unittest.TestCase):
         with open(os.path.join(tmp, "trace.jsonl"), "w", encoding="utf-8") as fh:
             fh.write("\n".join(json.dumps(event) for event in events) + "\nnot json\n")
         result = {"schemaVersion": 1, "costUsd": 0.5, "cases": [
-            {"name": "rc-l1-off-by-one", "arms": {"with": [
+            {"name": case_of("l1-off-by-one"), "arms": {"with": [
                 {"score": 1, "costUsd": 0.41, "tracePath": "trace.jsonl", "graders": []}]}},
             {"name": "plugin-agent-spawn", "arms": {"with": [{"costUsd": 9}]}}]}
         path = os.path.join(tmp, "aggregate-result.json")
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(result, fh)
-        runs = score.runs_from_result(path, self.keys)
-        self.assertEqual([(r[0], r[1], r[3]) for r in runs], [("rc-l1-off-by-one", 1, 0.41)])
+        runs = score.runs_from_result(path, KEYS)
+        self.assertEqual([(r[0], r[1], r[3]) for r in runs], [(case_of("l1-off-by-one"), 1, 0.41)])
         self.assertEqual(runs[0][2], review)
         self.assertEqual(runs[0][4], {
             "all": {"input": 103, "cache read": 1030, "cache write": 206, "output": 103},
             "reviewer": {"input": 100, "cache read": 1000, "cache write": 200, "output": 100}})
-        lines, totals = score.report(runs, self.keys)
+        lines, totals = score.report(runs, KEYS)
         self.assertEqual((totals["recall"]["all"], totals["cost USD"]), ([1, 1], 0.41))
         self.assertIn("tokens reviewer: input 100, cache read 1000, cache write 200, output 100",
                       lines)
@@ -500,12 +674,20 @@ class RunnerTest(unittest.TestCase):
                      "--runs 1", "-j 1", "--max-cost-usd 15", "--output-dir "):
             self.assertIn(part, text)
         self.assertNotIn("--case", run)
-        self.assertEqual(score_command[-1], os.path.join(
-            HERE, "results", "reviewer-calibration-T", "aggregate-result.json"))
+        repo = os.path.dirname(os.path.dirname(PLUGIN))
+        self.assertEqual(run[run.index("--output-dir") + 1], os.path.join(repo, "evals-results",
+                                                                          "T"))
+        self.assertEqual(score_command[-1], os.path.join(repo, "evals-results", "T",
+                                                         "aggregate-result.json"))
+        self.assertEqual(score.KEYS, os.path.join(repo, "evals-keys", CALIBRATION))
+        self.assertNotIn("--trust-plugin", run)
+        ignored = read(os.path.join(repo, ".gitignore")).split("\n") if os.path.isfile(
+            os.path.join(repo, ".gitignore")) else ["evals-results/"]
+        self.assertIn("evals-results/", ignored)
         run = self.command("--max-cost-usd", "2.5", "--model", "opus", "--runs", "3", "-j",
-                           "2", "--case", "rc-l1-*")[0]
+                           "2", "--case", "rc-0?")[0]
         self.assertIn("--model opus --runs 3 -j 2 --max-cost-usd 2.5", " ".join(run))
-        self.assertEqual(run[-2:], ["--case", "rc-l1-*"])
+        self.assertEqual(run[-2:], ["--case", "rc-0?"])
 
     def test_a_ceiling_is_required_and_bad_values_refused(self):
         for argv in ([], ["--max-cost-usd", "0"], ["--max-cost-usd", "x"],
@@ -528,7 +710,8 @@ class RunnerTest(unittest.TestCase):
 
 
 class ReadmeTest(unittest.TestCase):
-    """The README's command for the invariant cases leaves this suite out; it names this one."""
+    """The README's command for the invariant cases leaves this suite out; it names this one,
+    where its keys and results live, and its limits."""
 
     def setUp(self):
         if not os.path.isfile(README):
@@ -542,6 +725,20 @@ class ReadmeTest(unittest.TestCase):
         self.assertIn("python3 plugins/manager-plugin/evals/reviewer-calibration/run.py "
                       "--max-cost-usd", self.text)
         self.assertIn("plugins/manager-plugin/evals/reviewer-calibration/", self.text)
+        self.assertIn("`evals-keys/reviewer-calibration/<case>.json` at the repository root",
+                      self.text)
+        self.assertIn("`evals-results/<UTC time>/` at the repository root", self.text)
+
+    def test_trust_and_the_residual_risk(self):
+        self.assertIn("run.py passes no `--trust-plugin`, so the first run asks you to trust the "
+                      "plugin interactively", self.text)
+        self.assertIn("Limits: a run's session can still read your home folder", self.text)
+
+    def test_no_mapping_in_the_readme(self):
+        section = self.text.split("### Reviewer calibration")[1]
+        for name in NAMES:
+            self.assertNotIn("rc-" + name, section)
+        self.assertEqual(sorted(set(re.findall(r"rc-[0-9]{2}", section))), ["rc-01", "rc-20"])
 
 
 if __name__ == "__main__":

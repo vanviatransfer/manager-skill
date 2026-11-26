@@ -1502,14 +1502,19 @@ license is unclear). Owner rule: built and tested only; the paid run waits for t
 No change to the reviewer, its brief, the manager skill or a hook; nothing runs in a normal run.
 
 - **Where.** `plugins/manager-plugin/evals/reviewer-calibration/`: 20 `claude plugin eval` cases
-  (`case.yaml`, `prompt.md`, `scaffold.sh`, `graders/`, `answer.json`), the shared `fixture.sh`,
-  `score.py` and `run.py`. Each scaffold builds a tiny standard-library Python repository (66-101
+  `rc-01` to `rc-20` in a shuffled order (`case.yaml`, `prompt.md`, `scaffold.sh`, `graders/`),
+  the shared `fixture.sh`, `score.py` and `run.py`. Nothing in a case (description, the one shared
+  tag, prompt, file names, commit messages, branches) tells its kind. The answer keys are
+  `evals-keys/reviewer-calibration/<case>.json` at the repository root, outside the plugin folder;
+  only they map an id to its kind (the labels below are their `name` fields). Each scaffold builds a tiny standard-library Python repository (66-101
   lines in all): rules, a one-phase plan with acceptance criteria (`plan.py check` passes), the
   base on `main`, pull request #1's candidate on `phase/P1` (round 2: two commits), a local mirror,
-  the checkout on the candidate. The session sends one `manager-plugin:reviewer` the reviewer
+  the checkout on the candidate; the local git config records the absolute path of the plugin's
+  reviewer brief (`eval.reviewerbrief`), since a fixture without a code map gets no plugin start
+  line to find it from. The session sends one `manager-plugin:reviewer` the reviewer
   brief's dispatch and relays its answer. Validation (`python3 run_tests.py`) exits 0 at every
   candidate, so no planted bug is caught by the tests alone.
-- **Cases.** Planted, L1 obvious: `rc-l1-off-by-one` (`page_count` = `total // size + 1`),
+- **Cases** (key labels; the id of each is in its key). Planted, L1 obvious: `rc-l1-off-by-one` (`page_count` = `total // size + 1`),
   `rc-l1-wrong-operator` (`>` where the acceptance says at least). L2 logic: `rc-l2-empty-input`
   (`mean([])` divides by zero), `rc-l2-wrong-condition` (a 429 skips the attempt limit). L3
   cross-file: `rc-l3-caller-not-updated` (`load(paths)`, `cli.py` still passes one string),
@@ -1524,19 +1529,26 @@ No change to the reviewer, its brief, the manager skill or a hook; nothing runs 
   both L4 cases, same base). Round 2, with `Previous blockers`: `rc-round2-fixed` (a real fix),
   `rc-round2-unfixed` (0 refused, 65536 still accepted).
 - **Graders.** In the run (free, regex and `tool_used`): a reviewer got this candidate, the final
-  message holds a verdict line, the verdict the key expects, no `answer.json` in the trace.
+  message holds a verdict line, and the trace names none of `reviewer-calibration`, `evals-keys`,
+  `evals-results`, `evals/results`, `score.py`, `test_reviewer_calibration`, `answer.json` (the
+  brief, the reviewer agent and the workspace hold none of them; a test checks it). No grader on
+  the expected verdict: a case's graders would tell it.
   `score.py` (deterministic, blind; reads `aggregate-result.json`, each run's trace, and the keys):
   the reviewer's own answer (the Agent tool result, else the final message), its `VERDICT` and
-  `B<n>.` blockers. Planted: found when a blocker names a key file and a line in the key's range
-  (`file:12`, `file:10-14`) or a key term; decoy or clean: any blocker or CHANGES REQUIRED is a
-  false alarm; round 2: accept the fixed one (PASS, no blocker), refuse the unfixed one. Report:
+  blockers (`B<n>.`, `-`, `1.` entries; markdown bold, `none` on the heading or the next line, or
+  a lone dash, is no blocker). Planted: found when a blocker names a key file and a line in the
+  key's range (`file:12`, `file:10-14`) or a key term (tight terms: no file names or generic
+  words; a guard case's term counts without a file); decoy or clean: any blocker or CHANGES REQUIRED is a
+  false alarm; round 2: accept the fixed one (PASS, no blocker), refuse the unfixed one (PASS or PASS WITH NOTES with no blocker is accept). Report:
   per run, recall per level and overall, false-alarm rate (decoys, clean, both; runs without a
   verdict apart), round-2 right, no-verdict runs, cost (`costUsd`) and tokens (input, cache read,
   cache write, output; all agents and the reviewer's share, each message id once).
 - **Runner.** `run.py --max-cost-usd USD` (required) `[--model sonnet|opus] [--runs N] [-j N]
   [--case GLOB] [--dry-run]`, defaults Sonnet, 1 run, `-j 1`: `claude plugin eval` with `--tag
   reviewer-calibration --ablation none --scaffold --no-publish --allow-tools Agent Bash ToolSearch
-  --max-cost-usd` (the CLI's hard ceiling, checked before each run), then `score.py`. The
+  --max-cost-usd` (the CLI's hard ceiling, checked before each run) `--output-dir
+  evals-results/<UTC time>` (repository root, git-ignored), then `score.py`. No `--trust-plugin`:
+  the first run asks to trust the plugin interactively. The
   README's command for the invariant cases now names their tags, so it leaves this suite out.
 - **Estimated tokens per run** (one run of the 20 cases; not measured, estimated from fixture size
   and `usage.py` on this repository's local reviewer transcripts): the 33 reviewer subagents of
@@ -1552,21 +1564,26 @@ No change to the reviewer, its brief, the manager skill or a hook; nothing runs 
 - **Pilot** (1 run, Sonnet, capped; from the repository root):
   `python3 plugins/manager-plugin/evals/reviewer-calibration/run.py --max-cost-usd 15`
   (`--dry-run` first prints the exact `claude plugin eval` command). Start smaller with
-  `--case 'rc-l1-*'`.
-- **Tests (free).** `evals/test_reviewer_calibration.py`: the mix, every case valid in the
+  `--case rc-01` (one case; the CLI's glob takes `*` and `?`; pick ids from the keys).
+- **Tests (free).** `evals/test_reviewer_calibration.py`: the mix, the keys outside the plugin,
+  no kind hint in any case and a shuffled order, the blind pattern absent from the prompt, the
+  briefs, the reviewer agent and every workspace, every case valid in the
   `test_evals.py` format and tagged for this suite only, one prompt apart from its commits and
   previous blocker and naming no answer, the graders; every scaffold run twice (same SHAs), the
   prompt's commits, a clean tree, under 150 lines, no key in the workspace, the plan check,
-  validation exit 0 (0 tests only in `rc-zero-tests`), each key's probe failing exactly at the
+  validation exit 0 (0 tests only in the zero-tests case), each key's probe failing exactly at the
   planted and unfixed candidates, each key's lines holding its marker; `score.py` on hand-written
-  answers (found by line and by term, missed, no verdict, false alarm, round 2) and on a result
+  answers (found by line and by term, markdown answers, wrong faults on the right file missed,
+  missed, no verdict, false alarm, round 2) and on a result
   with its trace; `run.py`'s command and its required ceiling. `test_evals.py` leaves the suite out
   of its invariant checks.
 - **Limits.** The `aggregate-result.json` shape (`cases[].arms.with[]`, `costUsd`, `tracePath`)
   is read from the 2.1.332 CLI, not from a run. The term match is approximate (a blocker about
   another fault that names the file and a key term counts as found); the probe and line markers
-  keep the keys true to the fixtures. The answer keys sit in the plugin folder, which the session
-  can read; the `blind` grader fails a run whose trace names `answer.json`.
+  keep the keys true to the fixtures. Residual risk: the session can still read the home folder,
+  keys and results included; only the `blind` grader catches it. Not checked from a run: how the
+  CLI names a case's scaffold folder and whether a trace shows the output folder (either holding
+  `reviewer-calibration` or `evals-results` would fail an honest run's blind grader).
 - **Also (0.9.14 review follow-ups).** `test_usage.py`: `StreakTest` and its helpers above the
   `__main__` guard. Item 27: brief word counts as the test counts them. `test_invisible_unicode`
   `test_reference_files_are_checked_too` routes its files in `## Knowledge`, so the clean skill

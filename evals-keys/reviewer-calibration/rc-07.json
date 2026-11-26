@@ -1,0 +1,30 @@
+{
+  "case": "rc-07",
+  "name": "l1-off-by-one",
+  "kind": "planted",
+  "level": "L1",
+  "summary": "`total // size + 1` over-counts when `total` is a multiple of `size` (10, 5 -> 3) and for no items (0, 5 -> 1)",
+  "locations": [
+    {
+      "file": "pager.py",
+      "lines": [
+        12,
+        12
+      ],
+      "text": "return total // size + 1"
+    }
+  ],
+  "terms": [
+    "off-by-one",
+    "off by one",
+    "exact multiple",
+    "divisible",
+    "10, 5",
+    "0, 5",
+    "ceil",
+    "rounds up",
+    "one too many",
+    "one page too many"
+  ],
+  "probe": "from pager import page_count\nassert page_count(10, 5) == 2 and page_count(0, 5) == 0"
+}

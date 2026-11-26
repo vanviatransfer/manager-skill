@@ -1,3 +1,0 @@
-schema_version: "1.1"
-name: rc-round2-unfixed
-context: {scaffold_script: scaffold.sh}

@@ -1,0 +1,10 @@
+{
+  "case": "rc-02",
+  "name": "decoy-guarded-none",
+  "kind": "decoy",
+  "level": null,
+  "summary": "correct: `text or \"\"` guards None and `match and ...` gives None without a match",
+  "locations": [],
+  "terms": [],
+  "probe": "from text import first_word as f\nassert f(\"  hi there\") == \"hi\" and f(\"\") is None and f(\"   \") is None and f(None) is None"
+}

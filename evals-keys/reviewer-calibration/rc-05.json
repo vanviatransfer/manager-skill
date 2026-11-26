@@ -1,0 +1,40 @@
+{
+  "case": "rc-05",
+  "name": "zero-tests",
+  "kind": "planted",
+  "level": "guard",
+  "summary": "`tests/test_slug.py` became `tests/slug_test.py`, which `run_tests.py`'s `test_*.py` pattern skips: validation exits 0 with 0 tests run",
+  "locations": [
+    {
+      "file": "tests/slug_test.py",
+      "lines": [
+        3,
+        6
+      ],
+      "text": "class SlugifyTest(unittest.TestCase):"
+    },
+    {
+      "file": "run_tests.py",
+      "lines": [
+        6,
+        6
+      ],
+      "text": "pattern=\"test_*.py\""
+    },
+    {
+      "file": "tests/test_slug.py",
+      "lines": null,
+      "text": null
+    }
+  ],
+  "terms": [
+    "0 tests",
+    "zero tests",
+    "no tests",
+    "Ran 0",
+    "NO TESTS RAN",
+    "not discovered",
+    "test_*.py"
+  ],
+  "probe": "import subprocess, sys\nout = subprocess.run([sys.executable, \"run_tests.py\"], capture_output=True, text=True)\nassert \"Ran 0 tests\" not in out.stderr, out.stderr"
+}

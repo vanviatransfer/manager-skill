@@ -9,11 +9,13 @@ the plugin on (`--ablation none`), each case's scaffold, no published report and
 cases need (`Agent Bash ToolSearch`). Every run is a paid session: the cost ceiling is required
 and passed as `--max-cost-usd` (the runner stops launching runs once it is reached, exit 2, and
 reports what it has). Defaults: `--model sonnet` (the reviewer inherits the session's model;
-`opus` for the stronger tier), `--runs 1`, `-j 1`. The result goes to
-`evals/results/reviewer-calibration-<UTC time>/` (git ignores it); score.py then reads its
-`aggregate-result.json`, and run.py exits with score.py's code (the eval's exit code is printed:
-a planted bug the reviewer misses fails that case's verdict grader). `--dry-run` prints both
-commands and runs nothing. Standard library only.
+`opus` for the stronger tier), `--runs 1`, `-j 1`. The result goes to `evals-results/<UTC
+time>/` at the repository root (git ignores it), outside the plugin folder that a run's session
+can read, so a later run finds no earlier trace there; score.py then reads its
+`aggregate-result.json`, and run.py exits with score.py's code (the eval's exit code is printed;
+its graders check the dispatch, the relayed answer and blindness, not the verdict, which only
+score.py grades). run.py passes no `--trust-plugin`: the first run asks to trust the plugin
+interactively. `--dry-run` prints both commands and runs nothing. Standard library only.
 """
 import argparse
 import os
@@ -24,6 +26,7 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PLUGIN = os.path.dirname(os.path.dirname(HERE))
+REPO = os.path.dirname(os.path.dirname(PLUGIN))
 MODELS = ("sonnet", "opus")
 TOOLS = ("Agent", "Bash", "ToolSearch")
 
@@ -54,7 +57,7 @@ def parser():
 
 def commands(args, stamp):
     """(the eval command, the score command) as argument lists."""
-    out = os.path.join(PLUGIN, "evals", "results", "reviewer-calibration-" + stamp)
+    out = os.path.join(REPO, "evals-results", stamp)
     if not 1 <= args.concurrency <= 8 or args.runs > 50:
         raise SystemExit("run.py: -j is 1-8 and --runs at most 50")
     run = ["claude", "plugin", "eval", PLUGIN, "--tag", "reviewer-calibration",

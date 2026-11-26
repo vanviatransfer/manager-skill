@@ -1,3 +1,0 @@
-schema_version: "1.1"
-name: rc-l2-wrong-condition
-context: {scaffold_script: scaffold.sh}

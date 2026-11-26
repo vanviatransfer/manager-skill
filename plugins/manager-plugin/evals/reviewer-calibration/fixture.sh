@@ -1,11 +1,11 @@
-# Shared by the scaffold scripts of the reviewer-calibration cases; sourced, never run.
+# Shared by the scaffold scripts of this suite's cases; sourced, never run.
 #
 # Builds a tiny synthetic Python project in the current directory (an eval run's working
 # directory): project rules, a living plan with one phase P1, a test runner, then whatever the
 # case writes. The default branch `main` holds the base commit; the branch `phase/P1` holds the
 # candidate (pull request #1). Names, dates and content are fixed, so every commit has the same SHA
-# on every machine: the case's prompt names them and `test_reviewer_calibration.py` checks it.
-# The answer key (`answer.json` beside the scaffold) never enters the workspace.
+# on every machine: the case's prompt names them and this suite's test checks it.
+# No answer key enters the workspace, and no case name or file name tells the case's kind.
 
 set -eu
 
@@ -95,7 +95,17 @@ rc_branch() {
 }
 
 # Both branches go to the mirror; the checkout is left on the candidate, detached and clean.
+# The local git config records the absolute path of this plugin's reviewer brief
+# (`eval.reviewerbrief`, found from the scaffold's own path), which the case's prompt reads: the
+# fixture has no code map, so no plugin start line names the plugin's folder. Config is not
+# committed, so the SHAs stay fixed.
 rc_publish() {
+  rc_brief=$(cd "$(dirname "$0")/../../.." && pwd)/skills/manager/references/reviewer-brief.md
+  if [ ! -f "$rc_brief" ]; then
+    echo "fixture: no reviewer brief at $rc_brief" >&2
+    exit 1
+  fi
+  git config eval.reviewerbrief "$rc_brief"
   git init -q --bare .git/fixture-origin.git
   git --git-dir=.git/fixture-origin.git symbolic-ref HEAD refs/heads/main
   git remote add origin "$PWD/.git/fixture-origin.git"

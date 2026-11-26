@@ -1,0 +1,27 @@
+{
+  "case": "rc-20",
+  "name": "l4-plan-drift",
+  "kind": "planted",
+  "level": "L4",
+  "summary": "the change-log line says `slugify` folds accents (`Café` gives `cafe`); it gives `caf`",
+  "locations": [
+    {
+      "file": "docs/LIVING_PLAN.md",
+      "lines": [
+        32,
+        32
+      ],
+      "text": "folds accented letters"
+    }
+  ],
+  "terms": [
+    "accent",
+    "ASCII",
+    "Café",
+    "cafe",
+    "fold",
+    "folding",
+    "diacritic"
+  ],
+  "probe": "from slug import slugify\nassert slugify(\"Café\") == \"cafe\""
+}
