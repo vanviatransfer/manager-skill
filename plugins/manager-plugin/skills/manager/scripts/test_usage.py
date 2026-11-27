@@ -970,6 +970,18 @@ class MeasureTest(Fixture):
                         "cat f | tee out > copy", "sed -ne 1p f"):
             self.assertEqual(usage.bash_read(command), True, command)
 
+    def test_only_the_first_command_and_unquoted_operators_count(self):
+        """A `;` glued to a word and a newline end the first command; a quoted `>` is text."""
+        for command in ("sed -n 1,5p f; grep -i x g", "sed -n 1p f\ngrep -i x g",
+                        "cat f; git log --format='<%ae>'", "sed -n '/<div>/p' f", "cat 'a>b'",
+                        "cat f 1>&2", "cat f >&2", "cat f\necho a > b", "S=x; cat f",
+                        "sed -n 1p f && sed -i s/a/b/ f", "cat f|head>out", "cat < f"):
+            self.assertEqual(usage.bash_read(command), True, command)
+        for command in ("S=x; sed -i s/a/b/ f", "S=x sed -i s/a/b/ f", "sed -n 1p f > out",
+                        "sed -ni 1p f", "cat f>out", "cat f >&out", "cat f &>out; ls",
+                        "cat <<'EOF'\nhi\nEOF", "cat <<EOF > f\nx\nEOF", "cat <<< x"):
+            self.assertEqual(usage.bash_read(command), False, command)
+
     def test_carried_chars_of_a_long_transcript_are_quick(self):
         """Each result walks only the compactions after it, never the events: 20,000 results
         and a compaction halfway that preserves nothing, about a second here (the scan of the

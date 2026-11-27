@@ -159,8 +159,9 @@ agent, and the search count only looks at a Bash command's first word.
 
 Since plugin 0.9.24 (by hand, for measuring before building more): each `tools` line also gives
 `carried chars` (a result's characters times the later requests that still held it, up to a
-compaction that dropped it; an upper bound) and the lines are sorted by it; the `reads` line adds
-Bash file reads (`cat`, `head`, `sed -n` ...; not with an output redirection or `sed -i`);
+compaction that dropped it; an upper bound, except a lower bound for a span ended by a
+`compact_boundary` without `preservedMessages`) and the lines are sorted by it; the `reads` line
+adds Bash file reads (`cat`, `head`, `sed -n` ...; not with an output redirection or `sed -i`);
 `--streaks` adds an `errors` line (errors, distinct error signatures, repeats); `--prefix` gives
 each agent's first request as a share of its input tokens (about its fixed prefix); `--after-green`
 gives what it spent after its last edit passed a test command. All heuristics are listed in the
@@ -405,8 +406,9 @@ it is set or changes, and the hooks fall back to the summary.
   file: the notes are in that file and come back after the compaction, so the summary keeps only
   a line not yet in it. Without one: keep the run's working-notes lines verbatim (the run id and
   model strategy, the rules files and rulings sent with every dispatch, owner answers not yet in
-  the plan, the phase in flight with its PR, branch and SHAs). Both leave out code, file
-  contents, diffs and skill or brief text, which can be re-read from the repository.
+  the plan, the phase in flight with its PR, branch and SHAs). Both keep any subagent result
+  not yet acted on and uncommitted work, and leave out code, file contents and diffs in the
+  repository and plugin skill or brief text.
 - `SessionStart` with matcher `compact`: one line after the compaction, to re-read the manager
   skill and the references whose triggers apply, and never to work from a summary of a file;
   then the notes file verbatim, whole lines up to 8,000 characters (a longer file is cut, and a

@@ -99,15 +99,17 @@ changed the order of the `tools` lines; the lines had no consumer.)
   `mentions` (the first action word after `codemap.py`); other map calls, those with another
   action or none found; searches, Grep and Glob calls and Bash calls whose first command is
   `grep`, `rg`, `find` or `git grep`. The first command is the first word after any leading
-  `cd ... &&`, variable assignments (`A=b`) and `timeout [options] N` (with an option's value
-  word: `-s KILL`, `-k 5`, `--signal KILL`, `--kill-after 5`); a search later in a pipeline or
-  after another command is not seen.
+  `cd ... &&`, variable assignments (`A=b`, `A=b;`) and `timeout [options] N` (with an option's
+  value word: `-s KILL`, `-k 5`, `--signal KILL`, `--kill-after 5`); a search later in a
+  pipeline or after another command is not seen.
 - bash reads: Bash calls whose first command (found as for searches) is `cat`, `head`,
   `tail`, `nl`, `less`, `more` or `bat`, or `sed` with `-n` (also in `-ne`, or
   `--quiet`/`--silent`) and without `-i` (`sed -ni`, `sed -n -i` edit), and that do not redirect
-  its output (`cat > f`, `cat f>out`, `cat f 1> out` write; `2>/dev/null` is no such
-  redirection); bash read chars: their results' characters. A read later in a pipeline or after
-  another command is not seen.
+  its output to a file (`cat > f`, `cat f>out`, `cat f 1> out`, `&> f` write; `2>/dev/null` and
+  `1>&2` do not), nor read a here-document (`cat <<EOF`); bash read chars: their results'
+  characters. Only the first command is judged: it ends at an unquoted `;`, `|`, `&`, `&&`,
+  `||` or newline, and a quoted `>` is text. A read later in a pipeline or after another command
+  is not seen.
 
 The tool names are printed, never their inputs, paths or commands; `unknown` (one `tools` line)
 for a transcript that can't be read. `--since` bounds them too.
@@ -416,14 +418,17 @@ def words(command):
         return command.split()
 
 
-def first(command):
-    """The first command's words, without a leading `cd ... &&`, assignments and `timeout`."""
-    found = words(command)
+def first(command, found=None):
+    """The first command's words, without a leading `cd ... &&`, assignments and `timeout`
+    (`found`: the command's words already split)."""
+    found = words(command) if found is None else found
     while found:
         if found[0] == "cd" and "&&" in found:
             found = found[found.index("&&") + 1:]
         elif ASSIGNED.match(found[0]):
             found = found[1:]
+            if found and found[0] in (";", "&&", "\n"):  # `S=x; cat f`: cat is the first
+                found = found[1:]
         elif found[0] == "timeout":
             found = found[1:]
             while found and found[0].startswith("-"):
@@ -441,32 +446,52 @@ def search(command):
 
 
 READERS = ("cat", "head", "tail", "nl", "less", "more", "bat")  # a Bash command that reads a file
-OPERATORS = ("|", "||", "&&", ";", "&")
+PUNCTUATION = ";&|<>()\n"  # shell operators, split from the words around them
 
 
-def redirected(word):
-    """True for a word holding a redirection of standard output (`>f`, `f>out`, `1>`, `>>`,
-    `&>`); one of another descriptor (`2>/dev/null`, `2>&1`) is not."""
-    for at, char in enumerate(word):
-        if char == ">" and not (word[:at].isdigit() and word[:at] != "1") \
-                and word[at - 1:at] != ">":  # `>>`: one redirection
-            return True
-    return False
+def tokens(command):
+    """The command's words and unquoted operators (`;`, `|`, `&&`, a newline, `>`, `2`, `>&`
+    ...), quotes removed; an unclosed quote: split at white space."""
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=PUNCTUATION)
+    lexer.whitespace, lexer.whitespace_split = " \t\r", True
+    try:
+        return list(lexer)
+    except ValueError:
+        return command.split()
+
+
+def operator(token):
+    return token != "" and all(char in PUNCTUATION for char in token)
 
 
 def bash_read(command):
-    """True for a command whose first command (as `search` finds it) reads a file and does not
-    redirect its output (`cat > f`, `cat f>out` and `cat f 1> out` write): one of READERS, or
-    `sed` with `-n` and without `-i` (`sed -ni` edits the file)."""
-    found = first(command)
+    """True for a command whose first command (as `search` finds it; it ends at an unquoted `;`,
+    `|`, `&`, `&&`, `||` or a newline) reads a file and does not write its output to one: one
+    of READERS, or `sed` with `-n` and without `-i` (`sed -ni` edits the file). `> f`, `f>out`,
+    `1> out`, `>> f`, `&> f` and `>&f` write; `2> f` and `1>&2` do not; a reader given a
+    here-document (`<<`, `<<<`) reads no file."""
+    found = first(command, tokens(command))
     name = os.path.basename(found[0]) if found else ""
     own = []
-    for word in found[1:]:
-        if word in OPERATORS:
-            break
-        own.append(word)
-    if any(redirected(word) for word in own):
-        return False
+    for token in found[1:]:
+        if operator(token) and not token.startswith((">", "<", "&>")):
+            break  # the end of the first command
+        own.append(token)
+    for at, token in enumerate(own):
+        if not operator(token):
+            continue
+        if token.startswith("<<"):
+            return False  # a here-document or here-string
+        before = own[at - 1] if at else ""
+        target = own[at + 1] if at + 1 < len(own) else ""
+        if token.startswith("&>"):
+            return False
+        if token.startswith(">"):
+            if before.isdigit() and before != "1":
+                continue  # another descriptor: `2>/dev/null`, `2>&1`
+            if token == ">&" and (target.isdigit() or target == "-"):
+                continue  # a duplication: `1>&2`
+            return False
     if name in READERS:
         return True
     flags = [re.match(r"-([A-Za-z]*)", word).group(1) for word in own

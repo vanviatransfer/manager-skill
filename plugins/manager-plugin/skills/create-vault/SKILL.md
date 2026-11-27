@@ -26,7 +26,8 @@ standing policy and wins over that rule (owner quotes stay verbatim).
   by default; keep it under about 60 lines.
 - Always-read text (`index.md`, any page the project's rules load every session) holds page links
   and one-line operational facts (commands, paths, conventions, gotchas), never generated
-  overviews or architecture prose; longer explanations go in topic pages, read on demand.
+  overviews or architecture prose; longer explanations go in topic pages, read on demand. The
+  generated code map (`map.md`, `map/<dir>.md`) is the exception: an overview by design.
 - `glossary.md`: project terms, one or two sentences each, with `_Avoid_:` for synonyms the code
   doesn't use. Only project terms, no general programming ones.
 - `decisions/NNNN-<slug>.md`: one decision already made, in one paragraph (context, decision, why,
