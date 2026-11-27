@@ -179,8 +179,8 @@ class CallsTest(unittest.TestCase):
             "not parsed: pkg/broken.py (syntax error, line 1)", codemap.CALLS_COVERAGE])
         self.write("pkg/broken.py", "")
         self.assertEqual(self.calls("nowhere")[-2:],
-                         ["text: 0 occurrences of nowhere, all on lines listed above (tracked "
-                          "files only)", codemap.CALLS_COVERAGE])
+                         ["text: 0 occurrences of nowhere, 0 on lines listed above; grep the "
+                          "rest", codemap.CALLS_COVERAGE])
 
     def test_several_names_one_coverage_line(self):
         lines = self.calls("Box.size", "helper")
@@ -195,11 +195,17 @@ class CallsTest(unittest.TestCase):
         self.assertEqual(self.snapshot(), before)
         self.assertEqual(self.git("status", "--porcelain"), status)
 
-    def test_map_pages_and_sensitive_files_are_not_counted(self):
+    def test_map_pages_are_left_out_and_a_secret_file_is_counted_unread(self):
         self.assertEqual(run("build", "--root", self.root)[0], 0)
+        self.git("add", "-A")
+        self.assertEqual(self.calls("helper"), HELPER)  # the map pages: not counted
         self.write("secrets/keys.py", "helper = 1\n")
         self.git("add", "-A")
-        self.assertEqual(self.calls("helper"), HELPER)
+        lines = self.calls("helper")
+        self.assertEqual(lines[-3], HELPER[-3].replace(
+            "; grep the rest", "; 1 tracked file not read (sensitive, vendored or skipped, "
+            "symlinks, too large or not text); grep the rest"))
+        self.assertNotIn("secrets/keys.py", "\n".join(lines))
 
     def test_the_cap_and_all(self):
         self.write("pkg/many.py", "from pkg.core import helper\n"
@@ -252,8 +258,8 @@ class CallsTest(unittest.TestCase):
             "place, calls through it not followed; 2 possible; 1 Python file not parsed; grep "
             "the rest"))
         self.write("pkg/broken.py", "")
-        self.assertEqual(self.calls("double")[-2], "text: 1 occurrence of double, all on lines "
-                                                   "listed above (tracked files only)")
+        self.assertEqual(self.calls("double")[-2], "text: 1 occurrence of double, 1 on lines "
+                                                   "listed above; grep the rest")
 
     def test_refusals(self):
         self.refused("calls")
@@ -320,7 +326,8 @@ class RenamedTest(CallsTest):
 
     test_the_full_answer = test_a_qualified_name_finds_the_same_definition = None
     test_methods = test_nothing_found_still_ends_with_coverage = None
-    test_several_names_one_coverage_line = test_map_pages_and_sensitive_files_are_not_counted = None
+    test_several_names_one_coverage_line = None
+    test_map_pages_are_left_out_and_a_secret_file_is_counted_unread = None
     test_the_cap_and_all = test_unreadable_python_is_named = None
     test_alias_of_an_unresolved_import_stays_possible = None
     test_assignment_and_attribute_reference = test_refusals = None
@@ -385,8 +392,8 @@ class UnreadTest(Fixture):
     files = {"core.py": "def f():\n    pass\n\n\ndef g():\n    f()\n"}
 
     def test_a_big_file_and_a_nul_byte(self):
-        self.assertEqual(self.text("f"), ["text: 2 occurrences of f, all on lines listed above "
-                                          "(tracked files only)"])
+        self.assertEqual(self.text("f"), ["text: 2 occurrences of f, 2 on lines listed above; "
+                                          "grep the rest"])
         for name, data in (("big.py", b"f()\n" + b"#" * (600 * 1024) + b"\n"),
                            ("nul.py", b"f()\n\0\n")):
             with open(os.path.join(self.root, name), "wb") as fh:
@@ -400,14 +407,12 @@ class UnreadTest(Fixture):
 
 
 class CompletenessTest(Fixture):
-    """"all on lines listed above" only with no possible entry, unparsed file, renamed name or
-    cut section."""
-    files = {"core.py": "def f():\n    pass\n\n\ndef g():\n    f()\n"}  # import lines are
-    # `possible` too: an imported function never gets "all"
+    """The text line never says every occurrence is listed; it gives the reasons it knows."""
+    files = {"core.py": "def f():\n    pass\n\n\ndef g():\n    f()\n"}
 
-    def test_all_only_when_the_whitelist_holds(self):
-        clean = "text: 2 occurrences of f, all on lines listed above (tracked files only)"
-        self.assertEqual(self.text("f"), [clean])
+    def test_never_all_and_the_reasons(self):
+        bare = "text: 2 occurrences of f, 2 on lines listed above; grep the rest"
+        self.assertEqual(self.text("f"), [bare])
         many = "from core import f\n" + "f()\n" * 45
         for label, rel, text, args, expected in (
                 ("possible", "x.py", "def g(obj):\n    obj.f()\n", (), "; 1 possible;"),
@@ -415,20 +420,54 @@ class CompletenessTest(Fixture):
                 ("renamed", "x.py", "from core import f as g\ng()\n", (), "; renamed: g;"),
                 ("shadowed", "x.py", "def g(f):\n    f()\n", (), "; 1 possible;"),
                 ("cut", "x.py", many, (), "; 1 possible; cut (rerun with --all);"),
-                ("cut, all", "x.py", many, ("--all",), "; 1 possible; grep the rest")):
+                ("cut, all", "x.py", many, ("--all",), "; 1 possible; grep the rest"),
+                ("sensitive", "secrets.py", "f()\n", (), "; 1 tracked file not read"),
+                ("vendored", "vendor/v.py", "f()\n", (), "; 1 tracked file not read"),
+                ("not text", "x.bin", "\0f\n", (), "; 1 tracked file not read")):
             self.write(rel, text)
             self.git("add", "-A")
+            out = run("calls", "f", *args, "--root", self.root)[1]
+            self.assertNotIn("all on lines listed", out, label)
             line = self.text("f", *args)[0]
-            self.assertNotIn("all on lines", line, label)
             self.assertIn(expected, line, label)
             self.assertTrue(line.endswith("; grep the rest"), label)
-            os.remove(os.path.join(self.root, rel))
+            os.remove(os.path.join(self.root, *rel.split("/")))
             self.git("add", "-A")
-            self.assertEqual(self.text("f"), [clean], label)
+            self.assertEqual(self.text("f"), [bare], label)
         self.write("x.py", "import core\n" + "core.f()\n" * 39)  # 40 callers, no cut
         self.git("add", "-A")
-        self.assertEqual(self.text("f"), ["text: 41 occurrences of f, all on lines listed above "
-                                          "(tracked files only)"])
+        self.assertEqual(self.text("f"), ["text: 41 occurrences of f, 41 on lines listed above; "
+                                          "grep the rest"])
+
+    @unittest.skipIf(not hasattr(os, "symlink") or sys.platform == "win32", "no symlinks")
+    def test_a_tracked_symlink_is_counted(self):
+        os.symlink("core.py", os.path.join(self.root, "link.py"))
+        self.git("add", "-A")
+        self.assertIn("; 1 tracked file not read", self.text("f")[0])
+
+
+class ImplicitTest(Fixture):
+    """Calls with no name in the text: constructors, protocols, base classes."""
+    files = {
+        "box.py": "class Box:\n    def __init__(self, n):\n        self.n = n\n\n"
+                  "    def __add__(self, other):\n        return self.n + other.n\n\n\n"
+                  "class Worker(Base):\n    def run(self):\n        pass\n\n\n"
+                  "class Base:\n    def go(self):\n        pass\n",
+        "use.py": "from box import Box\nimport box\n\nb = Box(1) + box.Box(2)\nkind = Box\n",
+        "tool": "#!/usr/bin/env python3\nfrom box import Box\nBox(3)\n",
+    }
+
+    def test_constructor_calls_are_possible(self):
+        lines = self.calls("Box.__init__")
+        for line in ("  use.py:4 constructor call", "  tool:3 constructor call"):
+            self.assertIn(line, lines)
+        self.assertIn("; called implicitly (operators, protocols, base classes);", lines[-2])
+
+    def test_dunders_and_overrides_say_implicit(self):
+        for name in ("__add__", "Worker.run"):
+            self.assertIn("; called implicitly (operators, protocols, base classes);",
+                          self.text(name)[0], name)
+        self.assertNotIn("implicitly", self.text("Base.go")[0])
 
 
 class ShadowTest(Fixture):
@@ -440,6 +479,24 @@ class ShadowTest(Fixture):
                 "def q():\n    helper = print\n    helper()\n\n\ndef r():\n    helper()\n",
         "b.py": "from core import helper\nhelper = staticmethod(helper)\nhelper()\n",
     }
+
+    def test_a_shadowed_module_and_a_lambda_parameter(self):
+        self.write("c.py", "import core\nfrom core import helper\n\n\ndef g(core):\n"
+                           "    core.helper()\n\n\nh = lambda helper: helper()\n")
+        self.git("add", "-A")
+        lines = self.calls("helper")
+        self.assertIn("  c.py:6 attribute call (shadowed)", lines)
+        self.assertIn("  c.py:9 call (shadowed)", lines)
+        self.assertFalse(any(x.startswith("  c.py:") and " in " in x for x in lines), lines)
+
+    def test_a_file_nested_too_deeply_is_not_parsed(self):
+        deep = "x = 1" + "+1" * 3000 + "\n"  # parses, but its tree is too deep to walk
+        self.write("deep.py", "from core import helper\nhelper()\n" + deep)
+        self.git("add", "-A")
+        lines = self.calls("helper")
+        self.assertIn("  a.py:14 in r", lines)  # the other files still answer
+        self.assertTrue(any(x.startswith("not parsed: ") and "deep.py (" in x for x in lines),
+                        lines)  # nested too deeply to walk, or (older Pythons) to parse
 
     def test_shadowed_calls_are_possible(self):
         lines = self.calls("helper")

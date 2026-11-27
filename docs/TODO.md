@@ -1966,26 +1966,27 @@ the staleness idea (item 37) is dropped.
   `self`/`cls` in the defining class, `Class.method`, or an import that resolves to the defining
   file, with re-exports up to 8 steps, also under another name: `import ... as X`, a re-export
   renamed, a module-level `alias = mod.f` imported elsewhere; each `path:line in <enclosing
-  symbol>`);
-  `possible:` (every other occurrence of the name in Python code, with a kind tag: unresolved
-  `call`, `attribute call`, `reference`, `assignment`, `decorator`, `getattr`, `import`,
-  `other definition`, `string`); `text:` (whole-word occurrences in every text file the map scans,
-  any language, and how many are on lines listed above, with the reasons the list may be
-  incomplete: `renamed:` names, passed or stored uses, `possible` entries, unparsed files, a
-  cut). Then `not parsed:` (files `ast` rejected or could not read) and always a `coverage:`
-  line. A bare-name call of a parameter or a name assigned in its function or at module level is
-  `call (shadowed)`, never a caller.
+  symbol>`); `possible:` (every other occurrence of the name in Python code, with a kind tag:
+  unresolved `call`, `attribute call`, `call (shadowed)`, `constructor call` (for `__init__`,
+  `__new__`, `__post_init__`), `reference`, `renamed to X`, `assignment`, `decorator`, `getattr`,
+  `import`, `other definition`, `string`); `text:` (whole-word occurrences in every text file the
+  map scans, any language, how many are on lines listed above, and the reasons the list may be
+  short: `renamed:` names, passed or stored uses, `possible` entries, implicit calls (dunders,
+  methods of a class with a base), unparsed files, tracked files not read, a cut). Then `not
+  parsed:` (files `ast` rejected, could not read or could not walk) and always a `coverage:`
+  line. Python files: `.py`, `.pyw` and extensionless files with a `python` shebang. A call whose
+  bare name or attribute-chain base is a parameter (also of a lambda) or a name assigned in its
+  function or at module level is `(shadowed)`, never a caller.
 - **Coverage rule (owner).** An incomplete caller list must never look complete. False positives
   in `possible` are fine; silent false negatives are not. The output never says "no callers"; an
-  empty section says `none found`. The `text:` line is conservative by construction (a
-  whitelist): it says "all on lines listed above (tracked files only)" only when `possible`,
-  `not parsed:` and `renamed:` are empty and no section was cut; otherwise it names the reasons
-  and ends "grep the rest". The coverage line (static Python calls only; not seen: dynamic
-  calls, literal getattr followed only as far as an assigned name, other languages, untracked
-  or large files; grep the name and its renamed names before changing the function) is printed
-  on every run and never cut, nor are `text:` and `not parsed:`. The PR #77 reviews found calls
-  through renamed bindings, literal getattr or `__dict__` lookups and unreadable files missing
-  while the count said all were listed; fixed before landing.
+  empty section says `none found`. The `text:` line never says everything is listed: it always
+  ends "grep the rest". The coverage line (static Python calls only; not seen: implicit calls,
+  dynamic calls, literal getattr followed only as far as an assigned name, other languages,
+  untracked files, tracked files it skips or can't read; grep the name and its renamed names
+  before changing the function) is printed on every run and never cut, nor are `text:` and `not
+  parsed:`. Three PR #77 reviews found calls missing while the count said all were listed
+  (renamed bindings; literal getattr and `__dict__` lookups; unreadable files; implicit calls
+  such as constructors and operators; files the scan skips), so the claim was removed.
 - **Limits.** No types: `obj.name()` on an instance is only `possible`; `from m import *`, imports
   it cannot resolve and their aliases are `possible`; a name bound inside a function is followed
   in its file only; tuple unpacking, containers and return values are not followed; shadowing
@@ -1997,7 +1998,7 @@ the staleness idea (item 37) is dropped.
 - **Cost.** Live and opt-in: no page, index or hook change; no hook runs it. code-map
   SKILL.md gains one entry pointing to `references/calls.md` (9,347 → 9,469 of 9,500 characters).
   `reviewer-brief.md`'s code-map sentence was reworded to also name `calls` plus a grep for
-  changed functions' callers, at the same word count (1,376 of 1,377).
+  changed functions' callers, keeping "pointers only", at the same word count (1,376 of 1,377).
 - **Also.** `usage.py`: `timeout -s KILL`, `-k 5`, `--signal KILL` and `--kill-after 5` no longer
   hide the search after them; `streaks()` takes a tool_use whose `id` is not a string as its own
   call (as `tools()` does) instead of crashing; `calls` counts as a code-map action.

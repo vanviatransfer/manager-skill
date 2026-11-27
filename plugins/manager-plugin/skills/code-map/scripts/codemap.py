@@ -1421,14 +1421,19 @@ def query_ranked(term, budget, info, importers, mentions, vault):
 CALLS_LIMIT = 40  # the lines of one section of one name; `--all`: no cap
 CALLS_NAME = re.compile(r"^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*$")
 ATTR_CALLS = ("getattr", "setattr", "hasattr", "delattr")
-CALLS_COVERAGE = ("coverage: static Python calls only; not seen: dynamic calls (exec, getattr "
-                  "or lookups with computed names; a literal getattr or lookup is listed, and "
-                  "followed only as far as the name it is assigned to), other languages, "
-                  "untracked files, files over 512 KB or not text and others outside the map; "
-                  "calls through `from m import *`, imports it cannot resolve, shadowed names "
-                  "and methods on objects of unknown type are under possible; other names the "
-                  "function is bound to are under renamed; before changing this function's "
-                  "signature or behaviour, also grep for the name and those.")
+CONSTRUCTORS = ("__init__", "__new__", "__post_init__")  # run by a call of their class
+PY_SHEBANG = re.compile(r"^#![^\n]*\bpython")
+CALLS_COVERAGE = ("coverage: static Python calls only; not seen: implicit calls (a constructor "
+                  "running __init__, operators, `with`, `for`, a base class or framework "
+                  "calling an override), dynamic calls (exec, getattr or lookups with computed "
+                  "names; a literal getattr or lookup is listed and followed only as far as the "
+                  "name it is assigned to), other languages, untracked files, and tracked files "
+                  "it skips or can't read (secrets, vendored folders, symlinks, over 512 KB, not "
+                  "text: counted on the text line); calls through `from m import *`, imports it "
+                  "cannot resolve, shadowed names and methods on objects of unknown type are "
+                  "under possible; other names the function is bound to are under renamed; "
+                  "before changing this function's signature or behaviour, also grep for the "
+                  "name and those.")
 
 
 def module_name(path):
@@ -1471,6 +1476,7 @@ class CallsFile:
     def __init__(self, path, text, tree):
         self.path, self.lines, self.tree = path, text.split("\n"), tree
         self.defs, self.tops, self.bindings, self.assigns = {}, set(), {}, {}
+        self.classes = {}  # qualified class name -> whether it has a base other than object
         for node in tree.body:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 self.tops.add(node.name)
@@ -1499,6 +1505,9 @@ class CallsFile:
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 qual = ".".join(stack + [child.name])
                 self.defs.setdefault(qual, child.lineno)
+                if isinstance(child, ast.ClassDef):
+                    self.classes[qual] = any(not (isinstance(b, ast.Name) and b.id == "object")
+                                             for b in child.bases + child.keywords)
                 self.collect(child, stack + [child.name])
             else:
                 self.collect(child, stack)
@@ -1526,10 +1535,20 @@ class Calls:
         self.aliases = {path: set() for path in parsed}  # per file: such names bound in it
         self.find_aliases()
         self.module_aliases = set(self.renamed)  # `x.<alias>()` counts only for these
+        self.failed = set()  # files too deeply nested to walk
+        # the classes of matching `__init__`, `__new__`, `__post_init__`: their calls construct
+        self.constructs = {(path, qual.rpartition(".")[0]) for path, qual in self.keys
+                           if self.name in CONSTRUCTORS and "." in qual
+                           and qual.rpartition(".")[0] in parsed[path].classes}
+        self.implicit = (self.name.startswith("__") and self.name.endswith("__")) or any(
+            parsed[path].classes.get(qual.rpartition(".")[0]) for path, qual in self.keys)
         for path, f in sorted(parsed.items()):
             self.file = f
             self.handled, self.scopes = set(), []
-            self.walk(f.tree, [])
+            try:
+                self.walk(f.tree, [])
+            except RecursionError:
+                self.failed.add(path)
 
     def find_aliases(self):
         """The import bindings and module-level assignments that give the target another name:
@@ -1685,20 +1704,36 @@ class Calls:
             if not isinstance(node, ast.ClassDef):
                 self.scopes.pop()
             return
+        if isinstance(node, ast.Lambda):
+            a = node.args
+            params = (a.posonlyargs if hasattr(a, "posonlyargs") else []) + a.args + \
+                a.kwonlyargs + [x for x in (a.vararg, a.kwarg) if x]
+            self.scopes.append({x.arg for x in params})
+            for child in ast.iter_child_nodes(node):
+                self.walk(child, stack)
+            self.scopes.pop()
+            return
         if isinstance(node, ast.Call):
             func = node.func
             note = self.ident(func)
+            if self.constructs and isinstance(func, (ast.Name, ast.Attribute)) \
+                    and self.canonical(self.resolve(func, stack)) in self.constructs:
+                self.add(func, "constructor call", self.end_line(func))
             if note is not None:
                 self.handled.add(id(func))
                 line = self.end_line(func)
-                shadowed = isinstance(func, ast.Name) and (
-                    any(func.id in scope for scope in self.scopes) or func.id in f.stores)
-                if shadowed:  # a parameter or a name assigned here may be something else
-                    self.add(func, "call" + (note or " (shadowed)"), line)
-                elif self.canonical(self.resolve(func, stack)) in self.keys:
+                base = func
+                while isinstance(base, ast.Attribute):
+                    base = base.value
+                shadowed = isinstance(base, ast.Name) and (base is func or base.id not in (
+                    "self", "cls")) and (any(base.id in scope for scope in self.scopes)
+                                         or base.id in f.stores)
+                kind = "attribute call" if isinstance(func, ast.Attribute) else "call"
+                if shadowed and self.resolve(func, stack) is not None:  # it may be another
+                    self.add(func, kind + (note or " (shadowed)"), line)  # object here
+                elif not shadowed and self.canonical(self.resolve(func, stack)) in self.keys:
                     self.callers.add((f.path, line, self.where(stack)))
                 else:
-                    kind = "attribute call" if isinstance(func, ast.Attribute) else "call"
                     self.add(func, kind + note, line)
             if isinstance(func, ast.Name) and func.id in ATTR_CALLS and len(node.args) >= 2:
                 arg = node.args[1]
@@ -1752,9 +1787,13 @@ def calls_parse(root, files):
     """({path: CallsFile}, [not parsed: (path, why)]) of the map's Python files."""
     parsed, failed = {}, []
     for path in files:
-        if posixpath.splitext(path)[1].lower() != ".py":
+        ext = posixpath.splitext(path)[1].lower()
+        if ext not in (".py", ".pyw") and (ext or posixpath.basename(path).startswith(".")):
             continue
         text = read_text(root, path)
+        if not ext:  # an extensionless script: Python when its first line says so
+            if text is None or not PY_SHEBANG.match(text):
+                continue
         if text is None:
             failed.append((path, "unreadable, too large or not text"))
             continue
@@ -1766,18 +1805,18 @@ def calls_parse(root, files):
         except (ValueError, RecursionError, MemoryError):
             failed.append((path, "cannot be parsed by this Python"))
             continue
-        parsed[path] = CallsFile(path, text, tree)
+        try:
+            parsed[path] = CallsFile(path, text, tree)
+        except RecursionError:
+            failed.append((path, "nested too deeply"))
     return parsed, failed
 
 
-def text_line(found, total, shown, unparsed, capped):
-    """The `text:` line. It says every occurrence is listed only when nothing else could hold a
-    call: no `possible` entry, no file left unparsed, no other name, no cut; else it says why
-    not and ends with `grep the rest`."""
-    line = "text: %d occurrence%s of %s, " % (total, "" if total == 1 else "s", found.name)
-    if total == shown and not (found.possible or unparsed or found.renamed or capped):
-        return line + "all on lines listed above (tracked files only)"
-    line += "%d on lines listed above" % shown
+def text_line(found, total, shown, unparsed, capped, unread):
+    """The `text:` line: the counts, each reason that applies, then `grep the rest`. It never
+    says every occurrence is listed: a static scan can't know that."""
+    line = "text: %d occurrence%s of %s, %d on lines listed above" % (
+        total, "" if total == 1 else "s", found.name, shown)
     if found.renamed:
         line += "; renamed: %s" % ", ".join(sorted(found.renamed))
     stored = sum(1 for _, _, kind in found.possible
@@ -1787,26 +1826,37 @@ def text_line(found, total, shown, unparsed, capped):
             stored, "" if stored == 1 else "s", "it" if stored == 1 else "them")
     if found.possible:
         line += "; %d possible" % len(found.possible)
+    if found.implicit:
+        line += "; called implicitly (operators, protocols, base classes)"
     if unparsed:
         line += "; %d Python file%s not parsed" % (unparsed, "" if unparsed == 1 else "s")
+    if unread:
+        line += ("; %d tracked file%s not read (sensitive, vendored or skipped, symlinks, too "
+                 "large or not text)" % (unread, "" if unread == 1 else "s"))
     if capped:
         line += "; cut (rerun with --all)"
     return line + "; grep the rest"
 
 
-def calls_lines(root, targets, files, out_rel, everything=False):
-    """The lines `calls` prints; see `references/calls.md`."""
+def calls_lines(root, targets, tracked, out_rel, everything=False, links=0):
+    """The lines `calls` prints; see `references/calls.md`. `tracked`: the tracked files (no
+    symlinks; `links`: how many were left out)."""
+    files = [f for f in tracked if not skipped(f, out_rel)]
     parsed, failed = calls_parse(root, files)
     known = set(files)
-    texts = {}
+    texts, unread = {}, links + sum(1 for f in tracked if skipped(f, out_rel)
+                                    and not is_map_page(f, out_rel))  # secrets are never read
     for path in files:
         if not is_map_page(path, out_rel):
             text = read_text(root, path)
             if text is not None:
                 texts[path] = text.split("\n")
-    out = []
+            elif path not in dict(failed):  # a .py one is under `not parsed`
+                unread += 1
+    out, deep = [], set()
     for target in targets:
         found = Calls(parsed, known, target)
+        deep |= found.failed
         listed, capped = set(), False
         out.append("calls %s" % target)
         code_first = sorted(found.possible, key=lambda i: (i[2] == "string", i))
@@ -1832,7 +1882,9 @@ def calls_lines(root, targets, files, out_rel, everything=False):
                 total += hits
                 if hits and (path, n) in listed:
                     shown += hits
-        out.append(text_line(found, total, shown, len(failed), capped))
+        out.append(text_line(found, total, shown, len(failed) + len(found.failed), capped,
+                             unread))
+    failed = failed + [(path, "nested too deeply") for path in sorted(deep)]
     if failed:
         out.append("not parsed: " + ", ".join("%s (%s)" % item for item in sorted(failed)))
     out.append(CALLS_COVERAGE)
@@ -2556,8 +2608,8 @@ def main(argv=None):
                   "`build` (`build --redetect` when %s exists)" % CONFIG)
         return 0
     if args.action == "calls":  # live, before the full scan: it needs only the file list
-        files = [f for f in tracked if not skipped(f, out_rel)]
-        for line in calls_lines(root, args.terms, files, out_rel, args.all):
+        links = sum(1 for mode, _, _, _ in index or () if mode.startswith("120000"))
+        for line in calls_lines(root, args.terms, tracked, out_rel, args.all, links):
             print(re.sub(r"[\x00-\x1f\x7f]", "?", line))
         return 0
     diff = []
