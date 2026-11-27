@@ -1955,3 +1955,18 @@ whether they use the map at all.
   agents, hooks, `retro.sh`, the code map, the eval suites, any ceiling.
 - **Next step.** Run it on recorded manager sessions and decide from the figures whether items
   37-38's callers, explore or benchmark are worth building.
+
+### 41. Code map: C and C++ support (owner, noted, not built)
+
+The owner wants C and C++ covered later, for Unreal Engine game projects (Blender's Python is
+already covered). Today `.c`, `.h`, `.cpp`, `.cc` and `.hpp` files get only a language label: no
+symbols, no imports; `impact` matches names by text only, and `calls` resolves Python only.
+Wanted, for a later change after `explore`:
+- **Symbols.** Top-level functions, classes, structs, enums and namespaces from line patterns,
+  including Unreal's macro-marked forms (`UCLASS()`, `USTRUCT()`, `UENUM()` before the
+  declaration, `class MYGAME_API AMyActor : public AActor`).
+- **Includes.** Local `#include "..."` resolved to tracked files, so `impact` and importers work;
+  `<...>` system and engine includes are not followed.
+- **Limits stated honestly.** Macros, templates and overloads are not resolved; anything the
+  patterns miss must not look complete, as for `calls` (item 40).
+- Same rules: standard-library Python 3.8+, no ceiling raised, no default token cost.
