@@ -1878,3 +1878,29 @@ The owner finds the pass (item 34) offered too often. Wanted, for a later change
 - **Default off, can be turned on later.** Off unless the owner turns it on; the owner can still
   turn it on later in the run (open: whether the gate keeps asking at all, or the owner only says
   so when wanted).
+
+### 37. Code map: ideas from CodeGraph (owner, noted, not built)
+
+The owner asked to look at CodeGraph (github.com/colbymchenry/codegraph, MIT, about 79k stars at
+the time of reading; README read 2026-11-27, not run) to improve the code map.
+
+- **What it is.** A per-project graph of symbols and edges (calls, imports, extends, implements,
+  framework routes) for 20+ languages, parsed by tree-sitter in a native kernel, stored in SQLite
+  (FTS5) under `.codegraph/`, kept current by a file watcher and a background daemon, used
+  through an MCP server (`codegraph_explore` by default; `callers`, `callees`, `impact`, `node`,
+  `search`, `files`, `status` opt-in) and a CLI. Has telemetry (not read).
+- **Its claims.** 62% fewer tokens, 88% fewer tool calls on seven repositories, from its own
+  headless runs (4 a side, median); self-run, not audited. It also says resident context grows
+  by about 80% in long sessions.
+- **Not adoptable as is.** It breaks this plugin's rules: an MCP server (none allowed), a native
+  binary and npm install (the map is standard-library Python), a daemon, telemetry.
+- **Ideas worth taking, within those rules.**
+  - Symbol-level call edges (who calls this function), today only file-level imports for
+    Python, JavaScript and TypeScript; `ast` gives Python calls with no dependency.
+  - An `explore`-style answer: for a question, the relevant symbols' source by file, line
+    numbered, plus callers, within `query --budget`, so a session reads less.
+  - A staleness mark in query output when files changed since the last build.
+  - Its benchmark method (with and without the map, headless runs, several a side) for
+    measuring the map's own saving, which is still unmeasured (see the code-map eval item).
+- **Next step, when picked.** Measure first: run the existing map on one real repository with
+  and without it, then decide which idea is worth building.
