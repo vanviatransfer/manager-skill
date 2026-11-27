@@ -38,11 +38,14 @@ A Claude Code plugin with six skills:
   install command and skips the map only if you decline.
   - **`calls <name>` (run only when asked).** Who calls a Python function, before changing it:
     its definitions, the call sites it resolves with confidence (same file, or through an import
-    of the defining file, with `as` aliases and re-exports), then every other use of the name in
-    Python code as `possible` (attribute calls on unknown objects, the name passed or stored, in a
-    string, `getattr`, decorators), a whole-word count over every text file with how many it
-    listed, and always a coverage line naming what it cannot see and asking for a grep too. It
-    parses with `ast` on each run and writes nothing; an incomplete list never reads as complete.
+    of the defining file, with re-exports, also under another name: `import ... as`, a
+    module-level `alias = mod.f`), then every other use of the name in Python code as `possible`
+    (attribute calls on unknown objects, the name passed or stored, in a string, `getattr`,
+    decorators), a whole-word count over every text file with how many it listed, the other
+    names the function is bound to (`renamed:`, to grep too), and always a coverage line naming
+    what it cannot see (dynamic calls, other languages, untracked files) and asking for a grep.
+    It parses with `ast` on each run and writes nothing; an incomplete list never reads as
+    complete: the count line says "all listed" only with no renamed binding and no stored use.
   - **Rules block.** Sessions don't use the map unless told, so the setup PR adds a short marked
     block to `AGENTS.md` and `CLAUDE.md` (`codemap.py rules-hint`; created if missing; when
     `CLAUDE.md` imports `@AGENTS.md`, only a marker line there). It tells every session to read the

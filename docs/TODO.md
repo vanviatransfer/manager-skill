@@ -1964,24 +1964,32 @@ the staleness idea (item 37) is dropped.
 - **What.** `codemap.py calls <name>...` (`--all`: no cap): a bare name, `module.func` or
   `Class.method`. Per name: `definitions:`; `callers:` (resolved with confidence: the same file,
   `self`/`cls` in the defining class, `Class.method`, or an import that resolves to the defining
-  file, with `as` aliases and re-exports up to 8 steps; each `path:line in <enclosing symbol>`);
+  file, with re-exports up to 8 steps, also under another name: `import ... as X`, a re-export
+  renamed, a module-level `alias = mod.f` imported elsewhere; each `path:line in <enclosing
+  symbol>`);
   `possible:` (every other occurrence of the name in Python code, with a kind tag: unresolved
   `call`, `attribute call`, `reference`, `assignment`, `decorator`, `getattr`, `import`,
   `other definition`, `string`); `text:` (whole-word occurrences in every text file the map scans,
-  any language, and how many are on lines listed above). Then `not parsed:` (files `ast` rejected
-  or could not read) and always a `coverage:` line.
+  any language, and how many are on lines listed above; then `renamed: <names>; grep those too`
+  when the function is bound to other names anywhere, and a note when the name is passed or
+  stored, whose calls are not followed). Then `not parsed:` (files `ast` rejected or could not
+  read) and always a `coverage:` line.
 - **Coverage rule (owner).** An incomplete caller list must never look complete. False positives
   in `possible` are fine; silent false negatives are not. The output never says "no callers"; an
-  empty section says `none found`, and the coverage line (static Python calls only; not seen:
-  dynamic calls, other languages, files outside the map; grep before changing the function) is
-  printed on every run and never cut, nor are `text:` and `not parsed:`.
+  empty section says `none found`; the `text:` line says "all on lines listed above" only when
+  no renamed binding and no passed or stored use exists; the coverage line (static Python calls
+  only; not seen: dynamic calls, other languages, untracked files and others outside the map;
+  grep the name and its renamed names before changing the function) is printed on every run
+  and never cut, nor are `text:` and `not parsed:`. The PR #77 review found calls through a
+  renamed binding dropped while the count said all were listed; fixed before landing.
 - **Limits.** No types: `obj.name()` on an instance is only `possible`; `from m import *`, imports
-  it cannot resolve and their aliases are `possible`; shadowing by a local name is not seen; the
-  map's own import rules decide which file a module is. Parsed with the running Python's `ast`,
+  it cannot resolve and their aliases are `possible`; a name bound inside a function is followed
+  in its file only; tuple unpacking, containers and return values are not followed; shadowing
+  by a local name is not seen; the map's own import rules decide which file a module is. Parsed with the running Python's `ast`,
   which is fine because nothing is committed: newer syntax than that Python is `not parsed`.
 - **Cap.** 40 lines per section per name, then `… <k> more (rerun with --all)`; `possible` lists
   code entries before strings, each part by path and line. `--budget` stays `query` only.
-- **Cost.** Live and opt-in: no page, index or hook change; nothing runs it by default. code-map
+- **Cost.** Live and opt-in: no page, index or hook change; no hook runs it. code-map
   SKILL.md gains one entry pointing to `references/calls.md` (9,347 → 9,469 of 9,500 characters).
   `reviewer-brief.md`'s code-map sentence was reworded to also name `calls` plus a grep for
   changed functions' callers, at the same word count (1,376 of 1,377).

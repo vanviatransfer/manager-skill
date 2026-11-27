@@ -1422,10 +1422,11 @@ CALLS_LIMIT = 40  # the lines of one section of one name; `--all`: no cap
 CALLS_NAME = re.compile(r"^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*$")
 ATTR_CALLS = ("getattr", "setattr", "hasattr", "delattr")
 CALLS_COVERAGE = ("coverage: static Python calls only; not seen: dynamic calls (getattr with "
-                  "computed names, exec), other languages, files outside the map; aliases, "
-                  "`from m import *`, re-exports it cannot follow and methods on objects of "
-                  "unknown type are under possible; before changing this function's signature "
-                  "or behaviour, also grep for the name.")
+                  "computed names, exec), other languages, untracked files and others outside "
+                  "the map; calls through `from m import *`, imports it cannot resolve and "
+                  "methods on objects of unknown type are under possible; other names the "
+                  "function is bound to are under renamed; before changing this function's "
+                  "signature or behaviour, also grep for the name and those.")
 
 
 def module_name(path):
@@ -1439,14 +1440,20 @@ def module_name(path):
 class CallsFile:
     """One parsed Python file: its definitions by qualified name (`Class.method`, nested ones
     under their function), its top-level names and its import bindings (name -> (spec, the
-    imported name)); spec: ("mod", level, dotted) or ("from", level, module, name)."""
+    imported name)); spec: ("mod", level, dotted) or ("from", level, module, name); and its
+    module-level aliases (`alias = core.helper`: name -> the Name or Attribute assigned)."""
 
     def __init__(self, path, text, tree):
         self.path, self.lines, self.tree = path, text.split("\n"), tree
-        self.defs, self.tops, self.bindings = {}, set(), {}
+        self.defs, self.tops, self.bindings, self.assigns = {}, set(), {}, {}
         for node in tree.body:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 self.tops.add(node.name)
+            elif isinstance(node, (ast.Assign, ast.AnnAssign)) \
+                    and isinstance(node.value, (ast.Name, ast.Attribute)):
+                for t in node.targets if isinstance(node, ast.Assign) else [node.target]:
+                    if isinstance(t, ast.Name):
+                        self.assigns[t.id] = node.value
         self.collect(tree, [])
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
@@ -1490,10 +1497,44 @@ class Calls:
                 if target == self.name or full == target or full.endswith("." + target):
                     self.keys.add((path, qual))
                     self.definitions.add((path, line, qual))
+        self.renamed = set()  # every other name the target is bound to, anywhere
+        self.aliases = {path: set() for path in parsed}  # per file: such names bound in it
+        self.find_aliases()
+        self.module_aliases = set(self.renamed)  # `x.<alias>()` counts only for these
         for path, f in sorted(parsed.items()):
             self.file = f
             self.handled = set()
             self.walk(f.tree, [])
+
+    def find_aliases(self):
+        """The import bindings and module-level assignments that give the target another name:
+        those that resolve to a matching definition, and those whose imported or assigned name
+        is the target's or an alias found so far; and, the other way, the name such a binding of
+        the target's or an alias's name imports or assigns (until no more are found)."""
+        while True:
+            before = len(self.renamed)
+            for path, f in sorted(self.parsed.items()):
+                self.file = f
+                spelled = self.renamed | {self.name}
+                found = [b for b, (spec, orig) in f.bindings.items() if orig in spelled
+                         or self.canonical(self.spec(path, spec)) in self.keys]
+                for a, value in f.assigns.items():
+                    word = value.id if isinstance(value, ast.Name) else value.attr
+                    if word in spelled or self.canonical(("sym", path, a)) in self.keys:
+                        found.append(a)
+                for b, (spec, orig) in f.bindings.items():  # `import x as <name>`: x too
+                    if b in spelled and orig != self.name:
+                        self.renamed.add(orig)
+                for a, value in f.assigns.items():
+                    word = value.id if isinstance(value, ast.Name) else value.attr
+                    if a in spelled and word != self.name:
+                        self.renamed.add(word)
+                for b in found:
+                    if b != self.name:
+                        self.renamed.add(b)
+                        self.aliases[path].add(b)
+            if len(self.renamed) == before:
+                return
 
     def module(self, path, level, dotted):
         return resolve_python(path, level, dotted.strip("."), self.known) \
@@ -1530,9 +1571,15 @@ class Calls:
         path, qual = ref[1], ref[2]
         f = self.parsed.get(path)
         first, _, rest = qual.partition(".")
-        if f is None or first in f.tops or first not in f.bindings or depth >= 8:
+        if f is None or first in f.tops or depth >= 8 \
+                or (first not in f.bindings and first not in f.assigns):
             return path, qual
-        found = self.spec(path, f.bindings[first][0])
+        if first in f.bindings:
+            found = self.spec(path, f.bindings[first][0])
+        else:  # `alias = core.helper` at module level
+            here, self.file = self.file, f
+            found = self.resolve(f.assigns[first], [])
+            self.file = here
         for part in rest.split(".") if rest else ():
             found = self.attribute(found, part)
         return self.canonical(found, depth + 1)
@@ -1552,7 +1599,7 @@ class Calls:
                         return ("sym", f.path, qual)
             if node.id in f.bindings:
                 return self.spec(f.path, f.bindings[node.id][0])
-            if node.id in f.tops:
+            if node.id in f.tops or node.id in f.assigns:
                 return ("sym", f.path, node.id)
             return None
         if isinstance(node, ast.Attribute):
@@ -1562,12 +1609,13 @@ class Calls:
     def ident(self, node):
         """The word naming the target in this Name or Attribute, an alias note, or None."""
         if isinstance(node, ast.Attribute):
-            return "" if node.attr == self.name else None
+            if node.attr == self.name:
+                return ""
+            return " (alias %s)" % node.attr if node.attr in self.module_aliases else None
         if isinstance(node, ast.Name):
             if node.id == self.name:
                 return ""
-            bound = self.file.bindings.get(node.id)
-            if bound and bound[1] == self.name:
+            if node.id in self.aliases[self.file.path]:
                 return " (alias %s)" % node.id
         return None
 
@@ -1618,10 +1666,21 @@ class Calls:
                 if isinstance(arg, ast.Constant) and arg.value == self.name:
                     self.handled.add(id(arg))
                     self.add(arg, func.id)
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None \
+                and self.ident(node.value) is not None:  # `h = helper` in any scope
+            for t in node.targets if isinstance(node, ast.Assign) else [node.target]:
+                if isinstance(t, ast.Name) and t.id != self.name:
+                    self.renamed.add(t.id)
+                    self.aliases[f.path].add(t.id)
+                    if id(node.value) not in self.handled:  # followed: no `reference`
+                        self.handled.add(id(node.value))
+                        self.add(node.value, "renamed to %s" % t.id, self.end_line(node.value))
         elif isinstance(node, (ast.Import, ast.ImportFrom)):
             words = [w for a in node.names for w in a.name.split(".") + [a.asname]]
             if self.name in words + (getattr(node, "module", None) or "").split("."):
                 self.add(node, "import")
+            for alias in sorted(self.aliases[f.path].intersection(words)):
+                self.add(node, "import (alias %s)" % alias, node.lineno)
         elif id(node) not in self.handled:
             note = self.ident(node) if isinstance(node, (ast.Name, ast.Attribute)) else None
             if note is not None:
@@ -1705,12 +1764,20 @@ def calls_lines(root, targets, files, out_rel, everything=False):
                 total += hits
                 if hits and (path, n) in listed:
                     shown += hits
-        if total == shown:
-            out.append("text: %d occurrence%s of %s, all on lines listed above"
-                       % (total, "" if total == 1 else "s", found.name))
+        stored = sum(1 for _, _, kind in found.possible
+                     if kind.split(" (")[0] in ("reference", "attribute reference"))
+        line = "text: %d occurrence%s of %s, " % (total, "" if total == 1 else "s", found.name)
+        if total == shown and not found.renamed and not stored:
+            line += "all on lines listed above"
         else:
-            out.append("text: %d occurrence%s of %s, %d on lines listed above; grep the rest"
-                       % (total, "" if total == 1 else "s", found.name, shown))
+            line += "%d on lines listed above" % shown
+            if found.renamed:
+                line += "; renamed: %s" % ", ".join(sorted(found.renamed))
+            if stored:
+                line += "; passed or stored at %d place%s above, calls through %s not followed" \
+                    % (stored, "" if stored == 1 else "s", "it" if stored == 1 else "them")
+            line += "; grep %s" % ("those too" if found.renamed else "the rest")
+        out.append(line)
     if failed:
         out.append("not parsed: " + ", ".join("%s (%s)" % item for item in sorted(failed)))
     out.append(CALLS_COVERAGE)

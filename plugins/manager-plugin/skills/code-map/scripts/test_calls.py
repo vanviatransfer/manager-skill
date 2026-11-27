@@ -97,10 +97,12 @@ HELPER = [
     "  pkg/star.py:3 call",
     "  pkg/use_from.py:1 import",
     "  pkg/use_from.py:2 import",
+    "  pkg/use_from.py:2 import (alias h)",
     "  pkg/use_reexport.py:1 import",
     "  pkg/other.py:5 string",  # strings after the code entries
     # 18 in Python (1 in broken.py, not parsed), 2 in notes.md, 1 in main.js
-    "text: 21 occurrences of helper, 17 on lines listed above; grep the rest",
+    "text: 21 occurrences of helper, 17 on lines listed above; renamed: h; passed or stored at 2 "
+    "places above, calls through them not followed; grep those too",
     "not parsed: pkg/broken.py (syntax error, line 1)",
     codemap.CALLS_COVERAGE,
 ]
@@ -206,7 +208,8 @@ class CallsTest(unittest.TestCase):
         self.assertEqual(len(callers), codemap.CALLS_LIMIT + 1)
         self.assertEqual(callers[-1], "  … 10 more (rerun with --all)")  # 5 + 45 callers
         self.assertEqual(lines[-3], "text: 67 occurrences of helper, 53 on lines listed above; "
-                                    "grep the rest")
+                                    "renamed: h; passed or stored at 2 places above, calls "
+                                    "through them not followed; grep those too")
         full = self.calls("helper", "--all")
         callers = full[full.index("callers:") + 1:full.index("possible:")]
         self.assertEqual(len(callers), 50)
@@ -225,17 +228,27 @@ class CallsTest(unittest.TestCase):
         self.git("add", "-A")
         lines = self.calls("helper")
         for line in ("  pkg/alias.py:1 import", "  pkg/alias.py:3 call (alias hp)",
-                     "  pkg/alias.py:4 reference (alias hp)"):
+                     "  pkg/alias.py:4 renamed to x"):
             self.assertIn(line, lines)
 
     def test_assignment_and_attribute_reference(self):
         self.write("pkg/patch.py", "import pkg.core\n\npkg.core.helper = print\nf = pkg.core.helper"
-                                   "\nhelper = 3\n")
+                                   "\nhelper = 3\ng = [pkg.core.helper]\n")
         self.git("add", "-A")
         lines = self.calls("helper")
-        for line in ("  pkg/patch.py:3 assignment", "  pkg/patch.py:4 attribute reference",
-                     "  pkg/patch.py:5 assignment"):
+        for line in ("  pkg/patch.py:3 assignment", "  pkg/patch.py:4 renamed to f",
+                     "  pkg/patch.py:5 assignment", "  pkg/patch.py:6 attribute reference"):
             self.assertIn(line, lines)
+
+    def test_a_stored_reference_is_no_complete_list(self):
+        self.write("pkg/table.py", "from pkg.core import local_user\n\nFNS = [local_user]\n"
+                                   "FNS[0]()\n")
+        self.git("add", "-A")
+        self.assertEqual(self.calls("local_user")[-3], (
+            "text: 3 occurrences of local_user, 3 on lines listed above; passed or stored at 1 "
+            "place above, calls through it not followed; grep the rest"))
+        self.assertEqual(self.calls("double")[-3], "text: 1 occurrence of double, all on lines "
+                                                   "listed above")
 
     def test_refusals(self):
         self.refused("calls")
@@ -243,6 +256,69 @@ class CallsTest(unittest.TestCase):
         self.refused("calls", "helper(")
         self.refused("query", "helper", "--all")
         self.refused("calls", "helper", "--budget", "9")
+
+
+# The target bound under other names: a renamed re-export, an alias imported into a second file,
+# a module-level alias imported elsewhere.
+RENAMED = {
+    "pkg/core.py": "def helper(x):\n    return x\n",
+    "pkg/__init__.py": "from .core import helper as public_helper\n",
+    "app.py": "from pkg import public_helper\n\n\ndef main():\n    public_helper(1)\n",
+    "shim.py": "from pkg.core import helper as h\n",
+    "user.py": "from shim import h\n\n\ndef run():\n    h(2)\n",
+    "al.py": "from pkg import core\nalias = core.helper\n",
+    "al_user.py": "from al import alias\nalias(3)\n",
+}
+
+
+class RenamedTest(CallsTest):
+    def setUp(self):
+        self.tmp = portability.temp_dir()
+        self.root = self.tmp.name
+        for rel, text in RENAMED.items():
+            self.write(rel, text)
+        subprocess.run(["git", "init", "-q", self.root], check=True)
+        self.git("add", "-A")
+
+    def test_calls_through_other_names_are_callers(self):
+        for name in ("helper", "pkg.core.helper"):
+            self.assertEqual(self.calls(name)[1:-1], [
+                "definitions:", "  pkg/core.py:1 helper",
+                "callers:", "  al_user.py:2 in (module level)", "  app.py:5 in main",
+                "  user.py:5 in run",
+                "possible:", "  al.py:2 assignment (alias alias)", "  al.py:2 renamed to alias",
+                "  al_user.py:1 import (alias alias)", "  app.py:1 import (alias public_helper)",
+                "  pkg/__init__.py:1 import", "  pkg/__init__.py:1 import (alias public_helper)",
+                "  shim.py:1 import", "  shim.py:1 import (alias h)",
+                "  user.py:1 import (alias h)",
+                "text: 4 occurrences of helper, 4 on lines listed above; renamed: alias, h, "
+                "public_helper; grep those too"], name)
+
+    def test_an_alias_it_cannot_follow_is_still_named(self):
+        self.write("al.py", "import elsewhere\nalias = elsewhere.helper\n")  # unresolved
+        self.write("loc.py", "from pkg.core import helper\n\n\ndef go():\n    fn = helper\n"
+                             "    return fn(1)\n")
+        self.git("add", "-A")
+        lines = self.calls("helper")
+        self.assertIn("  al_user.py:2 call (alias alias)", lines)  # possible, not a caller
+        self.assertIn("  loc.py:6 call (alias fn)", lines)
+        self.assertEqual(lines[-2], "text: 6 occurrences of helper, 6 on lines listed above; "
+                                    "renamed: alias, fn, h, public_helper; grep those too")
+
+    def test_the_text_line_never_claims_completeness_with_a_renamed_binding(self):
+        for name in ("helper", "public_helper", "h", "alias"):
+            text = [x for x in self.calls(name) if x.startswith("text: ")]
+            self.assertEqual(len(text), 1, name)
+            self.assertNotIn("all on lines", text[0], name)
+            self.assertIn("grep", text[0], name)
+
+    test_the_full_answer = test_a_qualified_name_finds_the_same_definition = None
+    test_methods = test_nothing_found_still_ends_with_coverage = None
+    test_several_names_one_coverage_line = test_map_pages_and_sensitive_files_are_not_counted = None
+    test_the_cap_and_all = test_unreadable_python_is_named = None
+    test_alias_of_an_unresolved_import_stays_possible = None
+    test_assignment_and_attribute_reference = test_refusals = None
+    test_deterministic_and_writes_nothing = test_a_stored_reference_is_no_complete_list = None
 
 
 if __name__ == "__main__":
