@@ -74,6 +74,8 @@ No Python → read `references/python-install.md` first (the install offer).
 - `<cmd> impact <path>...` (or `--base <sha>`): what depends on a file, before editing a widely
   used file; `query <term> --budget <n>`: a ranked, cut query, when a query is long. Using
   either: read `references/impact-budget.md` first.
+- `<cmd> calls <name>...`: who calls a Python function, before changing it; using it: read
+  `references/calls.md` first.
 
 - `<cmd> rules-hint` (`--remove` to take it out): writes the rules block (`references/setup.md`)
   into `AGENTS.md` and `CLAUDE.md` at the repository root (each created if missing, with a one-line

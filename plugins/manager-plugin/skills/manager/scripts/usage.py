@@ -76,8 +76,9 @@ context went (off by default):
   `mentions` (the first action word after `codemap.py`); other map calls, those with another
   action or none found; searches, Grep and Glob calls and Bash calls whose first command is
   `grep`, `rg`, `find` or `git grep`. The first command is the first word after any leading
-  `cd ... &&`, variable assignments (`A=b`) and `timeout [options] N`; a search later in a
-  pipeline or after another command is not seen.
+  `cd ... &&`, variable assignments (`A=b`) and `timeout [options] N` (with an option's value
+  word: `-s KILL`, `-k 5`, `--signal KILL`, `--kill-after 5`); a search later in a pipeline or
+  after another command is not seen.
 
 The tool names are printed, never their inputs, paths or commands; `unknown` (one `tools` line)
 for a transcript that can't be read. `--since` bounds them too.
@@ -288,11 +289,13 @@ def streaks(paths, since=None):
                     if since is not None and (when(record) or -1) < since:
                         continue
                     for use in blocks(record, "tool_use"):
+                        key = use.get("id")
+                        key = key if isinstance(key, str) else object()  # no id: its own call
                         try:
-                            calls.append((use.get("id"), use.get("name"),
+                            calls.append((key, use.get("name"),
                                           json.dumps(use.get("input"), sort_keys=True)))
                         except (TypeError, ValueError, RecursionError):
-                            calls.append((use.get("id"), use.get("name"), None))
+                            calls.append((key, use.get("name"), None))
                     for done in blocks(record, "tool_result"):
                         if done.get("is_error") is True and isinstance(done.get("tool_use_id"),
                                                                        str):
@@ -329,9 +332,11 @@ def streak_line(agent, found):
 
 EDITS = ("Edit", "MultiEdit", "Write", "NotebookEdit")  # the tools that change a file
 SEARCHES = ("grep", "rg", "find")  # a Bash command that starts with one is a search
-ACTIONS = ("build", "check", "query", "mentions", "changed", "impact", "detect", "install-hook",
-           "uninstall-hook", "pre-commit", "claude-hook", "rules-hint", "session-hook")
+ACTIONS = ("build", "check", "query", "mentions", "changed", "impact", "calls", "detect",
+           "install-hook", "uninstall-hook", "pre-commit", "claude-hook", "rules-hint",
+           "session-hook")
 ASSIGNED = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+TIMEOUT_VALUED = ("-s", "-k", "--signal", "--kill-after")  # `timeout` options with a value word
 
 
 def size(content):
@@ -362,7 +367,7 @@ def first(command):
         elif found[0] == "timeout":
             found = found[1:]
             while found and found[0].startswith("-"):
-                found = found[1:]
+                found = found[2 if found[0] in TIMEOUT_VALUED else 1:]  # `-s KILL`: two words
             found = found[1:]  # the duration
         else:
             break

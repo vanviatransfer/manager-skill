@@ -20,6 +20,9 @@ Usage:
   codemap.py impact [PATH...] [--base SHA]     who depends on these files (or the files changed
                     [--depth N]                since SHA): importers up to N levels (default 2),
                                                their tests, and the files naming their definitions
+  codemap.py calls NAME... [--all]             where these Python functions are defined, who
+                                               calls them (resolved), other possible uses, a
+                                               text count and what it cannot see (live, `ast`)
   codemap.py detect [--root DIR]               where the vault and the map are, and why
   codemap.py check --quiet                     the same check: one line when stale, else none
   codemap.py install-hook | uninstall-hook     the opt-in git pre-commit hook for this clone
@@ -41,6 +44,7 @@ executed and nothing is sent anywhere. The vault link rules and the secret-file 
 ideas from graphify (Apache-2.0); no code was copied.
 """
 import argparse
+import ast
 import contextlib
 import io
 import json
@@ -1411,6 +1415,308 @@ def query_ranked(term, budget, info, importers, mentions, vault):
     return lines
 
 
+# `calls`: run only when asked; nothing calls it by default. Live: it parses the working tree's
+# Python files with `ast` on every run and writes nothing, so its answer depends on the running
+# Python only for what it prints, never for a page.
+CALLS_LIMIT = 40  # the lines of one section of one name; `--all`: no cap
+CALLS_NAME = re.compile(r"^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*$")
+ATTR_CALLS = ("getattr", "setattr", "hasattr", "delattr")
+CALLS_COVERAGE = ("coverage: static Python calls only; not seen: dynamic calls (getattr with "
+                  "computed names, exec), other languages, files outside the map; aliases, "
+                  "`from m import *`, re-exports it cannot follow and methods on objects of "
+                  "unknown type are under possible; before changing this function's signature "
+                  "or behaviour, also grep for the name.")
+
+
+def module_name(path):
+    """`pkg.mod` of `pkg/mod.py`, `pkg` of `pkg/__init__.py`."""
+    stem = posixpath.splitext(path)[0]
+    if stem.endswith("/__init__") or stem == "__init__":
+        stem = stem[: -len("__init__")].rstrip("/")
+    return stem.replace("/", ".")
+
+
+class CallsFile:
+    """One parsed Python file: its definitions by qualified name (`Class.method`, nested ones
+    under their function), its top-level names and its import bindings (name -> (spec, the
+    imported name)); spec: ("mod", level, dotted) or ("from", level, module, name)."""
+
+    def __init__(self, path, text, tree):
+        self.path, self.lines, self.tree = path, text.split("\n"), tree
+        self.defs, self.tops, self.bindings = {}, set(), {}
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                self.tops.add(node.name)
+        self.collect(tree, [])
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for a in node.names:
+                    if a.asname:
+                        self.bindings[a.asname] = (("mod", 0, a.name), a.name.split(".")[-1])
+                    else:
+                        top = a.name.split(".")[0]
+                        self.bindings.setdefault(top, (("mod", 0, top), top))
+            elif isinstance(node, ast.ImportFrom):
+                for a in node.names:
+                    if a.name != "*":
+                        self.bindings[a.asname or a.name] = (
+                            ("from", node.level or 0, node.module or "", a.name), a.name)
+
+    def collect(self, node, stack):
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                qual = ".".join(stack + [child.name])
+                self.defs.setdefault(qual, child.lineno)
+                self.collect(child, stack + [child.name])
+            else:
+                self.collect(child, stack)
+
+
+class Calls:
+    """The definitions, confident callers and possible references of one name (see
+    `references/calls.md`)."""
+
+    def __init__(self, parsed, known, target):
+        self.parsed, self.known, self.target = parsed, known, target
+        self.name = target.split(".")[-1]
+        self.word = re.compile(r"(?<!\w)%s(?!\w)" % re.escape(self.name))
+        self.definitions, self.callers, self.possible = set(), set(), set()
+        self.keys = set()  # (path, qualified name) of the matching definitions
+        for path, f in sorted(parsed.items()):
+            for qual, line in f.defs.items():
+                if qual.split(".")[-1] != self.name:
+                    continue
+                full = module_name(path) + "." + qual
+                if target == self.name or full == target or full.endswith("." + target):
+                    self.keys.add((path, qual))
+                    self.definitions.add((path, line, qual))
+        for path, f in sorted(parsed.items()):
+            self.file = f
+            self.handled = set()
+            self.walk(f.tree, [])
+
+    def module(self, path, level, dotted):
+        return resolve_python(path, level, dotted.strip("."), self.known) \
+            if dotted.strip(".") or level else None
+
+    def spec(self, path, spec):
+        """A binding's spec as ("mod", path, level, dotted), ("sym", path, qual) or None."""
+        if spec[0] == "mod":
+            return ("mod", path, spec[1], spec[2])
+        _, level, mod, name = spec
+        sub = (mod + "." + name).strip(".")
+        if self.module(path, level, sub):
+            return ("mod", path, level, sub)
+        where = self.module(path, level, mod)
+        return ("sym", where, name) if where else None
+
+    def attribute(self, ref, attr):
+        if ref is None:
+            return None
+        if ref[0] == "sym":
+            return ("sym", ref[1], ref[2] + "." + attr)
+        _, path, level, dotted = ref
+        sub = (dotted + "." + attr).strip(".")
+        if self.module(path, level, sub):
+            return ("mod", path, level, sub)
+        where = self.module(path, level, dotted)
+        return ("sym", where, attr) if where else ("mod", path, level, sub)
+
+    def canonical(self, ref, depth=0):
+        """(path, qualified name) a symbol reference ends at, following re-exports (`from x
+        import f` in the file it names) up to 8 steps, or None."""
+        if ref is None or ref[0] != "sym":
+            return None
+        path, qual = ref[1], ref[2]
+        f = self.parsed.get(path)
+        first, _, rest = qual.partition(".")
+        if f is None or first in f.tops or first not in f.bindings or depth >= 8:
+            return path, qual
+        found = self.spec(path, f.bindings[first][0])
+        for part in rest.split(".") if rest else ():
+            found = self.attribute(found, part)
+        return self.canonical(found, depth + 1)
+
+    def resolve(self, node, stack):
+        """What an expression names, as for `spec`, or None when it can't tell."""
+        f = self.file
+        if isinstance(node, ast.Name):
+            if node.id in ("self", "cls"):
+                classes = [i for i, (kind, _) in enumerate(stack) if kind == "class"]
+                if classes:
+                    return ("sym", f.path, ".".join(n for _, n in stack[: classes[-1] + 1]))
+            for i in range(len(stack), 0, -1):  # an enclosing function's own definitions
+                if stack[i - 1][0] == "def":
+                    qual = ".".join([n for _, n in stack[:i]] + [node.id])
+                    if qual in f.defs:
+                        return ("sym", f.path, qual)
+            if node.id in f.bindings:
+                return self.spec(f.path, f.bindings[node.id][0])
+            if node.id in f.tops:
+                return ("sym", f.path, node.id)
+            return None
+        if isinstance(node, ast.Attribute):
+            return self.attribute(self.resolve(node.value, stack), node.attr)
+        return None
+
+    def ident(self, node):
+        """The word naming the target in this Name or Attribute, an alias note, or None."""
+        if isinstance(node, ast.Attribute):
+            return "" if node.attr == self.name else None
+        if isinstance(node, ast.Name):
+            if node.id == self.name:
+                return ""
+            bound = self.file.bindings.get(node.id)
+            if bound and bound[1] == self.name:
+                return " (alias %s)" % node.id
+        return None
+
+    def line_of(self, node, first=None, last=None):
+        """The line of the word in node's lines, from the first; else node's first line."""
+        first = first or node.lineno
+        last = last or getattr(node, "end_lineno", None) or first
+        for n in range(first, last + 1):
+            if n - 1 < len(self.file.lines) and self.word.search(self.file.lines[n - 1]):
+                return n
+        return first
+
+    def where(self, stack):
+        return ".".join(n for _, n in stack) or MODULE_LEVEL
+
+    def add(self, node, kind, line=None):
+        self.possible.add((self.file.path, line or self.line_of(node), kind))
+
+    def walk(self, node, stack):
+        f = self.file
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            qual = ".".join([n for _, n in stack] + [node.name])
+            if node.name == self.name and (f.path, qual) not in self.keys:
+                self.add(node, "other definition", node.lineno)
+            for d in node.decorator_list:
+                if self.ident(d) is not None:
+                    self.add(d, "decorator", self.end_line(d))
+                    self.handled.add(id(d))
+            inner = stack + [("class" if isinstance(node, ast.ClassDef) else "def", node.name)]
+            for field, value in ast.iter_fields(node):
+                for child in value if isinstance(value, list) else [value]:
+                    if isinstance(child, ast.AST):
+                        self.walk(child, inner if field == "body" else stack)
+            return
+        if isinstance(node, ast.Call):
+            func = node.func
+            note = self.ident(func)
+            if note is not None:
+                self.handled.add(id(func))
+                line = self.end_line(func)
+                if self.canonical(self.resolve(func, stack)) in self.keys:
+                    self.callers.add((f.path, line, self.where(stack)))
+                else:
+                    kind = "attribute call" if isinstance(func, ast.Attribute) else "call"
+                    self.add(func, kind + note, line)
+            if isinstance(func, ast.Name) and func.id in ATTR_CALLS and len(node.args) >= 2:
+                arg = node.args[1]
+                if isinstance(arg, ast.Constant) and arg.value == self.name:
+                    self.handled.add(id(arg))
+                    self.add(arg, func.id)
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            words = [w for a in node.names for w in a.name.split(".") + [a.asname]]
+            if self.name in words + (getattr(node, "module", None) or "").split("."):
+                self.add(node, "import")
+        elif id(node) not in self.handled:
+            note = self.ident(node) if isinstance(node, (ast.Name, ast.Attribute)) else None
+            if note is not None:
+                store = isinstance(node.ctx, ast.Store)
+                kind = "assignment" if store else (
+                    "attribute reference" if isinstance(node, ast.Attribute) else "reference")
+                self.add(node, kind + note, self.end_line(node))
+            elif isinstance(node, ast.Constant) and isinstance(node.value, str) \
+                    and self.word.search(node.value):
+                last = getattr(node, "end_lineno", None) or node.lineno
+                lines = [n for n in range(node.lineno, last + 1) if n - 1 < len(f.lines)
+                         and self.word.search(f.lines[n - 1])]
+                for n in lines or [node.lineno]:
+                    self.add(node, "string", n)
+        for child in ast.iter_child_nodes(node):
+            self.walk(child, stack)
+
+    def end_line(self, node):
+        """An Attribute's name is on its last line, a Name's on its only one."""
+        if isinstance(node, ast.Attribute):
+            return getattr(node, "end_lineno", None) or node.lineno
+        return node.lineno
+
+
+def calls_parse(root, files):
+    """({path: CallsFile}, [not parsed: (path, why)]) of the map's Python files."""
+    parsed, failed = {}, []
+    for path in files:
+        if posixpath.splitext(path)[1].lower() != ".py":
+            continue
+        text = read_text(root, path)
+        if text is None:
+            failed.append((path, "unreadable, too large or not text"))
+            continue
+        try:
+            tree = ast.parse(text, filename=path)
+        except SyntaxError as exc:
+            failed.append((path, "syntax error, line %s" % exc.lineno))
+            continue
+        except (ValueError, RecursionError, MemoryError):
+            failed.append((path, "cannot be parsed by this Python"))
+            continue
+        parsed[path] = CallsFile(path, text, tree)
+    return parsed, failed
+
+
+def calls_lines(root, targets, files, out_rel, everything=False):
+    """The lines `calls` prints; see `references/calls.md`."""
+    parsed, failed = calls_parse(root, files)
+    known = set(files)
+    texts = {}
+    for path in files:
+        if not is_map_page(path, out_rel):
+            text = read_text(root, path)
+            if text is not None:
+                texts[path] = text.split("\n")
+    out = []
+    for target in targets:
+        found = Calls(parsed, known, target)
+        listed = set()
+        out.append("calls %s" % target)
+        code_first = sorted(found.possible, key=lambda i: (i[2] == "string", i))
+        for head, items, show in (
+                ("definitions", sorted(found.definitions), lambda i: "%s:%d %s" % i),
+                ("callers", sorted(found.callers), lambda i: "%s:%d in %s" % i),
+                ("possible", code_first, lambda i: "%s:%d %s" % i)):
+            if not items:
+                out.append("%s: none found" % head)
+                continue
+            out.append("%s:" % head)
+            keep = items if everything or len(items) <= CALLS_LIMIT else items[:CALLS_LIMIT]
+            for item in keep:
+                out.append("  " + show(item))
+                listed.add(item[:2])
+            if len(keep) < len(items):
+                out.append("  … %d more (rerun with --all)" % (len(items) - len(keep)))
+        total = shown = 0
+        for path in sorted(texts):
+            for n, line in enumerate(texts[path], 1):
+                hits = len(found.word.findall(line))
+                total += hits
+                if hits and (path, n) in listed:
+                    shown += hits
+        if total == shown:
+            out.append("text: %d occurrence%s of %s, all on lines listed above"
+                       % (total, "" if total == 1 else "s", found.name))
+        else:
+            out.append("text: %d occurrence%s of %s, %d on lines listed above; grep the rest"
+                       % (total, "" if total == 1 else "s", found.name, shown))
+    if failed:
+        out.append("not parsed: " + ", ".join("%s (%s)" % item for item in sorted(failed)))
+    out.append(CALLS_COVERAGE)
+    return out
+
+
 # The git pre-commit hook. A POSIX sh script (Git for Windows runs hooks through its own sh, also
 # for a commit started from PowerShell) that runs an existing hook first, then `pre-commit`.
 HOOK_MARKER = "# codemap-managed-hook"
@@ -2024,8 +2330,8 @@ def session_hook(python, stdin_text=None):
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="codemap.py", description="Deterministic code map.")
     ap.add_argument("action", choices=["build", "check", "query", "mentions", "changed", "impact",
-                                       "detect", "install-hook", "uninstall-hook", "pre-commit",
-                                       "claude-hook", "rules-hint", "session-hook"])
+                                       "calls", "detect", "install-hook", "uninstall-hook",
+                                       "pre-commit", "claude-hook", "rules-hint", "session-hook"])
     ap.add_argument("terms", nargs="*")
     ap.add_argument("--root", default=".")
     ap.add_argument("--out", help="map path (default: from %s, else detected)" % CONFIG)
@@ -2041,6 +2347,8 @@ def main(argv=None):
                          "exact matches first, then the most imported files and most linked "
                          "pages; a cut ends with one line saying how many more"
                          % CHARS_PER_TOKEN)
+    ap.add_argument("--all", action="store_true",
+                    help="calls: no cap (else %d lines per section of a name)" % CALLS_LIMIT)
     ap.add_argument("--quiet", action="store_true",
                     help="check: print nothing when current, one line otherwise")
     ap.add_argument("--remove", action="store_true", help="rules-hint: remove the block")
@@ -2053,6 +2361,11 @@ def main(argv=None):
         ap.error("--budget takes a positive number of tokens, with query only")
     if args.depth < 1:
         ap.error("--depth must be 1 or more")
+    if args.all and args.action != "calls":
+        ap.error("--all goes with calls only")
+    if args.action == "calls" and (not args.terms or not all(CALLS_NAME.match(t)
+                                                             for t in args.terms)):
+        ap.error("calls needs NAME... (a function, `module.function` or `Class.method`)")
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(errors="backslashreplace")
@@ -2119,6 +2432,11 @@ def main(argv=None):
         if not vault_dir:  # the code-map skill then sets up a vault first (create-vault)
             print("next: no vault; create one with the create-vault skill (Create mode), then "
                   "`build` (`build --redetect` when %s exists)" % CONFIG)
+        return 0
+    if args.action == "calls":  # live, before the full scan: it needs only the file list
+        files = [f for f in tracked if not skipped(f, out_rel)]
+        for line in calls_lines(root, args.terms, files, out_rel, args.all):
+            print(re.sub(r"[\x00-\x1f\x7f]", "?", line))
         return 0
     diff = []
     if args.action == "changed":
