@@ -137,6 +137,13 @@ these figures yet. Run by hand, `usage.py <session> --streaks` adds one line per
 times it made the same failing tool call three or more times in a row, and the longest such run
 (tool name only); a run never asks for it.
 
+Also by hand only, `usage.py <session> --tools` shows where each agent's context went: one line per
+tool (calls, characters of the results returned to the model, errors), a `reads` line (Read calls,
+distinct files, re-reads of a file it had read and not edited since) and a `map` line (code-map
+queries, other code-map calls, searches by Grep, Glob or a Bash `grep`, `rg`, `find` or `git grep`).
+Tool names only, never inputs or paths; the re-read count can't see changes made by Bash or another
+agent, and the search count only looks at a Bash command's first word.
+
 Two things learn from the record:
 
 - **Within a project:** when reviewers find the same class of defect in two phases, the manager

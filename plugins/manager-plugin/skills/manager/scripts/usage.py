@@ -2,7 +2,7 @@
 """usage: what a Claude Code session's orchestrator and its subagents spent, from the transcripts.
 
 Usage:
-  usage.py SESSION_ID [AGENT[=MODEL] ...] [--since WHEN] [--streaks]
+  usage.py SESSION_ID [AGENT[=MODEL] ...] [--since WHEN] [--streaks] [--tools]
 
 Prints one line for the session's main conversation (`orchestrator`) and one per subagent, oldest
 first; with AGENT names (`orchestrator`, or a subagent's id as the Agent tool returns it) only
@@ -54,6 +54,34 @@ With `--streaks`, each `usage` line is followed by one more (off by default):
   a run. longest: the calls in the longest run; tool: its tool's name (never the input), `none`
   without a run; `unknown` for a transcript that can't be read. `--since` bounds them too.
 
+With `--tools`, each agent's lines (`usage`, then `streaks` if asked) are followed by where its
+context went (off by default):
+
+  tools | agent | tool | calls | result chars | errors
+  reads | agent | Read calls | distinct files | re-reads unchanged
+  map | agent | map queries | other map calls | searches
+
+- tools: one line per tool the agent called, the most result characters first (then the most
+  calls, then by name); none for an agent that called none. result chars: the characters of the
+  tool results returned to the model (a text result's length, or its text parts' summed; an
+  image or any other part counts 0), exact, no token estimate; errors: the results with
+  `is_error`. A call without a result counts as a call only; a result whose call is not counted
+  (before `--since`) is not counted.
+- reads: the Read calls, the distinct paths they read, and the re-reads unchanged: a Read of a
+  path with the same offset and limit as an earlier Read by this agent that did not fail, with no
+  Edit, MultiEdit, Write or NotebookEdit call (failed or not) of that path by this agent between
+  them. A Read of another range of the file is no re-read. Changes made by another agent, by a
+  Bash command or outside the transcript are not seen, so such a Read counts as a re-read.
+- map: map queries, Bash calls whose command runs `codemap.py` with the action `query` or
+  `mentions` (the first action word after `codemap.py`); other map calls, those with another
+  action or none found; searches, Grep and Glob calls and Bash calls whose first command is
+  `grep`, `rg`, `find` or `git grep`. The first command is the first word after any leading
+  `cd ... &&`, variable assignments (`A=b`) and `timeout [options] N`; a search later in a
+  pipeline or after another command is not seen.
+
+The tool names are printed, never their inputs, paths or commands; `unknown` (one `tools` line)
+for a transcript that can't be read. `--since` bounds them too.
+
 A value that can't be read is `unknown`: every value of a missing transcript, the role without a
 `.meta.json`, the resumes and seconds of a transcript without timestamps.
 
@@ -74,6 +102,7 @@ import glob
 import json
 import os
 import re
+import shlex
 import sys
 
 COLUMNS = ("agent", "role", "model", "requests", "input", "cache read", "cache write 5m",
@@ -298,6 +327,141 @@ def streak_line(agent, found):
     return " | ".join(["streaks", tag(agent)] + values)
 
 
+EDITS = ("Edit", "MultiEdit", "Write", "NotebookEdit")  # the tools that change a file
+SEARCHES = ("grep", "rg", "find")  # a Bash command that starts with one is a search
+ACTIONS = ("build", "check", "query", "mentions", "changed", "impact", "detect", "install-hook",
+           "uninstall-hook", "pre-commit", "claude-hook", "rules-hint", "session-hook")
+ASSIGNED = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def size(content):
+    """The characters of a tool result's content: a text, or its text parts' summed."""
+    if isinstance(content, str):
+        return len(content)
+    if isinstance(content, list):
+        return sum(len(part["text"]) for part in content if isinstance(part, dict)
+                   and part.get("type") == "text" and isinstance(part.get("text"), str))
+    return 0
+
+
+def words(command):
+    try:
+        return shlex.split(command)
+    except ValueError:  # an unclosed quote
+        return command.split()
+
+
+def first(command):
+    """The first command's words, without a leading `cd ... &&`, assignments and `timeout`."""
+    found = words(command)
+    while found:
+        if found[0] == "cd" and "&&" in found:
+            found = found[found.index("&&") + 1:]
+        elif ASSIGNED.match(found[0]):
+            found = found[1:]
+        elif found[0] == "timeout":
+            found = found[1:]
+            while found and found[0].startswith("-"):
+                found = found[1:]
+            found = found[1:]  # the duration
+        else:
+            break
+    return found
+
+
+def search(command):
+    found = first(command)
+    name = os.path.basename(found[0]) if found else ""
+    return name in SEARCHES or (name == "git" and found[1:2] == ["grep"])
+
+
+def mapped(command):
+    """None for a command that does not run `codemap.py`, else whether it runs a query."""
+    found = words(command)
+    for at, word in enumerate(found):
+        if os.path.basename(word) == "codemap.py":
+            action = next((w for w in found[at + 1:] if w in ACTIONS), None)
+            return action in ("query", "mentions")
+    return None
+
+
+def tools(paths, since=None):
+    """({tool: [calls, result chars, errors]}, (Read calls, distinct files, re-reads
+    unchanged), (map queries, other map calls, searches)) of one conversation's transcript
+    files, or None when no file can be read (see `--tools`)."""
+    calls, results, opened = {}, {}, False  # id -> (tool, input); id -> (chars, error)
+    for path in paths:
+        try:
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                opened = True
+                for line in fh:
+                    try:
+                        record = json.loads(line)
+                    except (ValueError, RecursionError):
+                        continue
+                    if not isinstance(record, dict):
+                        continue
+                    if since is not None and (when(record) or -1) < since:
+                        continue
+                    for use in blocks(record, "tool_use"):
+                        key = use.get("id")
+                        key = key if isinstance(key, str) else object()  # no id: its own call
+                        given = use.get("input")
+                        calls.setdefault(key, (use.get("name"),
+                                               given if isinstance(given, dict) else {}))
+                    for done in blocks(record, "tool_result"):
+                        key = done.get("tool_use_id")
+                        if isinstance(key, str):  # the same result in two files counts once
+                            results.setdefault(key, (size(done.get("content")),
+                                                     done.get("is_error") is True))
+        except OSError:
+            continue
+    if not opened:
+        return None
+    by_tool = {}
+    reads, files, again, read = 0, set(), 0, set()  # read: (path, offset, limit) since a change
+    queries = others = searches = 0
+    for key, (name, given) in calls.items():  # in the order the calls were made
+        entry = by_tool.setdefault(tag(name), [0, 0, 0])
+        chars, error = results.get(key, (0, False))
+        entry[0] += 1
+        entry[1] += chars
+        entry[2] += error
+        target = given.get("notebook_path" if name == "NotebookEdit" else "file_path")
+        if name == "Read":
+            reads += 1
+            if isinstance(target, str):
+                files.add(target)
+                span = (target, repr(given.get("offset")), repr(given.get("limit")))
+                again += span in read
+                if not error:
+                    read.add(span)
+        elif name in EDITS and isinstance(target, str):
+            read = {span for span in read if span[0] != target}
+        elif name in ("Grep", "Glob"):
+            searches += 1
+        command = given.get("command")
+        if name == "Bash" and isinstance(command, str):
+            query = mapped(command)
+            queries += query is True
+            others += query is False
+            searches += search(command)
+    return by_tool, (reads, len(files), again), (queries, others, searches)
+
+
+def tool_lines(agent, found):
+    if found is None:
+        return [" | ".join(["tools", tag(agent)] + ["unknown"] * 4),
+                " | ".join(["reads", tag(agent)] + ["unknown"] * 3),
+                " | ".join(["map", tag(agent)] + ["unknown"] * 3)]
+    by_tool, reads, maps = found
+    order = sorted(by_tool.items(), key=lambda item: (-item[1][1], -item[1][0], item[0]))
+    return [" | ".join(["tools", tag(agent), name] + [str(int(v)) for v in values])
+            for name, values in order] \
+        + [" | ".join(["reads", tag(agent)] + [str(v) for v in reads]),
+           " | ".join(["map", tag(agent)] + [str(v) for v in maps])]
+
+
 def last(path, tail=TAIL):
     """The context size at the last request in a transcript's last `tail` bytes (the figure
     `context at return` gives), or None: no request there, or no file that can be read (`back`
@@ -446,12 +610,18 @@ def main(argv=None):
     ap.add_argument("--streaks", action="store_true",
                     help="after each line, one `streaks` line: runs of 3 or more identical tool "
                          "calls in a row that each ended in an error, and the longest")
+    ap.add_argument("--tools", action="store_true",
+                    help="after each agent's lines, its `tools` lines (calls, result characters "
+                         "and errors by tool), a `reads` line and a `map` line")
     args = ap.parse_intermixed_args(argv)
     expected = dict(args.agents)  # the last =MODEL given for an agent
     for row in rows(args.session, [name for name, _ in args.agents], args.since):
         print(render(*row, expected=expected.get(row[0], ())))
         if args.streaks:
             print(streak_line(row[0], streaks(paths(args.session, row[0]), args.since)))
+        if args.tools:
+            for line in tool_lines(row[0], tools(paths(args.session, row[0]), args.since)):
+                print(line)
     return 0
 
 

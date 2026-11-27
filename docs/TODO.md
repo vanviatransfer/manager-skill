@@ -1934,3 +1934,24 @@ Two research passes, by reading only (nothing installed or run): CodeGraph's sou
 - **Rejected.** MCP servers, embeddings, proxies, daemons, telemetry, model-written memory;
   a 1-hour cache for subagents (item 12: measured to cost more); an output-trimming wrapper
   (independent tests show no saving).
+
+### 39. usage.py --tools (plugin 0.9.22), built, not yet run on real runs
+
+Why: items 37-38 put the code-map features (callers, explore) and the paid with/without benchmark
+after a free first measurement from transcripts already on disk: where agents' context goes and
+whether they use the map at all.
+
+- **What.** `usage.py --tools`, opt-in like `--streaks`, adds after each agent's lines: one
+  `tools` line per tool (calls, result characters, errors; most characters first), a `reads` line
+  (Read calls, distinct files, re-reads unchanged) and a `map` line (`codemap.py` `query` or
+  `mentions` calls, other `codemap.py` calls, searches). Exact characters, no token estimate;
+  tool names only, never inputs, paths or commands. `--since` bounds them; output without the
+  flag is unchanged (tested).
+- **Limits.** A re-read counts the same path with the same offset and limit, with no Edit, Write
+  or NotebookEdit of it by the same agent between; changes by Bash, other agents or outside the
+  transcript are not seen. A Bash search is found by its first command word only (after
+  `cd ... &&`, assignments, `timeout`). Image parts count 0 characters.
+- **Not changed.** The manager skill and its references (the run record does not call it), the
+  agents, hooks, `retro.sh`, the code map, the eval suites, any ceiling.
+- **Next step.** Run it on recorded manager sessions and decide from the figures whether items
+  37-38's callers, explore or benchmark are worth building.

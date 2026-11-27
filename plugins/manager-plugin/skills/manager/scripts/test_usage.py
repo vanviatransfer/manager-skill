@@ -721,5 +721,123 @@ class StreakTest(Fixture):
                              "streaks | s1 | " + expected, since)
 
 
+def used(at, key, tool, given, content="", error=None):
+    """A tool call and its result, the result's content as given (a text or a list of parts)."""
+    part = {"type": "tool_result", "tool_use_id": key, "content": content}
+    if error is not None:
+        part["is_error"] = error
+    return call(at, key, tool, given) + other(at + 1, message={"role": "user", "content": [part]})
+
+
+def bash(at, key, command, content=""):
+    return used(at, key, "Bash", {"command": command}, content)
+
+
+def reading(at, key, path, content="", error=None, **span):
+    return used(at, key, "Read", dict({"file_path": path}, **span), content, error)
+
+
+class ToolsTest(Fixture):
+    """`--tools`: calls, result characters and errors by tool; re-reads; code-map use."""
+
+    def tools(self, *groups, name="t1", kind="tools"):
+        self.agent(self.new, name, "manager-plugin:worker", groups)
+        return [line for line in lines(SESSION, name, "--tools")
+                if line.startswith(kind + " ")]
+
+    def test_off_by_default_the_lines_are_unchanged(self):
+        self.assertEqual(lines(SESSION), [ORCHESTRATOR, REVIEWER, IMPLEMENTER, UNTIMED])
+        self.assertEqual(lines(SESSION, "--tools"), [
+            ORCHESTRATOR, "reads | orchestrator | 0 | 0 | 0", "map | orchestrator | 0 | 0 | 0",
+            REVIEWER, "reads | b2 | 0 | 0 | 0", "map | b2 | 0 | 0 | 0",
+            IMPLEMENTER, "reads | a1 | 0 | 0 | 0", "map | a1 | 0 | 0 | 0",
+            UNTIMED, "reads | c3 | 0 | 0 | 0", "map | c3 | 0 | 0 | 0"])
+
+    def test_a_transcript_that_cannot_be_read_is_unknown(self):
+        self.assertEqual(lines(SESSION, "zz", "--tools"), [
+            "usage | zz | unknown" + UNKNOWN, "tools | zz | unknown | unknown | unknown | unknown",
+            "reads | zz | unknown | unknown | unknown", "map | zz | unknown | unknown | unknown"])
+
+    def test_both_flags_streaks_first(self):
+        self.agent(self.new, "t1", None, (failing(10, "x1"), failing(20, "x2"),
+                                          failing(30, "x3")))
+        self.assertEqual(lines(SESSION, "t1", "--tools", "--streaks")[1:], [
+            "streaks | t1 | 1 | 3 | Bash", "tools | t1 | Bash | 3 | 51 | 3",
+            "reads | t1 | 0 | 0 | 0", "map | t1 | 0 | 0 | 0"])
+
+    def test_calls_chars_errors_most_chars_first(self):
+        out = self.tools(
+            reading(10, "r1", "/secret/a.py", "x" * 40),
+            reading(20, "r2", "/secret/b.py", [{"type": "text", "text": "y" * 30},
+                                               {"type": "image", "source": {"data": "z" * 999}},
+                                               {"type": "text", "text": "y" * 5}]),
+            bash(30, "b1", "make secret", "o" * 100),
+            used(40, "g1", "Grep", {"pattern": "secret"}, "no matches", error=True),
+            used(50, "g2", "Grep", {"pattern": "secret"}, "abc"),
+            used(60, "w1", "Write", {"file_path": "/secret/c.py"}, "ok"),
+            used(70, "e1", "Edit", {"file_path": "/secret/c.py"}, "ok"),
+            call(80, "n1", "Glob", {"pattern": "*"}))  # no result: a call, no characters
+        self.assertEqual(out, ["tools | t1 | Bash | 1 | 100 | 0", "tools | t1 | Read | 2 | 75 | 0",
+                               "tools | t1 | Grep | 2 | 13 | 1", "tools | t1 | Edit | 1 | 2 | 0",
+                               "tools | t1 | Write | 1 | 2 | 0", "tools | t1 | Glob | 1 | 0 | 0"])
+        self.assertNotIn("secret", "".join(lines(SESSION, "t1", "--tools")))
+
+    def test_a_call_in_two_files_counts_once(self):
+        both = reading(10, "r1", "/a.py", "x" * 7)
+        self.agent(self.old, "t1", None, (both,))
+        self.assertEqual(self.tools(both), ["tools | t1 | Read | 1 | 7 | 0"])
+
+    def test_re_reads_unchanged(self):
+        out = self.tools(
+            reading(10, "r1", "/a.py"), reading(20, "r2", "/a.py"),  # a re-read
+            reading(30, "r3", "/a.py", offset=10, limit=20),  # another range: no re-read
+            reading(40, "r4", "/a.py", offset=10, limit=20),  # the same range: a re-read
+            reading(50, "r5", "/b.py", error=True),  # failed: what follows is no re-read
+            reading(60, "r6", "/b.py"),
+            kind="reads")
+        self.assertEqual(out, ["reads | t1 | 6 | 2 | 2"])
+
+    def test_an_edit_between_two_reads(self):
+        for tool, key in (("Edit", "file_path"), ("Write", "file_path"),
+                          ("NotebookEdit", "notebook_path"), ("MultiEdit", "file_path")):
+            name = "e" + str(len(tool))
+            out = self.tools(reading(10, "r1", "/a.py"), reading(15, "r2", "/b.py"),
+                             used(20, "e1", tool, {key: "/a.py"}),
+                             reading(30, "r3", "/a.py"), reading(40, "r4", "/b.py"),
+                             reading(50, "r5", "/a.py"), name=name, kind="reads")
+            self.assertEqual(out, ["reads | %s | 5 | 2 | 2" % name], tool)
+
+    def test_map_queries_other_map_calls_and_searches(self):
+        out = self.tools(
+            bash(10, "b1", "python3 /x/code-map/scripts/codemap.py query 'run loop' --budget 9"),
+            bash(11, "b2", "cd /repo && python3 /x/codemap.py --root . mentions foo"),
+            bash(12, "b3", "python3 /x/codemap.py build"),
+            bash(13, "b4", "python3 /x/codemap.py"),  # no action: another map call
+            bash(14, "b5", "grep -rn secret src"),
+            bash(15, "b6", "cd /repo && LC_ALL=C rg secret"),
+            bash(16, "b7", "timeout 120 find . -name '*.py'"),
+            bash(17, "b8", "git grep -n secret"),
+            bash(18, "b9", "make test | grep FAIL"),  # not the first command: no search
+            bash(19, "b10", "echo 'unclosed"),
+            bash(20, "b11", "git log --grep secret"),
+            used(21, "g1", "Grep", {"pattern": "x"}), used(22, "g2", "Glob", {"pattern": "*"}),
+            kind="map")
+        self.assertEqual(out, ["map | t1 | 2 | 2 | 6"])
+
+    def test_since_bounds_them(self):
+        self.agent(self.new, "t1", None, (
+            reading(10, "r1", "/a.py", "abc"), reading(20, "r2", "/a.py", "abc"),
+            bash(30, "b1", "rg x", "12345")))
+        for since, expected in (
+                (stamp(0), ["tools | t1 | Read | 2 | 6 | 0", "tools | t1 | Bash | 1 | 5 | 0",
+                            "reads | t1 | 2 | 1 | 1", "map | t1 | 0 | 0 | 1"]),
+                (stamp(15), ["tools | t1 | Bash | 1 | 5 | 0", "tools | t1 | Read | 1 | 3 | 0",
+                             "reads | t1 | 1 | 1 | 0", "map | t1 | 0 | 0 | 1"]),
+                (stamp(31), [  # only b1's result: not counted
+                 "reads | t1 | 0 | 0 | 0", "map | t1 | 0 | 0 | 0"])):
+            self.assertEqual(lines(SESSION, "t1", "--tools", "--since", since)[1:], expected,
+                             since)
+
+
 if __name__ == "__main__":
     unittest.main()
