@@ -2007,3 +2007,18 @@ the staleness idea (item 37) is dropped.
   hide the search after them; `streaks()` takes a tool_use whose `id` is not a string as its own
   call (as `tools()` does) instead of crashing; `calls` counts as a code-map action.
 - **Tests.** `skills/code-map/scripts/test_calls.py`.
+
+### 41. Code map: C and C++ support (owner, noted, not built)
+
+The owner wants C and C++ covered later, for Unreal Engine game projects (Blender's Python is
+already covered). Today `.c`, `.h`, `.cpp`, `.cc` and `.hpp` files get only a language label: no
+symbols, no imports; `impact` matches names by text only, and `calls` resolves Python only.
+Wanted, for a later change after `explore`:
+- **Symbols.** Top-level functions, classes, structs, enums and namespaces from line patterns,
+  including Unreal's macro-marked forms (`UCLASS()`, `USTRUCT()`, `UENUM()` before the
+  declaration, `class MYGAME_API AMyActor : public AActor`).
+- **Includes.** Local `#include "..."` resolved to tracked files, so `impact` and importers work;
+  `<...>` system and engine includes are not followed.
+- **Limits stated honestly.** Macros, templates and overloads are not resolved; anything the
+  patterns miss must not look complete, as for `calls` (item 40).
+- Same rules: standard-library Python 3.8+, no ceiling raised, no default token cost.
