@@ -1904,3 +1904,33 @@ the time of reading; README read 2026-11-27, not run) to improve the code map.
     measuring the map's own saving, which is still unmeasured (see the code-map eval item).
 - **Next step, when picked.** Measure first: run the existing map on one real repository with
   and without it, then decide which idea is worth building.
+
+### 38. Code map and token-saving research (2026-11-27, research only, nothing built)
+
+Two research passes, by reading only (nothing installed or run): CodeGraph's source at commit
+3c23086, and about 20 starred projects that claim token savings for coding agents.
+
+- **Measured savings are weak outside self-run numbers.** Most claims are self-run or estimated.
+  Independent paired tests reported for output filtering (one with 1,740 attempts) found the bill
+  moving -5% to +5%: more turns and cheap cache reads absorb the trimmed output (second-hand for
+  one source; not checked here). Terse-voice rules: about 4-12% of output tokens.
+- **Our map today.** Symbols come from line patterns (no `ast`, so pages stay the same on every
+  Python version); `query` and `impact` scan the working tree on each run, so their answers are
+  not stale, only committed pages can be. Item 37's staleness idea is therefore worth little.
+- **Callers (item 37, idea 1), M.** A live `calls <name>` action, no page writes: resolve a call in
+  the same file, then through imports, then a unique global name marked `?`; no edge for names
+  defined in more than 3 files. JS/TS by regex cannot follow methods or types. A scratch scan of
+  this repository: 477 top-level defs, about 1,315 caller pairs; all pairs in pages would add an
+  estimated 4-5K tokens, so page data only if a benchmark shows use.
+- **Explore (idea 2), M.** `explore "<question>" --budget N` (budget required): names from the
+  question, integer scores, ties by path, line-numbered source grouped by file, callers; weights
+  to tune on the benchmark. Simpler first layer: `outline <file>`, a line-numbered skeleton (S).
+- **Benchmark (idea 4), M.** With and without the map (no `.codemap.json`, pages or rules block,
+  `codemap.py` blocked), 8-12 tasks with answer keys, at least 4 runs a side, median and range of
+  tokens, cost, tool calls, reads and correctness. Estimate: 0.15-0.60 USD a Sonnet run, about
+  12-48 USD for 80 runs. Needs the owner's budget.
+- **Cheaper first measurement.** An opt-in `usage.py` report from recorded sessions: tool-result
+  size by tool, re-reads of unchanged files, whether agents call `query`. No paid run.
+- **Rejected.** MCP servers, embeddings, proxies, daemons, telemetry, model-written memory;
+  a 1-hour cache for subagents (item 12: measured to cost more); an output-trimming wrapper
+  (independent tests show no saving).
