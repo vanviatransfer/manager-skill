@@ -2,7 +2,8 @@
 """usage: what a Claude Code session's orchestrator and its subagents spent, from the transcripts.
 
 Usage:
-  usage.py SESSION_ID [AGENT[=MODEL] ...] [--since WHEN] [--streaks] [--tools]
+  usage.py SESSION_ID [AGENT[=MODEL] ...] [--since WHEN] [--streaks] [--tools] [--prefix]
+          [--after-green]
 
 Prints one line for the session's main conversation (`orchestrator`) and one per subagent, oldest
 first; with AGENT names (`orchestrator`, or a subagent's id as the Agent tool returns it) only
@@ -54,19 +55,39 @@ With `--streaks`, each `usage` line is followed by one more (off by default):
   a run. longest: the calls in the longest run; tool: its tool's name (never the input), `none`
   without a run; `unknown` for a transcript that can't be read. `--since` bounds them too.
 
+Since plugin 0.9.24 each `streaks` line is followed by an `errors` line:
+
+  errors | agent | errors | distinct signatures | repeated errors | requests after first repeat
+
+- errors: the tool results with `is_error` (of calls counted). A signature is the tool's name
+  and the result's first line with quoted strings, paths, hex ids (6 or more hex digits, with a
+  digit and a letter) and digits replaced by a placeholder; signatures are never printed.
+  repeated errors: those whose signature an earlier error of this agent had (consecutive or
+  not); requests after first repeat: the agent's requests after the first one's result (0
+  without a repeat).
+
 With `--tools`, each agent's lines (`usage`, then `streaks` if asked) are followed by where its
 context went (off by default):
 
-  tools | agent | tool | calls | result chars | errors
-  reads | agent | Read calls | distinct files | re-reads unchanged
+  tools | agent | tool | calls | result chars | errors | carried chars
+  reads | agent | Read calls | distinct files | re-reads unchanged | bash reads | bash read chars
   map | agent | map queries | other map calls | searches
 
-- tools: one line per tool the agent called, the most result characters first (then the most
-  calls, then by name); none for an agent that called none. result chars: the characters of the
-  tool results returned to the model (a text result's length, or its text parts' summed; an
-  image or any other part counts 0), exact, no token estimate; errors: the results with
-  `is_error`. A call without a result counts as a call only; a result whose call is not counted
-  (before `--since`) is not counted.
+(`carried chars`, `bash reads` and `bash read chars` are new in plugin 0.9.24, which also
+changed the order of the `tools` lines; the lines had no consumer.)
+
+- tools: one line per tool the agent called, the most carried characters first (then the most
+  result characters, the most calls, by name); none for an agent that called none. result
+  chars: the characters of the tool results returned to the model (a text result's length, or
+  its text parts' summed; an image or any other part counts 0), exact, no token estimate;
+  errors: the results with `is_error`. A call without a result counts as a call only; a result
+  whose call is not counted (before `--since`) is not counted. carried chars: each result's
+  characters times the agent's later requests that still carried it: every request after it,
+  up to the first compaction (a `compact_boundary` record) after it that does not list its
+  record's uuid as preserved (`compactMetadata.preservedMessages`). Context dropped any other
+  way (old tool results cleared without such a record, a compaction not recorded) is not seen:
+  the result counts as carried to the agent's end, so the figure is an upper bound. Characters
+  re-read from the cache cost less than new ones; this counts characters, not price.
 - reads: the Read calls, the distinct paths they read, and the re-reads unchanged: a Read of a
   path with the same offset and limit as an earlier Read by this agent that did not fail, with no
   Edit, MultiEdit, Write or NotebookEdit call (failed or not) of that path by this agent between
@@ -79,9 +100,44 @@ context went (off by default):
   `cd ... &&`, variable assignments (`A=b`) and `timeout [options] N` (with an option's value
   word: `-s KILL`, `-k 5`, `--signal KILL`, `--kill-after 5`); a search later in a pipeline or
   after another command is not seen.
+- bash reads: Bash calls whose first command (found as for searches) is `cat`, `head`,
+  `tail`, `nl`, `less`, `more` or `bat` without an output redirection (`cat > f` writes), or
+  `sed` with `-n` (also in `-ne`, or `--quiet`/`--silent`); bash read chars: their results'
+  characters. A read later in a pipeline or after another command is not seen.
 
 The tool names are printed, never their inputs, paths or commands; `unknown` (one `tools` line)
 for a transcript that can't be read. `--since` bounds them too.
+
+With `--prefix`, each agent's lines end with (off by default):
+
+  prefix | agent | first request input tokens | total input tokens | share %
+
+- input tokens: a request's input + cache read + cache writes. The first request counted
+  approximates the fixed prefix (system prompt, tool schemas, the brief), which every later
+  request sends again; it also holds the first prompt's own text, so it is an upper bound of
+  the prefix. share: first / total, one decimal. `none` for an agent without a request.
+
+With `--after-green`, after them (off by default):
+
+  after green | agent | green at request k of n | requests after | tool calls after |
+  output tokens after | input tokens after
+
+- What an agent spent after its last change already passed validation. The last change: the
+  last Edit, MultiEdit, Write or NotebookEdit call whose result is no error (a change made by
+  Bash, `sed -i` or a redirection, is not seen). Green: the first later Bash call that ran a
+  test or validation command and did not error: its command has the word `unittest`, `pytest`
+  or `ctest` (not before a `.`: `pytest.ini`), or `npm test`, `npm run test`, `yarn test`,
+  `pnpm test`, `go test`, `cargo test`, `mvn test`, `gradle test`, `make test` or `make
+  check`; or it redirects output to a `.log` file
+  and later runs `echo $?`, and then its result's last non-blank line must be `0` (the call
+  itself does not fail). A command that hides a failure otherwise (`| tail`) counts as passed.
+- k: the requests up to the one that made that call, of the agent's n; after: the requests,
+  tool calls and tokens (input as for `--prefix`) after the call, the request that read its
+  result included. `none` when there is no change or no green call after the last one.
+
+The order after each `usage` line: `streaks`, `errors`, the `tools` lines, `reads`, `map`,
+`prefix`, `after green`, each only with its flag. `--since` bounds them all; each is
+`unknown` for a transcript that can't be read.
 
 A value that can't be read is `unknown`: every value of a missing transcript, the role without a
 `.meta.json`, the resumes and seconds of a transcript without timestamps.
@@ -380,6 +436,26 @@ def search(command):
     return name in SEARCHES or (name == "git" and found[1:2] == ["grep"])
 
 
+READERS = ("cat", "head", "tail", "nl", "less", "more", "bat")  # a Bash command that reads a file
+OPERATORS = ("|", "||", "&&", ";", "&")
+
+
+def bash_read(command):
+    """True for a command whose first command (as `search` finds it) reads a file: one of
+    READERS without an output redirection (`cat > f` writes), or `sed` with `-n`."""
+    found = first(command)
+    name = os.path.basename(found[0]) if found else ""
+    own = []
+    for word in found[1:]:
+        if word in OPERATORS:
+            break
+        own.append(word)
+    if name in READERS:
+        return not any(word.startswith(">") for word in own)
+    return name == "sed" and any(word in ("--quiet", "--silent") or (
+        re.fullmatch(r"-[A-Za-z]+", word) is not None and "n" in word) for word in own)
+
+
 def mapped(command):
     """None for a command that does not run `codemap.py`, else whether it runs a query."""
     found = words(command)
@@ -392,7 +468,8 @@ def mapped(command):
 
 def tools(paths, since=None):
     """({tool: [calls, result chars, errors]}, (Read calls, distinct files, re-reads
-    unchanged), (map queries, other map calls, searches)) of one conversation's transcript
+    unchanged, bash reads, bash read chars), (map queries, other map calls, searches)) of one
+    conversation's transcript
     files, or None when no file can be read (see `--tools`)."""
     calls, results, opened = {}, {}, False  # id -> (tool, input); id -> (chars, error)
     for path in paths:
@@ -425,7 +502,7 @@ def tools(paths, since=None):
         return None
     by_tool = {}
     reads, files, again, read = 0, set(), 0, set()  # read: (path, offset, limit) since a change
-    queries = others = searches = 0
+    queries = others = searches = shown = shown_chars = 0
     for key, (name, given) in calls.items():  # in the order the calls were made
         entry = by_tool.setdefault(tag(name), [0, 0, 0])
         chars, error = results.get(key, (0, False))
@@ -451,20 +528,217 @@ def tools(paths, since=None):
             queries += query is True
             others += query is False
             searches += search(command)
-    return by_tool, (reads, len(files), again), (queries, others, searches)
+            if bash_read(command):
+                shown += 1
+                shown_chars += chars
+    return by_tool, (reads, len(files), again, shown, shown_chars), (queries, others, searches)
 
 
-def tool_lines(agent, found):
+def tool_lines(agent, found, events=None):
     if found is None:
-        return [" | ".join(["tools", tag(agent)] + ["unknown"] * 4),
-                " | ".join(["reads", tag(agent)] + ["unknown"] * 3),
+        return [" | ".join(["tools", tag(agent)] + ["unknown"] * 5),
+                " | ".join(["reads", tag(agent)] + ["unknown"] * 5),
                 " | ".join(["map", tag(agent)] + ["unknown"] * 3)]
     by_tool, reads, maps = found
-    order = sorted(by_tool.items(), key=lambda item: (-item[1][1], -item[1][0], item[0]))
-    return [" | ".join(["tools", tag(agent), name] + [str(int(v)) for v in values])
-            for name, values in order] \
+    held = carried(events) if events is not None else {}
+    order = sorted(by_tool.items(), key=lambda item: (-held.get(item[0], 0), -item[1][1],
+                                                      -item[1][0], item[0]))
+    return [" | ".join(["tools", tag(agent), name] + [str(int(v)) for v in values]
+                       + [str(held.get(name, 0))]) for name, values in order] \
         + [" | ".join(["reads", tag(agent)] + [str(v) for v in reads]),
            " | ".join(["map", tag(agent)] + [str(v) for v in maps])]
+
+
+def text(content):
+    """A tool result's text: the text itself, or its text parts joined by line breaks."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(part["text"] for part in content if isinstance(part, dict)
+                         and part.get("type") == "text" and isinstance(part.get("text"), str))
+    return ""
+
+
+def kept(record):
+    """The uuids a `compact_boundary` record lists as preserved (kept in the context)."""
+    meta = record.get("compactMetadata")
+    meta = meta.get("preservedMessages") if isinstance(meta, dict) else None
+    found = set()
+    for key in ("uuids", "allUuids"):
+        given = meta.get(key) if isinstance(meta, dict) else None
+        if isinstance(given, list):
+            found.update(u for u in given if isinstance(u, str))
+    return found
+
+
+def timeline(paths, since=None):
+    """One conversation's transcript files as events in time order (records without a time
+    last, then in file order), or None when no file can be read. Each event is a dict with
+    `kind`: `request` (`prompt`, `output`), `call` (`id`, `name`, `input`), `result` (`id`,
+    `chars`, `error`, `head`: its first line, `tail`: its last non-blank line, `uuid`: its
+    record's) or `compact` (`kept`: the uuids it preserved). A request, call or result in two
+    files counts once, at its first record; `since` as in `read`."""
+    requests, calls, results, compactions, opened, seq = {}, {}, {}, [], False, 0
+    for path in paths:
+        try:
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                opened = True
+                for line in fh:
+                    try:
+                        record = json.loads(line)
+                    except (ValueError, RecursionError):
+                        continue
+                    if not isinstance(record, dict):
+                        continue
+                    at = when(record)
+                    if since is not None and (at is None or at < since):
+                        continue
+                    seq += 1
+                    place = (at is None, at or 0, seq)
+                    if record.get("type") == "system" \
+                            and record.get("subtype") == "compact_boundary":
+                        compactions.append((place, {"kind": "compact", "kept": kept(record)}))
+                    found = request(record)
+                    if found:
+                        key, use, _ = found
+                        entry = requests.setdefault(key, [place, None])
+                        entry[0] = min(entry[0], place)
+                        entry[1] = use  # the last record's: the complete one
+                    for n, use in enumerate(blocks(record, "tool_use")):
+                        key = use.get("id")
+                        key = key if isinstance(key, str) else object()  # no id: its own call
+                        given = use.get("input")
+                        calls.setdefault(key, (place + (n + 1,), {
+                            "kind": "call", "id": key, "name": use.get("name"),
+                            "input": given if isinstance(given, dict) else {}}))
+                    for done in blocks(record, "tool_result"):
+                        key = done.get("tool_use_id")
+                        if not isinstance(key, str) or key in results:
+                            continue
+                        said = text(done.get("content"))
+                        rest = [part for part in said.splitlines() if part.strip()]
+                        results[key] = (place + (0,), {
+                            "kind": "result", "id": key, "chars": size(done.get("content")),
+                            "error": done.get("is_error") is True,
+                            "head": said.splitlines()[0] if said else "",
+                            "tail": rest[-1].strip() if rest else "", "uuid": record.get("uuid")})
+        except OSError:
+            continue
+    if not opened:
+        return None
+    events = [(place + (0,), {"kind": "request",
+                              "prompt": sum(count(use, key) for key in PROMPT),
+                              "output": count(use, "output_tokens")})
+              for place, use in requests.values()]
+    events += [(place + (0,), event) for place, event in compactions]
+    events += list(calls.values()) + list(results.values())
+    events.sort(key=lambda item: item[0])
+    return [event for _, event in events]
+
+
+def counted(events):
+    """{call id: tool name} of the calls counted, and before[i]: the requests among events[:i]."""
+    names = {e["id"]: e["name"] for e in events if e["kind"] == "call"}
+    before = [0]
+    for event in events:
+        before.append(before[-1] + (event["kind"] == "request"))
+    return names, before
+
+
+def carried(events):
+    """{tool: carried chars}: each counted result's characters times the requests after it,
+    up to the first compaction that did not preserve its record (see `--tools`)."""
+    names, before = counted(events)
+    held = {}
+    for at, event in enumerate(events):
+        if event["kind"] != "result" or event["id"] not in names:
+            continue
+        stop = next((i for i in range(at + 1, len(events)) if events[i]["kind"] == "compact"
+                     and event["uuid"] not in events[i]["kept"]), len(events))
+        name = tag(names[event["id"]])
+        held[name] = held.get(name, 0) + event["chars"] * (before[stop] - before[at + 1])
+    return held
+
+
+def prefix_line(agent, events):
+    if events is None:
+        return " | ".join(["prefix", tag(agent)] + ["unknown"] * 3)
+    prompts = [e["prompt"] for e in events if e["kind"] == "request"]
+    if not prompts:
+        return " | ".join(["prefix", tag(agent), "none"])
+    total = sum(prompts)
+    share = "%.1f" % (100.0 * prompts[0] / total) if total else "unknown"
+    return " | ".join(["prefix", tag(agent), str(prompts[0]), str(total), share])
+
+
+TESTS = re.compile(r"\b(?:unittest|pytest|ctest)\b(?!\.)|\bmake (?:test|check)\b"
+                   r"|\b(?:npm(?: run)?|yarn|pnpm|go|cargo|mvn|gradle) test\b")
+LOGGED = re.compile(r">>?\s*[^\s;&|]+\.log\b.*\becho \$\?", re.S)
+
+
+def green(event, result):
+    """True for a Bash call that runs a test or validation command that passed (see
+    `--after-green`)."""
+    command = event["input"].get("command")
+    if event["name"] != "Bash" or not isinstance(command, str) or result is None:
+        return False
+    if LOGGED.search(command):  # the status is printed, the call itself does not fail
+        return not result["error"] and result["tail"] == "0"
+    return bool(TESTS.search(command)) and not result["error"]
+
+
+def after_green_line(agent, events):
+    if events is None:
+        return " | ".join(["after green", tag(agent), "unknown"])
+    results = {e["id"]: e for e in events if e["kind"] == "result"}
+    _, before = counted(events)
+    edited = max((at for at, e in enumerate(events) if e["kind"] == "call"
+                  and e["name"] in EDITS and not results.get(e["id"], {}).get("error")),
+                 default=None)
+    found = None if edited is None else next(
+        (at for at in range(edited + 1, len(events)) if events[at]["kind"] == "call"
+         and green(events[at], results.get(events[at]["id"]))), None)
+    if found is None:
+        return " | ".join(["after green", tag(agent), "none"])
+    later = events[found + 1:]
+    asked = [e for e in later if e["kind"] == "request"]
+    return " | ".join(["after green", tag(agent), "%d of %d" % (before[found], before[-1]),
+                       str(len(asked)), str(sum(e["kind"] == "call" for e in later)),
+                       str(sum(e["output"] for e in asked)), str(sum(e["prompt"] for e in asked))])
+
+
+NORMAL = ((re.compile(r"\"[^\"]*\"|'[^']*'|`[^`]*`"), "Q"),  # quoted strings
+          (re.compile(r"(?:[A-Za-z]:)?[\w.~-]*[/\\][^\s:,;()\[\]]*"), "P"),  # paths
+          (re.compile(r"\b(?:0x)?(?=[0-9a-fA-F]*\d)(?=[0-9a-fA-F]*[a-fA-F])[0-9a-fA-F]{6,}\b"),
+           "H"),  # hex ids
+          (re.compile(r"\d+"), "N"))
+
+
+def signature(name, line):
+    """An error's signature: its tool and its first line without quoted strings, paths, hex ids
+    and digits."""
+    for pattern, mark in NORMAL:
+        line = pattern.sub(mark, line)
+    return tag(name), " ".join(line.split())
+
+
+def error_line(agent, events):
+    if events is None:
+        return " | ".join(["errors", tag(agent)] + ["unknown"] * 4)
+    names, before = counted(events)
+    seen, errors, repeated, first_repeat = set(), 0, 0, None
+    for at, event in enumerate(events):
+        if event["kind"] != "result" or not event["error"] or event["id"] not in names:
+            continue
+        errors += 1
+        mark = signature(names[event["id"]], event["head"])
+        if mark in seen:
+            repeated += 1
+            first_repeat = at if first_repeat is None else first_repeat
+        seen.add(mark)
+    after = 0 if first_repeat is None else before[-1] - before[first_repeat + 1]
+    return " | ".join(["errors", tag(agent)] + [str(v) for v in (errors, len(seen), repeated,
+                                                                  after)])
 
 
 def last(path, tail=TAIL):
@@ -614,19 +888,35 @@ def main(argv=None):
                          "modification time (the run marker's: the run) or an ISO 8601 time")
     ap.add_argument("--streaks", action="store_true",
                     help="after each line, one `streaks` line: runs of 3 or more identical tool "
-                         "calls in a row that each ended in an error, and the longest")
+                         "calls in a row that each ended in an error, and the longest; then an "
+                         "`errors` line: errors, distinct signatures, repeats")
     ap.add_argument("--tools", action="store_true",
                     help="after each agent's lines, its `tools` lines (calls, result characters "
-                         "and errors by tool), a `reads` line and a `map` line")
+                         "errors and carried characters by tool), a `reads` line and a `map` "
+                         "line")
+    ap.add_argument("--prefix", action="store_true",
+                    help="after each agent's lines, a `prefix` line: its first request's input "
+                         "tokens, all its requests' and the first one's share")
+    ap.add_argument("--after-green", action="store_true",
+                    help="after each agent's lines, an `after green` line: what it spent after "
+                         "its last change passed a test command")
     args = ap.parse_intermixed_args(argv)
     expected = dict(args.agents)  # the last =MODEL given for an agent
     for row in rows(args.session, [name for name, _ in args.agents], args.since):
         print(render(*row, expected=expected.get(row[0], ())))
+        files = paths(args.session, row[0])
+        events = timeline(files, args.since) \
+            if args.streaks or args.tools or args.prefix or args.after_green else None
         if args.streaks:
-            print(streak_line(row[0], streaks(paths(args.session, row[0]), args.since)))
+            print(streak_line(row[0], streaks(files, args.since)))
+            print(error_line(row[0], events))
         if args.tools:
-            for line in tool_lines(row[0], tools(paths(args.session, row[0]), args.since)):
+            for line in tool_lines(row[0], tools(files, args.since), events):
                 print(line)
+        if args.prefix:
+            print(prefix_line(row[0], events))
+        if args.after_green:
+            print(after_green_line(row[0], events))
     return 0
 
 
