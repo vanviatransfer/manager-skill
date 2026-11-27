@@ -84,9 +84,11 @@ changed the order of the `tools` lines; the lines had no consumer.)
   whose call is not counted (before `--since`) is not counted. carried chars: each result's
   characters times the agent's later requests that still carried it: every request after it,
   up to the first compaction (a `compact_boundary` record) after it that does not list its
-  record's uuid as preserved (`compactMetadata.preservedMessages`). Context dropped any other
-  way (old tool results cleared without such a record, a compaction not recorded) is not seen:
-  the result counts as carried to the agent's end, so the figure is an upper bound. Characters
+  record's uuid as preserved (`compactMetadata.preservedMessages`); a `compact_boundary`
+  without `preservedMessages` counts as dropping everything, so for that span the figure is a
+  lower bound. Context dropped any other way (old tool results cleared without such a record, a
+  compaction not recorded) is not seen: the result counts as carried to the agent's end, so the
+  figure is an upper bound there. Characters
   re-read from the cache cost less than new ones; this counts characters, not price.
 - reads: the Read calls, the distinct paths they read, and the re-reads unchanged: a Read of a
   path with the same offset and limit as an earlier Read by this agent that did not fail, with no
@@ -97,13 +99,17 @@ changed the order of the `tools` lines; the lines had no consumer.)
   `mentions` (the first action word after `codemap.py`); other map calls, those with another
   action or none found; searches, Grep and Glob calls and Bash calls whose first command is
   `grep`, `rg`, `find` or `git grep`. The first command is the first word after any leading
-  `cd ... &&`, variable assignments (`A=b`) and `timeout [options] N` (with an option's value
-  word: `-s KILL`, `-k 5`, `--signal KILL`, `--kill-after 5`); a search later in a pipeline or
-  after another command is not seen.
+  `cd ... &&`, variable assignments (`A=b`, `A=b;`) and `timeout [options] N` (with an option's
+  value word: `-s KILL`, `-k 5`, `--signal KILL`, `--kill-after 5`); a search later in a
+  pipeline or after another command is not seen.
 - bash reads: Bash calls whose first command (found as for searches) is `cat`, `head`,
-  `tail`, `nl`, `less`, `more` or `bat` without an output redirection (`cat > f` writes), or
-  `sed` with `-n` (also in `-ne`, or `--quiet`/`--silent`); bash read chars: their results'
-  characters. A read later in a pipeline or after another command is not seen.
+  `tail`, `nl`, `less`, `more` or `bat`, or `sed` with `-n` (also in `-ne`, or
+  `--quiet`/`--silent`) and without `-i` (`sed -ni`, `sed -n -i` edit), and that do not redirect
+  its output to a file (`cat > f`, `cat f>out`, `cat f 1> out`, `&> f` write; `2>/dev/null` and
+  `1>&2` do not), nor read a here-document (`cat <<EOF`); bash read chars: their results'
+  characters. Only the first command is judged: it ends at an unquoted `;`, `|`, `&`, `&&`,
+  `||` or newline, and a quoted `>` is text. A read later in a pipeline or after another command
+  is not seen.
 
 The tool names are printed, never their inputs, paths or commands; `unknown` (one `tools` line)
 for a transcript that can't be read. `--since` bounds them too.
@@ -412,14 +418,17 @@ def words(command):
         return command.split()
 
 
-def first(command):
-    """The first command's words, without a leading `cd ... &&`, assignments and `timeout`."""
-    found = words(command)
+def first(command, found=None):
+    """The first command's words, without a leading `cd ... &&`, assignments and `timeout`
+    (`found`: the command's words already split)."""
+    found = words(command) if found is None else found
     while found:
         if found[0] == "cd" and "&&" in found:
             found = found[found.index("&&") + 1:]
         elif ASSIGNED.match(found[0]):
             found = found[1:]
+            if found and found[0] in (";", "&&", "\n"):  # `S=x; cat f`: cat is the first
+                found = found[1:]
         elif found[0] == "timeout":
             found = found[1:]
             while found and found[0].startswith("-"):
@@ -437,23 +446,60 @@ def search(command):
 
 
 READERS = ("cat", "head", "tail", "nl", "less", "more", "bat")  # a Bash command that reads a file
-OPERATORS = ("|", "||", "&&", ";", "&")
+PUNCTUATION = ";&|<>()\n"  # shell operators, split from the words around them
+
+
+def tokens(command):
+    """The command's words and unquoted operators (`;`, `|`, `&&`, a newline, `>`, `2`, `>&`
+    ...), quotes removed; an unclosed quote: split at white space."""
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=PUNCTUATION)
+    lexer.whitespace, lexer.whitespace_split = " \t\r", True
+    try:
+        return list(lexer)
+    except ValueError:
+        return command.split()
+
+
+def operator(token):
+    return token != "" and all(char in PUNCTUATION for char in token)
 
 
 def bash_read(command):
-    """True for a command whose first command (as `search` finds it) reads a file: one of
-    READERS without an output redirection (`cat > f` writes), or `sed` with `-n`."""
-    found = first(command)
+    """True for a command whose first command (as `search` finds it; it ends at an unquoted `;`,
+    `|`, `&`, `&&`, `||` or a newline) reads a file and does not write its output to one: one
+    of READERS, or `sed` with `-n` and without `-i` (`sed -ni` edits the file). `> f`, `f>out`,
+    `1> out`, `>> f`, `&> f` and `>&f` write; `2> f` and `1>&2` do not; a reader given a
+    here-document (`<<`, `<<<`) reads no file."""
+    found = first(command, tokens(command))
     name = os.path.basename(found[0]) if found else ""
     own = []
-    for word in found[1:]:
-        if word in OPERATORS:
-            break
-        own.append(word)
+    for token in found[1:]:
+        if operator(token) and not token.startswith((">", "<", "&>")):
+            break  # the end of the first command
+        own.append(token)
+    for at, token in enumerate(own):
+        if not operator(token):
+            continue
+        if token.startswith("<<"):
+            return False  # a here-document or here-string
+        before = own[at - 1] if at else ""
+        target = own[at + 1] if at + 1 < len(own) else ""
+        if token.startswith("&>"):
+            return False
+        if token.startswith(">"):
+            if before.isdigit() and before != "1":
+                continue  # another descriptor: `2>/dev/null`, `2>&1`
+            if token == ">&" and (target.isdigit() or target == "-"):
+                continue  # a duplication: `1>&2`
+            return False
     if name in READERS:
-        return not any(word.startswith(">") for word in own)
-    return name == "sed" and any(word in ("--quiet", "--silent") or (
-        re.fullmatch(r"-[A-Za-z]+", word) is not None and "n" in word) for word in own)
+        return True
+    flags = [re.match(r"-([A-Za-z]*)", word).group(1) for word in own
+             if word.startswith("-") and not word.startswith("--")]
+    if any("i" in flag for flag in flags) or any(word.startswith("--in-place") for word in own):
+        return False
+    return name == "sed" and ("--quiet" in own or "--silent" in own or any(
+        "n" in flag for flag in flags))
 
 
 def mapped(command):
@@ -649,12 +695,14 @@ def carried(events):
     """{tool: carried chars}: each counted result's characters times the requests after it,
     up to the first compaction that did not preserve its record (see `--tools`)."""
     names, before = counted(events)
+    marks = [i for i, event in enumerate(events) if event["kind"] == "compact"]
     held = {}
     for at, event in enumerate(events):
         if event["kind"] != "result" or event["id"] not in names:
             continue
-        stop = next((i for i in range(at + 1, len(events)) if events[i]["kind"] == "compact"
-                     and event["uuid"] not in events[i]["kept"]), len(events))
+        # The compactions after it, in order, until one that dropped it: no scan of the events.
+        stop = next((marks[j] for j in range(bisect.bisect_right(marks, at), len(marks))
+                     if event["uuid"] not in events[marks[j]]["kept"]), len(events))
         name = tag(names[event["id"]])
         held[name] = held.get(name, 0) + event["chars"] * (before[stop] - before[at + 1])
     return held

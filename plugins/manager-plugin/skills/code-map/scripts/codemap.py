@@ -1428,7 +1428,8 @@ CALLS_COVERAGE = ("coverage: static Python calls only; not seen: implicit calls 
                   "or framework calling an override or a test, a decorator registering it), "
                   "dynamic calls (exec, getattr or lookups with computed names; a literal "
                   "getattr or lookup is listed and followed only as far as the name it is "
-                  "assigned to), other languages, untracked files, and tracked files "
+                  "assigned to), other languages, code outside the repository (frameworks or "
+                  "tools calling it by name, other packages), untracked files, and tracked files "
                   "it skips or can't read (secrets, vendored folders, symlinks, over 512 KB, not "
                   "text: counted on the text line); calls through `from m import *`, imports it "
                   "cannot resolve, shadowed names and methods on objects of unknown type are "
@@ -1831,9 +1832,10 @@ def calls_parse(root, files):
     return parsed, failed
 
 
-def text_line(found, total, shown, unparsed, capped, unread):
+def text_line(found, total, shown, unparsed, capped, unread, other=0):
     """The `text:` line: the counts, each reason that applies, then `grep the rest`. It never
-    says every occurrence is listed: a static scan can't know that."""
+    says every occurrence is listed: a static scan can't know that. `other`: the occurrences in
+    files not parsed as Python (config, notebooks, templates, other languages)."""
     line = "text: %d occurrence%s of %s, %d on lines listed above" % (
         total, "" if total == 1 else "s", found.name, shown)
     if found.renamed:
@@ -1849,6 +1851,8 @@ def text_line(found, total, shown, unparsed, capped, unread):
         line += "; called implicitly (operators, protocols, base classes, frameworks)"
     if found.decorated:
         line += "; decorated: may be registered and called through its decorator"
+    if other:
+        line += "; %d in files not parsed as Python" % other
     if unparsed:
         line += "; %d Python file%s not parsed" % (unparsed, "" if unparsed == 1 else "s")
     if unread:
@@ -1874,7 +1878,7 @@ def calls_lines(root, targets, tracked, out_rel, everything=False, links=0):
                 texts[path] = text.split("\n")
             elif path not in dict(failed):  # a .py one is under `not parsed`
                 unread += 1
-    out, deep = [], set()
+    out, deep, bad = [], set(), dict(failed)  # bad: Python files, counted on their own
     for target in targets:
         found = Calls(parsed, known, target)
         deep |= found.failed
@@ -1896,15 +1900,18 @@ def calls_lines(root, targets, tracked, out_rel, everything=False, links=0):
             if len(keep) < len(items):
                 capped = True
                 out.append("  … %d more (rerun with --all)" % (len(items) - len(keep)))
-        total = shown = 0
+        total = shown = other = 0
         for path in sorted(texts):
+            python = path in parsed or path in bad
             for n, line in enumerate(texts[path], 1):
                 hits = len(found.word.findall(line))
                 total += hits
                 if hits and (path, n) in listed:
                     shown += hits
+                if not python:
+                    other += hits
         out.append(text_line(found, total, shown, len(failed) + len(found.failed), capped,
-                             unread))
+                             unread, other))
     failed = failed + [(path, "nested too deeply") for path in sorted(deep)]
     if failed:
         out.append("not parsed: " + ", ".join("%s (%s)" % item for item in sorted(failed)))

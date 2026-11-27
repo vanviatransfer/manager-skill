@@ -319,6 +319,28 @@ class ManagerRunCompactHookTest(unittest.TestCase):
         self.assertIn("keep every working-notes line of the run verbatim",
                       " ".join(fallback.split()))
 
+    def test_pre_compact_leaves_out_what_the_repository_holds(self):
+        """Both forms: no code, file contents or diffs that the repository holds and no plugin
+        skill or brief text in the summary; a subagent result not yet acted on (a reviewer's
+        blockers, only in the conversation) and uncommitted work kept verbatim; ids, SHAs, paths
+        and owner quotes still kept exactly."""
+        self.mark()
+        fallback = " ".join(self.hook("PreCompact")[1].split())
+        self.notes("Run R1: model strategy fixed\n")
+        short = " ".join(self.hook("PreCompact")[1].split())
+        leave = ("Leave out code, file contents and diffs in the repository, and plugin skill or "
+                 "brief text: re-read them there.")
+        keep = ("any subagent result not yet acted on (reviewer blockers not yet sent to a fix "
+                "round) and uncommitted work.")
+        for out in (fallback, short):
+            self.assertEqual(out.count(leave), 1, out)
+            self.assertEqual(out.count(keep), 1, out)
+            self.assertLess(out.index(keep), out.index(leave), out)
+        self.assertIn("keep verbatim only a working-notes line not yet in that file, " + keep,
+                      short)
+        self.assertIn("Keep verbatim, too, " + keep, fallback)
+        self.assertIn("Keep owner quotes, SHAs, ids and paths exactly", fallback)
+
     def test_a_notes_file_without_a_marker_is_silent(self):
         self.notes("Run R1: model strategy fixed\n")
         for event in ("PreCompact", "SessionStart"):

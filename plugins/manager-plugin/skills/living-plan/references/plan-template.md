@@ -50,7 +50,7 @@ Objective: <one deliverable>
 Scope: <files / areas>. Out of scope: <if it matters>
 Depends on: <phase ids or "none" — required; the manager schedules by it>
 Risk: <standard | critical — reason>
-Acceptance: <observable result>
+Acceptance: <a concrete case: input or action → exact expected result; file or test showing it>
 Validation: <commands, or "standard">; `<expensive cmd>` (when: <diff property, e.g. files under app/Locking or migrations change>)
 Notes: <decisions cited (B1, D2), risks, knowledge paths (vault pages this phase needs), skill: .claude/skills/<name>/SKILL.md and its records path (if a self-training skill covers this work)>
 

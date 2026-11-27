@@ -62,7 +62,7 @@ their trigger holds (again after compaction):
    Write the least that meets acceptance: reuse existing code, the standard library or
    native features first; duplicate no project script or test; no abstraction, option or
    scaffolding the plan doesn't need.
-   Before changing a function, find its callers (`<code map> query <name>` if set, then grep)
+   Before changing a function, find its callers (`<code map> calls <name>` if set, then grep)
    and keep them working; a root cause outside scope
    → report it (Risks or `NEEDS_OWNER_DECISION`); don't fix it. Code you move or merge keeps its
    error handling and validation. Acceptance, project rules, required tests,

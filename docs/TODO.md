@@ -2059,3 +2059,37 @@ changing effort.
   ids are recorded. After the first real measurement, the owner decides which one or two lines
   are worth adding to the run record and the retro comparison; that would be a separate change
   to `run-record.md`, which this change does not touch.
+
+### 43. Small wording and follow-ups (plugin 0.9.25)
+
+Why: the research of items 38 and 42 named a few cheap fixes (concrete acceptance cases; context
+files of one-line operational facts rather than overviews; a compaction summary that drops code
+it can re-read), plus the review notes on items 40 (PR #77) and 42 (PR #78).
+
+1. `living-plan`: a phase's acceptance names at least one concrete case (an input or action and
+   the exact expected result) and, where known, the file or test that shows it; a bare user story
+   is not acceptance. The template's `Acceptance:` line says so; `plan.py` is unchanged.
+2. `manager-run-compact.sh` (PreCompact): both forms tell the summary to keep verbatim any
+   subagent result not yet acted on (reviewer blockers not yet sent to a fix round: reviewers
+   have no report file and the ledger holds titles only) and uncommitted work, and to leave out
+   code, file contents and diffs in the repository and plugin skill or brief text; the kept
+   lines (owner quotes, SHAs, ids, paths) are unchanged. Tested.
+3. `create-vault`: always-read text (the index, any page the project's rules load every session)
+   holds page links and one-line operational facts, never generated overviews; longer
+   explanations go in topic pages. The generated code map is the exception.
+4. Implementer brief: callers via `<code map> calls <name>`, then grep (was `query`); same word
+   count.
+5. Code map `calls`: the `text:` line adds `<k> in files not parsed as Python` (an entry point in
+   `pyproject.toml`, a notebook, YAML); the coverage line adds code outside the repository
+   (frameworks or tools calling it by name, other packages). The code-map `SKILL.md` is unchanged.
+6. `usage.py`: carried chars walks only the compactions after each result (20,000 results: about
+   a second, from some 15 s), output unchanged. Bash reads judge only the first command, split
+   with `shlex` punctuation (an unquoted `;`, `|`, `&`, newline ends it; a quoted `>` is text):
+   an output redirection to a file (`cat f>out`, `cat f 1> out`; not `2>` or `1>&2`), a
+   here-document or `sed -i` with `-n` is no read. On one real session 5 of 103 `reads` lines
+   changed from 0.9.24, each a correct reclassification. The docstring says a
+   `compact_boundary` without `preservedMessages` counts as dropping everything (carried chars
+   is then a lower bound there).
+
+Not changed: the manager skill, the reviewer brief, the agents, `run-record.md`, `retro.sh`, the
+eval suites, any ceiling.

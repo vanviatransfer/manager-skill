@@ -55,8 +55,10 @@ Per name, in this order (`calls <name>` first):
   `dict(obj)` may call; for `test_*` and `pytest_*` names and anything defined in a
   `conftest.py`, which pytest calls); `decorated: may be registered and called through its
   decorator` (a matching definition has a decorator, e.g. `@app.route("/")`,
-  `@atexit.register`); `<k> Python files not parsed`; `<k> tracked files not read (sensitive,
-  vendored or skipped, symlinks, too large or not text)`; `cut (rerun with --all)`.
+  `@atexit.register`); `<k> in files not parsed as Python` (occurrences in `pyproject.toml`,
+  `setup.cfg`, notebooks, templates, YAML, other languages); `<k> Python files not parsed`;
+  `<k> tracked files not read (sensitive, vendored or skipped, symlinks, too large or not text)`;
+  `cut (rerun with --all)`.
   Renamed names: `import ... as X` and `from ... import f as X` that resolve to the definition
   or import a name already found; `X = f`, `X = m.f`, or a call or subscript holding the name as
   a whole string literal (`getattr(m, "f")`, `m.__dict__["f"]`), in any scope (at module level
@@ -70,8 +72,9 @@ static Python calls only; not seen: implicit calls (a constructor running `__ini
 operators, `with`, `for`, protocol methods, a base class or framework calling an override or a
 test, a decorator registering it), dynamic calls
 (`exec`, `getattr` or lookups with computed names; a literal `getattr` or lookup is listed and
-followed only as far as the name it is assigned to), other languages, untracked files, and
-tracked files it skips or can't read (counted on the text line); calls through `from m import
+followed only as far as the name it is assigned to), other languages, code outside the
+repository (frameworks or tools calling it by name, other packages), untracked files, and tracked
+files it skips or can't read (counted on the text line); calls through `from m import
 *`, imports it can't resolve, shadowed names and methods on objects of unknown type are under
 `possible`; other names the function is bound to are under `renamed`; before changing the
 function's signature or behaviour, also grep for the name and those. An empty section prints
