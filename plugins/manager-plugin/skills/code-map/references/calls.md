@@ -30,16 +30,18 @@ Per name, in this order (`calls <name>` first):
 - `possible:` every other occurrence of the name in the parsed Python code, each `path:line
   <kind>`: `call` (a bare call it can't resolve, e.g. after `from m import *` or from an import it
   can't resolve), `call (shadowed)` (a bare-name call where that name is a parameter or assigned
-  in an enclosing function, or assigned at module level, so it may be something else),
+  in an enclosing function or class body, or assigned at module level, so it may be something
+  else),
   `attribute call` (`x.name()` on an object of unknown type, `super().name()`, `Box().name()`),
   `constructor call` (for `__init__`, `__new__` and `__post_init__`: a call of their class,
   `Box(1)`), `reference` / `attribute reference` (passed or stored: `map(name, ...)`,
   `callbacks=[name]`),
   `renamed to X` (`X = name`, `X = getattr(m, "name")`, `X = m.__dict__["name"]`: followed as
-  a renamed name), `assignment` (rebound or patched), `decorator` (`@name` without a call;
-  `@name(...)` is a call), `getattr` / `setattr` / `hasattr` / `delattr` with that literal,
-  `import`, `other definition` (the same name defined elsewhere), and `string` (a string literal
-  or docstring holding the word, any line of it). A use under another name says which:
+  a renamed name; listed once, not also as an assignment of X), `assignment` (rebound or
+  patched), `decorator` (`@name` without a call; `@name(...)` is a call), `getattr` /
+  `setattr` / `hasattr` / `delattr` with that literal, `import`, `other definition` (the same
+  name defined elsewhere), and `string` (a string literal or docstring holding the word, any
+  line of it). A use under another name says which:
   `call (alias h)`, `import (alias h)`; such a call it can't resolve is a `call (alias h)` here.
   Strings come after the code entries, each part by path and line.
 - `text: <n> occurrences of <name>, <k> on lines listed above; <reasons>; grep the rest`:
@@ -48,10 +50,13 @@ Per name, in this order (`calls <name>` first):
   many of them are on lines printed above. It never says every occurrence or call is listed: a
   static scan can't know that. The reasons it knows of, in this order: `renamed: <names>`;
   `passed or stored at <k> places, calls through them not followed` (the `reference` entries);
-  `<k> possible`; `called implicitly (operators, protocols, base classes)` (for a dunder name,
-  and for a method of a class with a base other than `object`, which a base class or framework
-  may call); `<k> Python files not parsed`; `<k> tracked files not read (sensitive, vendored or
-  skipped, symlinks, too large or not text)`; `cut (rerun with --all)`.
+  `<k> possible`; `called implicitly (operators, protocols, base classes, frameworks)` (for a
+  dunder name; for any method, which a base class, a framework or a protocol such as `keys` for
+  `dict(obj)` may call; for `test_*` and `pytest_*` names and anything defined in a
+  `conftest.py`, which pytest calls); `decorated: may be registered and called through its
+  decorator` (a matching definition has a decorator, e.g. `@app.route("/")`,
+  `@atexit.register`); `<k> Python files not parsed`; `<k> tracked files not read (sensitive,
+  vendored or skipped, symlinks, too large or not text)`; `cut (rerun with --all)`.
   Renamed names: `import ... as X` and `from ... import f as X` that resolve to the definition
   or import a name already found; `X = f`, `X = m.f`, or a call or subscript holding the name as
   a whole string literal (`getattr(m, "f")`, `m.__dict__["f"]`), in any scope (at module level
@@ -60,9 +65,10 @@ Per name, in this order (`calls <name>` first):
 
 Then, once: `not parsed: <path> (<why>)` for each Python file it couldn't parse (a syntax
 error, including syntax newer than the running Python, a file over 512 KB or not text, or one
-nested too deeply to walk), and always, even when nothing was found, the `coverage:` line:
+nested too deeply to parse or walk), and always, even when nothing was found, the `coverage:` line:
 static Python calls only; not seen: implicit calls (a constructor running `__init__`,
-operators, `with`, `for`, a base class or framework calling an override), dynamic calls
+operators, `with`, `for`, protocol methods, a base class or framework calling an override or a
+test, a decorator registering it), dynamic calls
 (`exec`, `getattr` or lookups with computed names; a literal `getattr` or lookup is listed and
 followed only as far as the name it is assigned to), other languages, untracked files, and
 tracked files it skips or can't read (counted on the text line); calls through `from m import
@@ -83,7 +89,8 @@ The `text:`, `not parsed:` and `coverage:` lines are never cut. `--budget` is `q
   followed, so their calls are in neither list: the `text:` count and a grep are the check;
 - shadowing is checked by name, not by the order of the statements: a call whose bare name, or
   the first name of its attribute chain (`core.f()`; not `self` or `cls`), is a parameter of an
-  enclosing function or lambda, or assigned in an enclosing function or at module level, is
+  enclosing function or lambda, or assigned (also as a `case` capture) in an enclosing function
+  or class body or at module level, is
   `call (shadowed)` / `attribute call (shadowed)`, never a caller;
 - a module is found by the map's import rules (the same as for importers) only; `sys.path`
   changes and installed packages are not followed.

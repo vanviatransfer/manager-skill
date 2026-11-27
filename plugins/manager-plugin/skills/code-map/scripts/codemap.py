@@ -1424,10 +1424,11 @@ ATTR_CALLS = ("getattr", "setattr", "hasattr", "delattr")
 CONSTRUCTORS = ("__init__", "__new__", "__post_init__")  # run by a call of their class
 PY_SHEBANG = re.compile(r"^#![^\n]*\bpython")
 CALLS_COVERAGE = ("coverage: static Python calls only; not seen: implicit calls (a constructor "
-                  "running __init__, operators, `with`, `for`, a base class or framework "
-                  "calling an override), dynamic calls (exec, getattr or lookups with computed "
-                  "names; a literal getattr or lookup is listed and followed only as far as the "
-                  "name it is assigned to), other languages, untracked files, and tracked files "
+                  "running __init__, operators, `with`, `for`, protocol methods, a base class "
+                  "or framework calling an override or a test, a decorator registering it), "
+                  "dynamic calls (exec, getattr or lookups with computed names; a literal "
+                  "getattr or lookup is listed and followed only as far as the name it is "
+                  "assigned to), other languages, untracked files, and tracked files "
                   "it skips or can't read (secrets, vendored folders, symlinks, over 512 KB, not "
                   "text: counted on the text line); calls through `from m import *`, imports it "
                   "cannot resolve, shadowed names and methods on objects of unknown type are "
@@ -1445,8 +1446,8 @@ def module_name(path):
 
 
 def stored_names(body):
-    """The names a block assigns, binds as a loop, `with` or `except` target, or deletes,
-    nested blocks included, the functions and classes it defines not."""
+    """The names a block assigns, binds as a loop, `with`, `except` or `case` target, or
+    deletes, nested blocks included, the functions and classes it defines not."""
     found, todo = set(), list(body)
     while todo:
         node = todo.pop()
@@ -1456,6 +1457,10 @@ def stored_names(body):
             found.add(node.id)
         elif isinstance(node, ast.ExceptHandler) and node.name:
             found.add(node.name)
+        elif type(node).__name__ in ("MatchAs", "MatchStar") and node.name:  # `case [x, *y]:`
+            found.add(node.name)
+        elif type(node).__name__ == "MatchMapping" and node.rest:
+            found.add(node.rest)
         todo.extend(ast.iter_child_nodes(node))
     return found
 
@@ -1477,6 +1482,7 @@ class CallsFile:
         self.path, self.lines, self.tree = path, text.split("\n"), tree
         self.defs, self.tops, self.bindings, self.assigns = {}, set(), {}, {}
         self.classes = {}  # qualified class name -> whether it has a base other than object
+        self.decorated = set()  # qualified names of the decorated definitions
         for node in tree.body:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 self.tops.add(node.name)
@@ -1505,6 +1511,8 @@ class CallsFile:
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 qual = ".".join(stack + [child.name])
                 self.defs.setdefault(qual, child.lineno)
+                if child.decorator_list:
+                    self.decorated.add(qual)
                 if isinstance(child, ast.ClassDef):
                     self.classes[qual] = any(not (isinstance(b, ast.Name) and b.id == "object")
                                              for b in child.bases + child.keywords)
@@ -1540,8 +1548,12 @@ class Calls:
         self.constructs = {(path, qual.rpartition(".")[0]) for path, qual in self.keys
                            if self.name in CONSTRUCTORS and "." in qual
                            and qual.rpartition(".")[0] in parsed[path].classes}
-        self.implicit = (self.name.startswith("__") and self.name.endswith("__")) or any(
-            parsed[path].classes.get(qual.rpartition(".")[0]) for path, qual in self.keys)
+        # a dunder, a method (protocols such as `keys` too), a pytest name or conftest fixture
+        self.implicit = (self.name.startswith("__") and self.name.endswith("__")) \
+            or self.name.startswith(("test_", "pytest_")) or any(
+                qual.rpartition(".")[0] in parsed[path].classes
+                or posixpath.basename(path) == "conftest.py" for path, qual in self.keys)
+        self.decorated = any(qual in parsed[path].decorated for path, qual in self.keys)
         for path, f in sorted(parsed.items()):
             self.file = f
             self.handled, self.scopes = set(), []
@@ -1692,7 +1704,9 @@ class Calls:
                     self.add(d, "decorator", self.end_line(d))
                     self.handled.add(id(d))
             inner = stack + [("class" if isinstance(node, ast.ClassDef) else "def", node.name)]
-            if not isinstance(node, ast.ClassDef):  # its parameters and assigned names
+            if isinstance(node, ast.ClassDef):  # names its body assigns (seen by its methods
+                self.scopes.append(stored_names(node.body))  # too here: on the safe side)
+            else:  # its parameters and assigned names
                 a = node.args
                 params = a.posonlyargs if hasattr(a, "posonlyargs") else []
                 params = params + a.args + a.kwonlyargs + [x for x in (a.vararg, a.kwarg) if x]
@@ -1701,8 +1715,7 @@ class Calls:
                 for child in value if isinstance(value, list) else [value]:
                     if isinstance(child, ast.AST):
                         self.walk(child, inner if field == "body" else stack)
-            if not isinstance(node, ast.ClassDef):
-                self.scopes.pop()
+            self.scopes.pop()
             return
         if isinstance(node, ast.Lambda):
             a = node.args
@@ -1748,6 +1761,7 @@ class Calls:
                 if isinstance(t, ast.Name) and t.id != self.name:
                     self.renamed.add(t.id)
                     self.aliases[f.path].add(t.id)
+                    self.handled.add(id(t))  # listed once, as `renamed to`
                     if not named:
                         self.add(node.value, "renamed to %s" % t.id)
                     elif id(node.value) not in self.handled:  # followed: no `reference`
@@ -1800,9 +1814,14 @@ def calls_parse(root, files):
         try:
             tree = ast.parse(text, filename=path)
         except SyntaxError as exc:
-            failed.append((path, "syntax error, line %s" % exc.lineno))
+            nested = "too many nested" in str(exc.msg) or "too complex" in str(exc.msg)
+            failed.append((path, "nested too deeply" if nested
+                           else "syntax error, line %s" % exc.lineno))
             continue
-        except (ValueError, RecursionError, MemoryError):
+        except RecursionError:
+            failed.append((path, "nested too deeply"))
+            continue
+        except (ValueError, MemoryError):
             failed.append((path, "cannot be parsed by this Python"))
             continue
         try:
@@ -1827,7 +1846,9 @@ def text_line(found, total, shown, unparsed, capped, unread):
     if found.possible:
         line += "; %d possible" % len(found.possible)
     if found.implicit:
-        line += "; called implicitly (operators, protocols, base classes)"
+        line += "; called implicitly (operators, protocols, base classes, frameworks)"
+    if found.decorated:
+        line += "; decorated: may be registered and called through its decorator"
     if unparsed:
         line += "; %d Python file%s not parsed" % (unparsed, "" if unparsed == 1 else "s")
     if unread:

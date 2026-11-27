@@ -833,6 +833,10 @@ class ToolsTest(Fixture):
             kind="map")
         self.assertEqual(out, ["map | t1 | 2 | 2 | 6"])
 
+    def test_calls_is_another_map_call(self):
+        out = self.tools(bash(10, "b1", "python3 /x/codemap.py calls helper --all"), kind="map")
+        self.assertEqual(out, ["map | t1 | 0 | 1 | 0"])
+
     def test_timeout_options_with_a_value_word(self):
         out = self.tools(
             bash(10, "b1", "timeout -s KILL 120 grep -rn x ."),

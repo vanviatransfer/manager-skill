@@ -1972,11 +1972,13 @@ the staleness idea (item 37) is dropped.
   `import`, `other definition`, `string`); `text:` (whole-word occurrences in every text file the
   map scans, any language, how many are on lines listed above, and the reasons the list may be
   short: `renamed:` names, passed or stored uses, `possible` entries, implicit calls (dunders,
-  methods of a class with a base), unparsed files, tracked files not read, a cut). Then `not
+  any method, `test_*`/`pytest_*` names, `conftest.py` definitions), a decorated definition,
+  unparsed files, tracked files not read, a cut). Then `not
   parsed:` (files `ast` rejected, could not read or could not walk) and always a `coverage:`
   line. Python files: `.py`, `.pyw` and extensionless files with a `python` shebang. A call whose
-  bare name or attribute-chain base is a parameter (also of a lambda) or a name assigned in its
-  function or at module level is `(shadowed)`, never a caller.
+  bare name or attribute-chain base is a parameter (also of a lambda) or a name assigned (also a
+  `case` capture) in its function or class body or at module level is `(shadowed)`, never a
+  caller.
 - **Coverage rule (owner).** An incomplete caller list must never look complete. False positives
   in `possible` are fine; silent false negatives are not. The output never says "no callers"; an
   empty section says `none found`. The `text:` line never says everything is listed: it always
@@ -1986,7 +1988,8 @@ the staleness idea (item 37) is dropped.
   before changing the function) is printed on every run and never cut, nor are `text:` and `not
   parsed:`. Three PR #77 reviews found calls missing while the count said all were listed
   (renamed bindings; literal getattr and `__dict__` lookups; unreadable files; implicit calls
-  such as constructors and operators; files the scan skips), so the claim was removed.
+  such as constructors and operators; files the scan skips), so the claim was removed. A fourth
+  added reasons for framework calls: decorated definitions, methods, pytest names.
 - **Limits.** No types: `obj.name()` on an instance is only `possible`; `from m import *`, imports
   it cannot resolve and their aliases are `possible`; a name bound inside a function is followed
   in its file only; tuple unpacking, containers and return values are not followed; shadowing
@@ -1996,7 +1999,8 @@ the staleness idea (item 37) is dropped.
 - **Cap.** 40 lines per section per name, then `… <k> more (rerun with --all)`; `possible` lists
   code entries before strings, each part by path and line. `--budget` stays `query` only.
 - **Cost.** Live and opt-in: no page, index or hook change; no hook runs it. code-map
-  SKILL.md gains one entry pointing to `references/calls.md` (9,347 → 9,469 of 9,500 characters).
+  SKILL.md gains one entry pointing to `references/calls.md`: 9,347 → 9,469 characters as the
+  ceiling test counts them (`len()` of the UTF-8 text; 9,471 bytes), of 9,500.
   `reviewer-brief.md`'s code-map sentence was reworded to also name `calls` plus a grep for
   changed functions' callers, keeping "pointers only", at the same word count (1,376 of 1,377).
 - **Also.** `usage.py`: `timeout -s KILL`, `-k 5`, `--signal KILL` and `--kill-after 5` no longer

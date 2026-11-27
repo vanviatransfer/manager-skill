@@ -43,7 +43,8 @@ A Claude Code plugin with six skills:
     (attribute calls on unknown objects, shadowed names, constructor calls for `__init__`, the
     name passed or stored, in a string, `getattr`, decorators), then a whole-word count over
     every text file with how many it listed and the reasons the list may be short (other names
-    the function is bound to, implicit calls, files not parsed or not read), and always a
+    the function is bound to, implicit or framework calls, decorators, files not parsed or not
+    read), and always a
     coverage line naming what it cannot see. It parses with `ast` on each run and writes
     nothing. It never claims a complete list: the count line always ends "grep the rest".
   - **Rules block.** Sessions don't use the map unless told, so the setup PR adds a short marked

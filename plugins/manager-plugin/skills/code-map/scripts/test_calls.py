@@ -259,7 +259,9 @@ class CallsTest(unittest.TestCase):
             "the rest"))
         self.write("pkg/broken.py", "")
         self.assertEqual(self.calls("double")[-2], "text: 1 occurrence of double, 1 on lines "
-                                                   "listed above; grep the rest")
+                                                   "listed above; called implicitly (operators, "
+                                                   "protocols, base classes, frameworks); grep "
+                                                   "the rest")  # a method
 
     def test_refusals(self):
         self.refused("calls")
@@ -297,13 +299,13 @@ class RenamedTest(CallsTest):
                 "definitions:", "  pkg/core.py:1 helper",
                 "callers:", "  al_user.py:2 in (module level)", "  app.py:5 in main",
                 "  user.py:5 in run",
-                "possible:", "  al.py:2 assignment (alias alias)", "  al.py:2 renamed to alias",
+                "possible:", "  al.py:2 renamed to alias",
                 "  al_user.py:1 import (alias alias)", "  app.py:1 import (alias public_helper)",
                 "  pkg/__init__.py:1 import", "  pkg/__init__.py:1 import (alias public_helper)",
                 "  shim.py:1 import", "  shim.py:1 import (alias h)",
                 "  user.py:1 import (alias h)",
                 "text: 4 occurrences of helper, 4 on lines listed above; renamed: alias, h, "
-                "public_helper; 9 possible; grep the rest"], name)
+                "public_helper; 8 possible; grep the rest"], name)
 
     def test_an_alias_it_cannot_follow_is_still_named(self):
         self.write("al.py", "import elsewhere\nalias = elsewhere.helper\n")  # unresolved
@@ -314,7 +316,7 @@ class RenamedTest(CallsTest):
         self.assertIn("  al_user.py:2 call (alias alias)", lines)  # possible, not a caller
         self.assertIn("  loc.py:6 call (alias fn)", lines)
         self.assertEqual(lines[-2], "text: 6 occurrences of helper, 6 on lines listed above; "
-                                    "renamed: alias, fn, h, public_helper; 14 possible; grep the "
+                                    "renamed: alias, fn, h, public_helper; 12 possible; grep the "
                                     "rest")
 
     def test_the_text_line_never_claims_completeness_with_a_renamed_binding(self):
@@ -371,8 +373,9 @@ class LookupTest(Fixture):
         for line in ("  d.py:2 renamed to h", "  d.py:3 call (alias h)", "  g.py:2 getattr",
                      "  g.py:2 renamed to g", "  g.py:3 call (alias g)", "  d.py:2 string"):
             self.assertIn(line, lines)
+        self.assertFalse(any("assignment (alias" in x for x in lines), lines)  # listed once
         self.assertEqual(lines[-2], "text: 3 occurrences of helper, 3 on lines listed above; "
-                                    "renamed: g, h; 8 possible; grep the rest")
+                                    "renamed: g, h; 6 possible; grep the rest")
 
     def test_getattr_with_a_default_on_self(self):
         lines = self.calls("Box.size")
@@ -446,6 +449,9 @@ class CompletenessTest(Fixture):
         self.assertIn("; 1 tracked file not read", self.text("f")[0])
 
 
+IMPLICIT = "; called implicitly (operators, protocols, base classes, frameworks);"
+
+
 class ImplicitTest(Fixture):
     """Calls with no name in the text: constructors, protocols, base classes."""
     files = {
@@ -455,19 +461,34 @@ class ImplicitTest(Fixture):
                   "class Base:\n    def go(self):\n        pass\n",
         "use.py": "from box import Box\nimport box\n\nb = Box(1) + box.Box(2)\nkind = Box\n",
         "tool": "#!/usr/bin/env python3\nfrom box import Box\nBox(3)\n",
+        "plain.py": "def plain():\n    pass\n",
     }
 
     def test_constructor_calls_are_possible(self):
         lines = self.calls("Box.__init__")
         for line in ("  use.py:4 constructor call", "  tool:3 constructor call"):
             self.assertIn(line, lines)
-        self.assertIn("; called implicitly (operators, protocols, base classes);", lines[-2])
+        self.assertIn(IMPLICIT, lines[-2])
 
-    def test_dunders_and_overrides_say_implicit(self):
-        for name in ("__add__", "Worker.run"):
-            self.assertIn("; called implicitly (operators, protocols, base classes);",
-                          self.text(name)[0], name)
-        self.assertNotIn("implicitly", self.text("Base.go")[0])
+    def test_dunders_methods_and_test_names_say_implicit(self):
+        self.write("tests/conftest.py", "def db():\n    pass\n")
+        self.write("tests/test_box.py", "def test_add():\n    pass\n")
+        self.git("add", "-A")
+        for name in ("__add__", "Worker.run", "Base.go", "db", "test_add", "pytest_configure"):
+            self.assertIn(IMPLICIT, self.text(name)[0], name)
+        self.assertNotIn("implicitly", self.text("plain")[0])
+
+    def test_a_decorated_function_says_so(self):
+        self.write("web.py", "import atexit\napp = object()\n\n\n@app.route(\"/\")\n"
+                             "def index():\n    pass\n\n\n@atexit.register\ndef bye():\n"
+                             "    pass\n")
+        self.git("add", "-A")
+        for name in ("index", "bye"):
+            line = self.text(name)[0]
+            self.assertIn("; decorated: may be registered and called through its decorator;",
+                          line, name)
+            self.assertNotIn("implicitly", line, name)
+        self.assertNotIn("decorated", self.text("plain")[0])
 
 
 class ShadowTest(Fixture):
@@ -497,6 +518,25 @@ class ShadowTest(Fixture):
         self.assertIn("  a.py:14 in r", lines)  # the other files still answer
         self.assertTrue(any(x.startswith("not parsed: ") and "deep.py (" in x for x in lines),
                         lines)  # nested too deeply to walk, or (older Pythons) to parse
+
+    def test_class_body_and_match_captures_shadow(self):
+        self.write("k.py", "from core import helper\n\n\nclass K:\n    helper = print\n"
+                           "    helper()\n")
+        self.write("m.py", "from core import helper\n\n\ndef f(v):\n    match v:\n"
+                           "        case [helper]:\n            helper()\n")
+        self.git("add", "-A")
+        lines = self.calls("helper")
+        self.assertIn("  k.py:6 call (shadowed)", lines)
+        if sys.version_info >= (3, 10):
+            self.assertIn("  m.py:7 call (shadowed)", lines)
+        self.assertFalse(any(x.startswith(("  k.py:", "  m.py:")) and " in " in x
+                             for x in lines), lines)
+
+    def test_too_many_parentheses_is_nested_too_deeply(self):
+        self.write("paren.py", "x = " + "[" * 300 + "]" * 300 + "\n")
+        self.git("add", "-A")
+        lines = self.calls("helper")
+        self.assertIn("not parsed: paren.py (nested too deeply)", lines)
 
     def test_shadowed_calls_are_possible(self):
         lines = self.calls("helper")
