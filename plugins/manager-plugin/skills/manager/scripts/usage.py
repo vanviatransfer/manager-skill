@@ -84,9 +84,11 @@ changed the order of the `tools` lines; the lines had no consumer.)
   whose call is not counted (before `--since`) is not counted. carried chars: each result's
   characters times the agent's later requests that still carried it: every request after it,
   up to the first compaction (a `compact_boundary` record) after it that does not list its
-  record's uuid as preserved (`compactMetadata.preservedMessages`). Context dropped any other
-  way (old tool results cleared without such a record, a compaction not recorded) is not seen:
-  the result counts as carried to the agent's end, so the figure is an upper bound. Characters
+  record's uuid as preserved (`compactMetadata.preservedMessages`); a `compact_boundary`
+  without `preservedMessages` counts as dropping everything, so for that span the figure is a
+  lower bound. Context dropped any other way (old tool results cleared without such a record, a
+  compaction not recorded) is not seen: the result counts as carried to the agent's end, so the
+  figure is an upper bound there. Characters
   re-read from the cache cost less than new ones; this counts characters, not price.
 - reads: the Read calls, the distinct paths they read, and the re-reads unchanged: a Read of a
   path with the same offset and limit as an earlier Read by this agent that did not fail, with no
@@ -101,9 +103,11 @@ changed the order of the `tools` lines; the lines had no consumer.)
   word: `-s KILL`, `-k 5`, `--signal KILL`, `--kill-after 5`); a search later in a pipeline or
   after another command is not seen.
 - bash reads: Bash calls whose first command (found as for searches) is `cat`, `head`,
-  `tail`, `nl`, `less`, `more` or `bat` without an output redirection (`cat > f` writes), or
-  `sed` with `-n` (also in `-ne`, or `--quiet`/`--silent`); bash read chars: their results'
-  characters. A read later in a pipeline or after another command is not seen.
+  `tail`, `nl`, `less`, `more` or `bat`, or `sed` with `-n` (also in `-ne`, or
+  `--quiet`/`--silent`) and without `-i` (`sed -ni`, `sed -n -i` edit), and that do not redirect
+  its output (`cat > f`, `cat f>out`, `cat f 1> out` write; `2>/dev/null` is no such
+  redirection); bash read chars: their results' characters. A read later in a pipeline or after
+  another command is not seen.
 
 The tool names are printed, never their inputs, paths or commands; `unknown` (one `tools` line)
 for a transcript that can't be read. `--since` bounds them too.
@@ -440,9 +444,20 @@ READERS = ("cat", "head", "tail", "nl", "less", "more", "bat")  # a Bash command
 OPERATORS = ("|", "||", "&&", ";", "&")
 
 
+def redirected(word):
+    """True for a word holding a redirection of standard output (`>f`, `f>out`, `1>`, `>>`,
+    `&>`); one of another descriptor (`2>/dev/null`, `2>&1`) is not."""
+    for at, char in enumerate(word):
+        if char == ">" and not (word[:at].isdigit() and word[:at] != "1") \
+                and word[at - 1:at] != ">":  # `>>`: one redirection
+            return True
+    return False
+
+
 def bash_read(command):
-    """True for a command whose first command (as `search` finds it) reads a file: one of
-    READERS without an output redirection (`cat > f` writes), or `sed` with `-n`."""
+    """True for a command whose first command (as `search` finds it) reads a file and does not
+    redirect its output (`cat > f`, `cat f>out` and `cat f 1> out` write): one of READERS, or
+    `sed` with `-n` and without `-i` (`sed -ni` edits the file)."""
     found = first(command)
     name = os.path.basename(found[0]) if found else ""
     own = []
@@ -450,10 +465,16 @@ def bash_read(command):
         if word in OPERATORS:
             break
         own.append(word)
+    if any(redirected(word) for word in own):
+        return False
     if name in READERS:
-        return not any(word.startswith(">") for word in own)
-    return name == "sed" and any(word in ("--quiet", "--silent") or (
-        re.fullmatch(r"-[A-Za-z]+", word) is not None and "n" in word) for word in own)
+        return True
+    flags = [re.match(r"-([A-Za-z]*)", word).group(1) for word in own
+             if word.startswith("-") and not word.startswith("--")]
+    if any("i" in flag for flag in flags) or any(word.startswith("--in-place") for word in own):
+        return False
+    return name == "sed" and ("--quiet" in own or "--silent" in own or any(
+        "n" in flag for flag in flags))
 
 
 def mapped(command):
@@ -649,12 +670,14 @@ def carried(events):
     """{tool: carried chars}: each counted result's characters times the requests after it,
     up to the first compaction that did not preserve its record (see `--tools`)."""
     names, before = counted(events)
+    marks = [i for i, event in enumerate(events) if event["kind"] == "compact"]
     held = {}
     for at, event in enumerate(events):
         if event["kind"] != "result" or event["id"] not in names:
             continue
-        stop = next((i for i in range(at + 1, len(events)) if events[i]["kind"] == "compact"
-                     and event["uuid"] not in events[i]["kept"]), len(events))
+        # The compactions after it, in order, until one that dropped it: no scan of the events.
+        stop = next((marks[j] for j in range(bisect.bisect_right(marks, at), len(marks))
+                     if event["uuid"] not in events[marks[j]]["kept"]), len(events))
         name = tag(names[event["id"]])
         held[name] = held.get(name, 0) + event["chars"] * (before[stop] - before[at + 1])
     return held

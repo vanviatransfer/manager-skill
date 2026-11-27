@@ -319,6 +319,19 @@ class ManagerRunCompactHookTest(unittest.TestCase):
         self.assertIn("keep every working-notes line of the run verbatim",
                       " ".join(fallback.split()))
 
+    def test_pre_compact_leaves_out_what_the_repository_holds(self):
+        """Both forms: no code, file contents, diffs or skill and brief text in the summary; ids,
+        SHAs, paths and owner quotes still kept exactly."""
+        self.mark()
+        fallback = " ".join(self.hook("PreCompact")[1].split())
+        self.notes("Run R1: model strategy fixed\n")
+        short = " ".join(self.hook("PreCompact")[1].split())
+        clause = ("Leave out code, file contents, diffs and skill or brief text: they can be "
+                  "re-read from the repository.")
+        for out in (fallback, short):
+            self.assertEqual(out.count(clause), 1, out)
+        self.assertIn("Keep owner quotes, SHAs, ids and paths exactly", fallback)
+
     def test_a_notes_file_without_a_marker_is_silent(self):
         self.notes("Run R1: model strategy fixed\n")
         for event in ("PreCompact", "SessionStart"):

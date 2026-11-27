@@ -64,7 +64,9 @@ questions at all.
 - **Every phase gets** an objective, scope (and out-of-scope when it matters), `Depends on`
   (phase ids, or `none`; the manager schedules by it and keeps running independent phases while
   others are blocked), an observable acceptance criterion, and the exact validation commands.
-  Green validation is not acceptance; write both.
+  Acceptance names at least one concrete case (an input or action and the exact expected result)
+  and, where known, the file or test that shows it; a bare user story is not acceptance. Green
+  validation is not acceptance; write both.
 - **Owner decisions.** Anything only the owner can decide becomes a numbered open decision with
   options and your recommendation, and the phases it blocks are marked. Don't bury a decision as a
   placeholder inside a phase.

@@ -3,7 +3,8 @@
 A Claude Code plugin with six skills:
 
 - **`living-plan`** — writes a project's living plan: goal, scope, binding decisions, phases sized
-  for one PR each (with acceptance criteria and validation), and open owner decisions. Its
+  for one PR each (with acceptance criteria and validation), and open owner decisions. Acceptance
+  names a concrete case (an input or action and the exact expected result). Its
   `plan.py` (standard-library Python) checks the plan before its PR: every phase id used once,
   every `Depends on` naming phases of the plan (or `none`), no dependency cycle, every phase with
   its seven required lines, and a warning when two phases that are not done and don't depend on
@@ -16,7 +17,8 @@ A Claude Code plugin with six skills:
   pages), each with its sources and a `Verified` line, landed through a reviewed PR. The plan's
   phases point to the pages they need, and the manager's implementers keep those pages current in
   their phase PRs. The vault holds durable knowledge about the code; progress and history live in
-  the plan and git. In every mode the same PR also sets up the code map and the rules block (below).
+  the plan and git. Always-read pages hold one-line operational facts, not overviews. In every
+  mode the same PR also sets up the code map and the rules block (below).
 - **`code-map`** — a generated map of the repository: directories, entry points, most imported files
   and top-level symbols per file, plus a vault index (every page with its title, size and inbound
   links), broken links and orphan pages, so agents read one page instead of exploring. `query` finds
@@ -43,8 +45,8 @@ A Claude Code plugin with six skills:
     (attribute calls on unknown objects, shadowed names, constructor calls for `__init__`, the
     name passed or stored, in a string, `getattr`, decorators), then a whole-word count over
     every text file with how many it listed and the reasons the list may be short (other names
-    the function is bound to, implicit or framework calls, decorators, files not parsed or not
-    read), and always a
+    the function is bound to, implicit or framework calls, decorators, occurrences in files not
+    parsed as Python, files not parsed or not read), and always a
     coverage line naming what it cannot see. It parses with `ast` on each run and writes
     nothing. It never claims a complete list: the count line always ends "grep the rest".
   - **Rules block.** Sessions don't use the map unless told, so the setup PR adds a short marked
@@ -158,10 +160,11 @@ agent, and the search count only looks at a Bash command's first word.
 Since plugin 0.9.24 (by hand, for measuring before building more): each `tools` line also gives
 `carried chars` (a result's characters times the later requests that still held it, up to a
 compaction that dropped it; an upper bound) and the lines are sorted by it; the `reads` line adds
-Bash file reads (`cat`, `head`, `sed -n` ...); `--streaks` adds an `errors` line (errors, distinct
-error signatures, repeats); `--prefix` gives each agent's first request as a share of its input
-tokens (about its fixed prefix); `--after-green` gives what it spent after its last edit passed a
-test command. All heuristics are listed in the script's docstring; none prints inputs or paths.
+Bash file reads (`cat`, `head`, `sed -n` ...; not with an output redirection or `sed -i`);
+`--streaks` adds an `errors` line (errors, distinct error signatures, repeats); `--prefix` gives
+each agent's first request as a share of its input tokens (about its fixed prefix); `--after-green`
+gives what it spent after its last edit passed a test command. All heuristics are listed in the
+script's docstring; none prints inputs or paths.
 
 Two things learn from the record:
 
@@ -402,7 +405,8 @@ it is set or changes, and the hooks fall back to the summary.
   file: the notes are in that file and come back after the compaction, so the summary keeps only
   a line not yet in it. Without one: keep the run's working-notes lines verbatim (the run id and
   model strategy, the rules files and rulings sent with every dispatch, owner answers not yet in
-  the plan, the phase in flight with its PR, branch and SHAs).
+  the plan, the phase in flight with its PR, branch and SHAs). Both leave out code, file
+  contents, diffs and skill or brief text, which can be re-read from the repository.
 - `SessionStart` with matcher `compact`: one line after the compaction, to re-read the manager
   skill and the references whose triggers apply, and never to work from a summary of a file;
   then the notes file verbatim, whole lines up to 8,000 characters (a longer file is cut, and a

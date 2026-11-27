@@ -24,6 +24,9 @@ standing policy and wins over that rule (owner quotes stay verbatim).
 
 - `index.md`: one line per page, `[[page]] — what it answers`. It is the only page an agent reads
   by default; keep it under about 60 lines.
+- Always-read text (`index.md`, any page the project's rules load every session) holds page links
+  and one-line operational facts (commands, paths, conventions, gotchas), never generated
+  overviews or architecture prose; longer explanations go in topic pages, read on demand.
 - `glossary.md`: project terms, one or two sentences each, with `_Avoid_:` for synonyms the code
   doesn't use. Only project terms, no general programming ones.
 - `decisions/NNNN-<slug>.md`: one decision already made, in one paragraph (context, decision, why,

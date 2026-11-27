@@ -8,7 +8,7 @@
 #   PreCompact    stdout becomes extra instructions for the summary: with a notes file, that the
 #                 notes are in it and come back after the compaction; without one, keep the run's
 #                 working-notes lines verbatim (Claude Code cuts a hook's output at 10,000
-#                 characters);
+#                 characters); both: leave out code, file contents, diffs, skill or brief text;
 #   SessionStart  added to the context after the compaction: one line, re-read the manager skill
 #                 and the references whose triggers apply; then, with a notes file, its lines
 #                 verbatim, whole lines up to 8,000 characters (a cut: one line says so).
@@ -33,13 +33,14 @@ notes="$HOME/.claude/manager-runs/notes/$id.md"
 case "${1:-}" in
   PreCompact)
     if [ -n "$notes" ]; then
-      printf '%s %s %s %s %s %s\n' \
+      printf '%s %s %s %s %s %s %s\n' \
         'manager-plugin: a manager run is in progress in this session. Its working-notes lines' \
         "are in ~/.claude/manager-runs/notes/$id.md and come back verbatim after the compaction:" \
         "don't copy them into the summary; keep verbatim only a working-notes line that changed" \
-        'in this conversation and is not in that file yet. End the summary with: "Before the next' \
-        'action, re-read the manager skill and every file in its references/ whose trigger' \
-        'applies; never work from a summary of a file."'
+        'in this conversation and is not in that file yet. Leave out code, file contents, diffs' \
+        'and skill or brief text: they can be re-read from the repository. End the summary with:' \
+        '"Before the next action, re-read the manager skill and every file in its references/' \
+        'whose trigger applies; never work from a summary of a file."'
       exit 0
     fi
     cat <<'EOF'
@@ -57,7 +58,8 @@ it was last written:
   implementer's agent id, its last `subagent_tokens` and return time; the checkout values noted
   before the review; the last ignored-data measurement; the report file's path.
 Keep owner quotes, SHAs, ids and paths exactly: never paraphrase, merge, translate or drop these
-lines. End the notes with: "Before the next action, re-read the manager skill and every file in
+lines. Leave out code, file contents, diffs and skill or brief text: they can be re-read from the
+repository. End the notes with: "Before the next action, re-read the manager skill and every file in
 its references/ whose trigger applies; never work from a summary of a file."
 EOF
     ;;

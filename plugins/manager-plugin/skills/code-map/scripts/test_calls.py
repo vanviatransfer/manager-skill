@@ -102,8 +102,8 @@ HELPER = [
     "  pkg/other.py:5 string",  # strings after the code entries
     # 18 in Python (1 in broken.py, not parsed), 2 in notes.md, 1 in main.js
     "text: 21 occurrences of helper, 17 on lines listed above; renamed: h; passed or stored at 2 "
-    "places, calls through them not followed; 12 possible; 1 Python file not parsed; grep the "
-    "rest",
+    "places, calls through them not followed; 12 possible; 3 in files not parsed as Python; 1 "
+    "Python file not parsed; grep the rest",
     "not parsed: pkg/broken.py (syntax error, line 1)",
     codemap.CALLS_COVERAGE,
 ]
@@ -217,7 +217,8 @@ class CallsTest(unittest.TestCase):
         self.assertEqual(callers[-1], "  … 10 more (rerun with --all)")  # 5 + 45 callers
         self.assertEqual(lines[-3], "text: 67 occurrences of helper, 53 on lines listed above; "
                                     "renamed: h; passed or stored at 2 places, calls through "
-                                    "them not followed; 13 possible; 1 Python file not parsed; "
+                                    "them not followed; 13 possible; 3 in files not parsed "
+                                    "as Python; 1 Python file not parsed; "
                                     "cut (rerun with --all); grep the rest")
         full = self.calls("helper", "--all")
         callers = full[full.index("callers:") + 1:full.index("possible:")]
@@ -407,6 +408,27 @@ class UnreadTest(Fixture):
                                     "files not parsed; grep the rest")
         self.assertEqual(lines[-2], "not parsed: big.py (unreadable, too large or not text), "
                                     "nul.py (unreadable, too large or not text)")
+
+
+class NotPythonTest(Fixture):
+    """Occurrences in files not parsed as Python (an entry point in pyproject.toml, a notebook,
+    YAML) are counted on the text line; a Python file it couldn't parse is counted on its own."""
+    files = {"core.py": "def main():\n    pass\n",
+             "pyproject.toml": "[project.scripts]\ntool = \"core:main\"\n",
+             "nb.ipynb": "{\"cells\": [{\"source\": [\"main()\"]}]}\n",
+             "ci.yml": "run: python -c 'import core; core.main()'\n"}
+
+    def test_the_count_and_the_coverage(self):
+        self.assertEqual(self.text("main"), [
+            "text: 4 occurrences of main, 1 on lines listed above; 3 in files not parsed as "
+            "Python; grep the rest"])
+        self.write("bad.py", "main(\n")
+        self.git("add", "-A")
+        self.assertEqual(self.text("main"), [
+            "text: 5 occurrences of main, 1 on lines listed above; 3 in files not parsed as "
+            "Python; 1 Python file not parsed; grep the rest"])
+        self.assertIn("other languages, code outside the repository (frameworks or tools calling "
+                      "it by name, other packages), untracked files", codemap.CALLS_COVERAGE)
 
 
 class CompletenessTest(Fixture):

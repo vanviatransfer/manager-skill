@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -956,8 +957,36 @@ class MeasureTest(Fixture):
         chars = sum(n + 1 for n, (_, shown) in enumerate(commands) if shown)
         self.assertEqual(out, ["reads | m1 | 0 | 0 | 0 | %d | %d" % (
             sum(shown for _, shown in commands), chars)])
-        self.assertEqual(usage.bash_read("sed -i -n 1p a.py | cat"), True)
         self.assertEqual(usage.bash_read("echo x; cat a.py"), False)
+
+    def test_bash_writes_are_not_reads(self):
+        """Any redirection of standard output, and `sed -i` with `-n`, write: no read."""
+        for command in ("cat f>out", "cat f 1> out", "cat f >>out", "cat f 1>>out",
+                        "cat f &>out", "cat > f", "head -5 f >out", "sed -n 1p f > out",
+                        "sed -ni 1p f", "sed -in 1p f", "sed -i -n 1p f", "sed -n -i.bak 1p f",
+                        "sed -n --in-place 1p f", "sed -i -n 1p a.py | cat"):
+            self.assertEqual(usage.bash_read(command), False, command)
+        for command in ("cat f 2>/dev/null", "cat f 2>&1", "sed -n 1p f 2>/dev/null",
+                        "cat f | tee out > copy", "sed -ne 1p f"):
+            self.assertEqual(usage.bash_read(command), True, command)
+
+    def test_carried_chars_of_a_long_transcript_are_quick(self):
+        """Each result walks only the compactions after it, never the events: 20,000 results
+        and a compaction halfway that preserves nothing, about a second here (the scan of the
+        later events per result took some 15 s)."""
+        size, half = 20000, 10000
+        groups = [other(0)]
+        for n in range(size):
+            if n == half:
+                groups.append(boundary(3 * n))
+            groups += [ask(3 * n + 1, "q%d" % n, 10, 1, ("r%d" % n, "Read", {"file_path": "/a"})),
+                       reply(3 * n + 2, "r%d" % n, "x", uuid="u%d" % n)]
+        started = time.monotonic()
+        out = self.out(*groups)
+        self.assertLess(time.monotonic() - started, 5)
+        # r<i> is carried by the requests after it up to the compaction (or the end).
+        expected = half * (half - 1) // 2 + (size - half) * (size - half - 1) // 2
+        self.assertEqual(out, ["tools | m1 | Read | %d | %d | 0 | %d" % (size, size, expected)])
 
     def test_prefix_share(self):
         groups = (other(0), request(1, "q1", 10, 0, 990, 5),  # 1,000: input + reads + writes
