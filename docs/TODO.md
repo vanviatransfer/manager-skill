@@ -2022,3 +2022,40 @@ Wanted, for a later change after `explore`:
 - **Limits stated honestly.** Macros, templates and overloads are not resolved; anything the
   patterns miss must not look complete, as for `calls` (item 40).
 - Same rules: standard-library Python 3.8+, no ceiling raised, no default token cost.
+
+### 42. usage.py measurement pack (plugin 0.9.24)
+
+Why: items 37-38 and a second research round (2026-11-27) found no large new token saving that
+fits the plugin's constraints. The levers the evidence names are the fixed prefix, the number of
+turns, re-verification after tests pass, and results that stay in context for many later
+requests. Measure these from transcripts already on disk, for free, before building `explore` or
+changing effort.
+
+- **What.** `usage.py`, all opt-in: `tools` lines gain `carried chars` (a result's characters
+  times the agent's later requests that still carried it, until a `compact_boundary` that did
+  not preserve it) and are sorted by it; `reads` gains `bash reads` and `bash read chars`;
+  `--streaks` gains an `errors` line (errors, distinct signatures, repeated errors, requests
+  after the first repeat); `--prefix` (the first request's input tokens as a share of all);
+  `--after-green` (requests, tool calls and tokens after the first passing test call that
+  follows the last edit). Output without the flags is unchanged (tested against 0.9.23).
+- **What each line is meant to decide.** carried chars and bash reads: whether `explore`
+  (item 37) is worth building, from which tools' results dominate what is carried. prefix: how
+  much a shorter brief or fewer tool schemas could save at most. after green: whether an
+  implementer needs a "stop once green" nudge. errors: whether repeated errors cost enough to act
+  on, and with prefix and after green, whether an effort change is worth testing.
+- **Limits.** Carried chars is an upper bound: context cleared without a `compact_boundary`
+  record is not seen, and characters are not price (cache reads are cheaper). The prefix is the
+  first request, which also holds the first prompt. A change made by Bash is not seen as an
+  edit; green is a command-word heuristic (see the docstring), and a command that hides a
+  failure (`| tail`) counts as passed. Signatures normalise quoted strings, paths, hex ids and
+  digits and are never printed.
+- **Not changed.** The manager skill and its references, the agents, briefs, hooks, `retro.sh`,
+  `run-record.md`, the code map, the eval suites, any ceiling.
+- **Open question.** The run record and the `manager-retro` skill only carry plain `usage`
+  lines, so these measurements are not recorded or compared across runs. For now they are run
+  by hand after a real run, on that session's transcripts. That only works while the
+  transcripts exist: locally they live under `~/.claude/projects`, but in a cloud session they
+  are lost when the container is reclaimed; and the retro switch must be on, so the run's agent
+  ids are recorded. After the first real measurement, the owner decides which one or two lines
+  are worth adding to the run record and the retro comparison; that would be a separate change
+  to `run-record.md`, which this change does not touch.

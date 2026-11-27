@@ -671,12 +671,14 @@ class StreakTest(Fixture):
         self.assertEqual(lines(SESSION), [ORCHESTRATOR, REVIEWER, IMPLEMENTER, UNTIMED])
         self.assertEqual(lines(SESSION, "--streaks"), [
             ORCHESTRATOR, "streaks | orchestrator | 0 | 0 | none",
-            REVIEWER, "streaks | b2 | 0 | 0 | none",
-            IMPLEMENTER, "streaks | a1 | 0 | 0 | none",
-            UNTIMED, "streaks | c3 | 0 | 0 | none"])
+            "errors | orchestrator | 0 | 0 | 0 | 0",
+            REVIEWER, "streaks | b2 | 0 | 0 | none", "errors | b2 | 0 | 0 | 0 | 0",
+            IMPLEMENTER, "streaks | a1 | 0 | 0 | none", "errors | a1 | 0 | 0 | 0 | 0",
+            UNTIMED, "streaks | c3 | 0 | 0 | none", "errors | c3 | 0 | 0 | 0 | 0"])
         self.assertEqual(lines(SESSION, "zz", "--streaks"),
                          ["usage | zz | unknown" + UNKNOWN, "streaks | zz | unknown | unknown | "
-                                                            "unknown"])
+                                                            "unknown",
+                          "errors | zz | unknown | unknown | unknown | unknown"])
 
     def test_three_identical_failures_are_a_streak(self):
         self.assertEqual(self.streak(failing(10, "t1"), failing(20, "t2"), failing(30, "t3")),
@@ -757,22 +759,26 @@ class ToolsTest(Fixture):
     def test_off_by_default_the_lines_are_unchanged(self):
         self.assertEqual(lines(SESSION), [ORCHESTRATOR, REVIEWER, IMPLEMENTER, UNTIMED])
         self.assertEqual(lines(SESSION, "--tools"), [
-            ORCHESTRATOR, "reads | orchestrator | 0 | 0 | 0", "map | orchestrator | 0 | 0 | 0",
-            REVIEWER, "reads | b2 | 0 | 0 | 0", "map | b2 | 0 | 0 | 0",
-            IMPLEMENTER, "reads | a1 | 0 | 0 | 0", "map | a1 | 0 | 0 | 0",
-            UNTIMED, "reads | c3 | 0 | 0 | 0", "map | c3 | 0 | 0 | 0"])
+            ORCHESTRATOR, "reads | orchestrator | 0 | 0 | 0 | 0 | 0",
+            "map | orchestrator | 0 | 0 | 0",
+            REVIEWER, "reads | b2 | 0 | 0 | 0 | 0 | 0", "map | b2 | 0 | 0 | 0",
+            IMPLEMENTER, "reads | a1 | 0 | 0 | 0 | 0 | 0", "map | a1 | 0 | 0 | 0",
+            UNTIMED, "reads | c3 | 0 | 0 | 0 | 0 | 0", "map | c3 | 0 | 0 | 0"])
 
     def test_a_transcript_that_cannot_be_read_is_unknown(self):
         self.assertEqual(lines(SESSION, "zz", "--tools"), [
-            "usage | zz | unknown" + UNKNOWN, "tools | zz | unknown | unknown | unknown | unknown",
-            "reads | zz | unknown | unknown | unknown", "map | zz | unknown | unknown | unknown"])
+            "usage | zz | unknown" + UNKNOWN,
+            "tools | zz | unknown | unknown | unknown | unknown | unknown",
+            "reads | zz | unknown | unknown | unknown | unknown | unknown",
+            "map | zz | unknown | unknown | unknown"])
 
     def test_both_flags_streaks_first(self):
         self.agent(self.new, "t1", None, (failing(10, "x1"), failing(20, "x2"),
                                           failing(30, "x3")))
         self.assertEqual(lines(SESSION, "t1", "--tools", "--streaks")[1:], [
-            "streaks | t1 | 1 | 3 | Bash", "tools | t1 | Bash | 3 | 51 | 3",
-            "reads | t1 | 0 | 0 | 0", "map | t1 | 0 | 0 | 0"])
+            "streaks | t1 | 1 | 3 | Bash", "errors | t1 | 3 | 1 | 2 | 0",
+            "tools | t1 | Bash | 3 | 51 | 3 | 0", "reads | t1 | 0 | 0 | 0 | 0 | 0",
+            "map | t1 | 0 | 0 | 0"])
 
     def test_calls_chars_errors_most_chars_first(self):
         out = self.tools(
@@ -786,15 +792,18 @@ class ToolsTest(Fixture):
             used(60, "w1", "Write", {"file_path": "/secret/c.py"}, "ok"),
             used(70, "e1", "Edit", {"file_path": "/secret/c.py"}, "ok"),
             call(80, "n1", "Glob", {"pattern": "*"}))  # no result: a call, no characters
-        self.assertEqual(out, ["tools | t1 | Bash | 1 | 100 | 0", "tools | t1 | Read | 2 | 75 | 0",
-                               "tools | t1 | Grep | 2 | 13 | 1", "tools | t1 | Edit | 1 | 2 | 0",
-                               "tools | t1 | Write | 1 | 2 | 0", "tools | t1 | Glob | 1 | 0 | 0"])
+        self.assertEqual(out, ["tools | t1 | Bash | 1 | 100 | 0 | 0",
+                               "tools | t1 | Read | 2 | 75 | 0 | 0",
+                               "tools | t1 | Grep | 2 | 13 | 1 | 0",
+                               "tools | t1 | Edit | 1 | 2 | 0 | 0",
+                               "tools | t1 | Write | 1 | 2 | 0 | 0",
+                               "tools | t1 | Glob | 1 | 0 | 0 | 0"])
         self.assertNotIn("secret", "".join(lines(SESSION, "t1", "--tools")))
 
     def test_a_call_in_two_files_counts_once(self):
         both = reading(10, "r1", "/a.py", "x" * 7)
         self.agent(self.old, "t1", None, (both,))
-        self.assertEqual(self.tools(both), ["tools | t1 | Read | 1 | 7 | 0"])
+        self.assertEqual(self.tools(both), ["tools | t1 | Read | 1 | 7 | 0 | 0"])
 
     def test_re_reads_unchanged(self):
         out = self.tools(
@@ -804,7 +813,7 @@ class ToolsTest(Fixture):
             reading(50, "r5", "/b.py", error=True),  # failed: what follows is no re-read
             reading(60, "r6", "/b.py"),
             kind="reads")
-        self.assertEqual(out, ["reads | t1 | 6 | 2 | 2"])
+        self.assertEqual(out, ["reads | t1 | 6 | 2 | 2 | 0 | 0"])
 
     def test_an_edit_between_two_reads(self):
         for tool, key in (("Edit", "file_path"), ("Write", "file_path"),
@@ -814,7 +823,7 @@ class ToolsTest(Fixture):
                              used(20, "e1", tool, {key: "/a.py"}),
                              reading(30, "r3", "/a.py"), reading(40, "r4", "/b.py"),
                              reading(50, "r5", "/a.py"), name=name, kind="reads")
-            self.assertEqual(out, ["reads | %s | 5 | 2 | 2" % name], tool)
+            self.assertEqual(out, ["reads | %s | 5 | 2 | 2 | 0 | 0" % name], tool)
 
     def test_map_queries_other_map_calls_and_searches(self):
         out = self.tools(
@@ -853,14 +862,247 @@ class ToolsTest(Fixture):
             reading(10, "r1", "/a.py", "abc"), reading(20, "r2", "/a.py", "abc"),
             bash(30, "b1", "rg x", "12345")))
         for since, expected in (
-                (stamp(0), ["tools | t1 | Read | 2 | 6 | 0", "tools | t1 | Bash | 1 | 5 | 0",
-                            "reads | t1 | 2 | 1 | 1", "map | t1 | 0 | 0 | 1"]),
-                (stamp(15), ["tools | t1 | Bash | 1 | 5 | 0", "tools | t1 | Read | 1 | 3 | 0",
-                             "reads | t1 | 1 | 1 | 0", "map | t1 | 0 | 0 | 1"]),
+                (stamp(0), ["tools | t1 | Read | 2 | 6 | 0 | 0",
+                            "tools | t1 | Bash | 1 | 5 | 0 | 0",
+                            "reads | t1 | 2 | 1 | 1 | 0 | 0", "map | t1 | 0 | 0 | 1"]),
+                (stamp(15), ["tools | t1 | Bash | 1 | 5 | 0 | 0",
+                             "tools | t1 | Read | 1 | 3 | 0 | 0",
+                             "reads | t1 | 1 | 1 | 0 | 0 | 0", "map | t1 | 0 | 0 | 1"]),
                 (stamp(31), [  # only b1's result: not counted
-                 "reads | t1 | 0 | 0 | 0", "map | t1 | 0 | 0 | 0"])):
+                 "reads | t1 | 0 | 0 | 0 | 0 | 0", "map | t1 | 0 | 0 | 0"])):
             self.assertEqual(lines(SESSION, "t1", "--tools", "--since", since)[1:], expected,
                              since)
+
+
+def ask(at, key, prompt, output, *uses, cached=0):
+    """A request of `prompt` input tokens (`cached` of them read from the cache) whose one
+    record holds the tool calls `uses`: (id, tool, input)."""
+    record = request(at, key, prompt - cached, cached, 0, output)[0]
+    record["message"]["content"] = [{"type": "tool_use", "id": i, "name": t, "input": g}
+                                    for i, t, g in uses]
+    return [record]
+
+
+def reply(at, key, content="", error=None, uuid=None):
+    """The tool result of the call `key`, in a record with `uuid`."""
+    part = {"type": "tool_result", "tool_use_id": key, "content": content}
+    if error is not None:
+        part["is_error"] = error
+    extra = {"uuid": uuid} if uuid else {}
+    return other(at, message={"role": "user", "content": [part]}, **extra)
+
+
+def boundary(at, *preserved):
+    record = other(at, kind="system", subtype="compact_boundary")
+    if preserved:
+        record[0]["compactMetadata"] = {"preservedMessages": {"uuids": list(preserved)}}
+    return record
+
+
+class MeasureTest(Fixture):
+    """Plugin 0.9.24: carried characters, Bash reads, `--prefix`, `--after-green`, `errors`."""
+
+    def out(self, *groups, flag="--tools", kind="tools", name="m1", extra=()):
+        self.agent(self.new, name, "manager-plugin:worker", groups)
+        return [line for line in lines(SESSION, name, flag, *extra)
+                if line.startswith(kind + " ")]
+
+    def test_a_result_is_carried_by_every_later_request(self):
+        out = self.out(
+            other(0), ask(1, "q1", 100, 5, ("r1", "Read", {"file_path": "/s/a.py"})),
+            reply(2, "r1", "x" * 100), ask(3, "q2", 200, 5, ("b1", "Bash", {"command": "ls"})),
+            reply(4, "b1", "y" * 30), ask(5, "q3", 300, 5), ask(6, "q4", 300, 5),
+            ask(7, "q5", 300, 5), ask(8, "q6", 300, 5), ask(9, "q7", 300, 5))
+        # r1: 6 requests after it (q2-q7), 600; b1: 30 chars, 5 requests (q3-q7), 150.
+        self.assertEqual(out, ["tools | m1 | Read | 1 | 100 | 0 | 600",
+                               "tools | m1 | Bash | 1 | 30 | 0 | 150"])
+
+    def test_sorted_by_carried_chars(self):
+        out = self.out(
+            other(0), ask(1, "q1", 100, 5, ("r1", "Read", {"file_path": "/s/a.py"})),
+            reply(2, "r1", "x" * 30), ask(3, "q2", 200, 5),
+            ask(4, "q3", 200, 5), ask(5, "q4", 200, 5, ("b1", "Bash", {"command": "ls"})),
+            reply(6, "b1", "y" * 100), ask(7, "q5", 300, 5))
+        self.assertEqual(out, ["tools | m1 | Read | 1 | 30 | 0 | 120",
+                               "tools | m1 | Bash | 1 | 100 | 0 | 100"])
+
+    def test_a_compaction_drops_what_it_does_not_preserve(self):
+        groups = (other(0), ask(1, "q1", 100, 5, ("r1", "Read", {"file_path": "/s/a.py"}),
+                                ("r2", "Read", {"file_path": "/s/b.py"})),
+                  reply(2, "r1", "x" * 10, uuid="u-r1"), reply(2, "r2", "y" * 10, uuid="u-r2"),
+                  ask(3, "q2", 200, 5), ask(4, "q3", 200, 5))
+        later = (ask(11, "q4", 50, 5), ask(12, "q5", 60, 5))
+        self.assertEqual(self.out(*groups, boundary(10), *later),
+                         ["tools | m1 | Read | 2 | 20 | 0 | 40"])  # q2, q3 only
+        self.assertEqual(self.out(*groups, boundary(10, "u-r2"), *later, name="m2"),
+                         ["tools | m2 | Read | 2 | 20 | 0 | 60"])  # r2 also in q4, q5
+        # The next compaction that does not list it ends it too.
+        self.assertEqual(self.out(*groups, boundary(10, "u-r2"), *later, boundary(20),
+                                  ask(21, "q6", 10, 5), name="m3"),
+                         ["tools | m3 | Read | 2 | 20 | 0 | 60"])  # not in q6
+
+    def test_bash_reads(self):
+        commands = (("cat /s/a.py", True), ("cd /s && head -n 5 a.py", True),
+                    ("sed -n '1,5p' a.py", True), ("sed -ne 1p a.py", True),
+                    ("timeout 9 tail -20 x.log", True), ("nl a.py", True), ("bat a.py", True),
+                    ("less a.py", True), ("more a.py", True), ("sed --quiet 1p a.py", True),
+                    ("sed 's/a/b/' a.py", False), ("cat > /s/a.py <<'EOF'\nx\nEOF", False),
+                    ("grep x a.py | cat", False), ("make test", False),
+                    ("cat a.py | sed -n 1p", True))
+        groups = [other(0)]
+        for n, (command, _) in enumerate(commands):
+            groups.append(bash(10 + 2 * n, "b%d" % n, command, "z" * (n + 1)))
+        out = self.out(*groups, kind="reads")
+        chars = sum(n + 1 for n, (_, shown) in enumerate(commands) if shown)
+        self.assertEqual(out, ["reads | m1 | 0 | 0 | 0 | %d | %d" % (
+            sum(shown for _, shown in commands), chars)])
+        self.assertEqual(usage.bash_read("sed -i -n 1p a.py | cat"), True)
+        self.assertEqual(usage.bash_read("echo x; cat a.py"), False)
+
+    def test_prefix_share(self):
+        groups = (other(0), request(1, "q1", 10, 0, 990, 5),  # 1,000: input + reads + writes
+                  other(10), request(11, "q2", 2, 1000, 998, 5),
+                  other(20), request(21, "q3", 0, 2000, 0, 5))
+        self.assertEqual(self.out(*groups, flag="--prefix", kind="prefix"),
+                         ["prefix | m1 | 1000 | 5000 | 20.0"])
+        self.assertEqual(self.out(*groups, flag="--prefix", kind="prefix",
+                                  extra=("--since", stamp(5))),
+                         ["prefix | m1 | 2000 | 4000 | 50.0"])
+        self.assertEqual(self.out(other(0), flag="--prefix", kind="prefix", name="m2"),
+                         ["prefix | m2 | none"])
+        self.assertEqual(lines(SESSION, "zz", "--prefix")[1],
+                         "prefix | zz | unknown | unknown | unknown")
+        # The total is the usage line's input + cache read + cache writes.
+        line = lines(SESSION, "a1", "--prefix")
+        fields = [int(v) for v in line[0].split(" | ")[5:9]]
+        self.assertEqual(line[1].split(" | ")[3], str(sum(fields)))
+
+    def green(self, *groups, name="m1", extra=()):
+        return self.out(*groups, flag="--after-green", kind="after green", name=name,
+                        extra=extra)
+
+    TEST = ("t1", "Bash", {"command": "python3 -m unittest discover -s x -q"})
+
+    def test_after_green(self):
+        out = self.green(
+            other(0), ask(1, "q1", 100, 10, ("e1", "Edit", {"file_path": "/s/a.py"})),
+            reply(2, "e1", "ok"), ask(3, "q2", 200, 20, self.TEST), reply(4, "t1", "OK"),
+            ask(5, "q3", 300, 30, ("r1", "Read", {"file_path": "/s/a.py"}),
+                ("g1", "Grep", {"pattern": "x"})),
+            reply(6, "r1", "x"), reply(6, "g1", "y"), ask(7, "q4", 400, 40))
+        self.assertEqual(out, ["after green | m1 | 2 of 4 | 2 | 2 | 70 | 700"])
+
+    def test_after_green_none(self):
+        failed = (other(0), ask(1, "q1", 100, 10, ("e1", "Edit", {"file_path": "/s/a.py"})),
+                  reply(2, "e1", "ok"), ask(3, "q2", 200, 20, self.TEST),
+                  reply(4, "t1", "FAILED", error=True), ask(5, "q3", 300, 30))
+        self.assertEqual(self.green(*failed), ["after green | m1 | none"])
+        unchanged = (other(0), ask(3, "q2", 200, 20, self.TEST), reply(4, "t1", "OK"),
+                     ask(5, "q3", 300, 30))
+        self.assertEqual(self.green(*unchanged, name="m2"), ["after green | m2 | none"])
+        edit_failed = (other(0), ask(1, "q1", 100, 10, ("e1", "Write", {"file_path": "/a"})),
+                       reply(2, "e1", "no", error=True), ask(3, "q2", 200, 20, self.TEST),
+                       reply(4, "t1", "OK"))
+        self.assertEqual(self.green(*edit_failed, name="m3"), ["after green | m3 | none"])
+        self.assertEqual(lines(SESSION, "zz", "--after-green")[1], "after green | zz | unknown")
+
+    def test_green_then_edit_then_green(self):
+        out = self.green(
+            other(0), ask(1, "q1", 100, 10, ("e1", "Edit", {"file_path": "/s/a.py"})),
+            reply(2, "e1", "ok"), ask(3, "q2", 200, 20, self.TEST), reply(4, "t1", "OK"),
+            ask(5, "q3", 300, 30, ("e2", "MultiEdit", {"file_path": "/s/a.py"})),
+            reply(6, "e2", "ok"),
+            ask(7, "q4", 400, 40, ("t2", "Bash", {"command": "cd /r && npm run test"})),
+            reply(8, "t2", "ok"), ask(9, "q5", 500, 50))
+        self.assertEqual(out, ["after green | m1 | 4 of 5 | 1 | 0 | 50 | 500"])
+
+    def test_green_by_a_log_and_its_status(self):
+        logged = ("t1", "Bash", {"command": "python3 run.py > /tmp/x.log 2>&1; echo $?"})
+        for status, expected in (("1", "none"), ("0", "2 of 3 | 1 | 0 | 30 | 300")):
+            name = "l" + status
+            out = self.green(
+                other(0), ask(1, "q1", 100, 10, ("e1", "Edit", {"file_path": "/s/a.py"})),
+                reply(2, "e1", "ok"), ask(3, "q2", 200, 20, logged),
+                reply(4, "t1", status + "\n\n"), ask(5, "q3", 300, 30), name=name)
+            self.assertEqual(out, ["after green | %s | %s" % (name, expected)], status)
+        for command in ("pytest -q", "go test ./...", "cargo test", "make check", "ctest",
+                        "mvn test", "gradle test", "yarn test", "pnpm test", "npm test",
+                        "make test"):
+            self.assertTrue(usage.TESTS.search(command), command)
+        for command in ("make", "npm install", "echo test", "cat pytest.ini.bak"):
+            self.assertFalse(usage.TESTS.search(command), command)
+
+    def errors(self, *groups, name="m1", extra=()):
+        return self.out(*groups, flag="--streaks", kind="errors", name=name, extra=extra)
+
+    def test_error_signatures(self):
+        def fail(at, key, tool, said):
+            return ask(at, "q" + key, 100, 5, (key, tool, {"command": key})) \
+                + reply(at + 1, key, said, error=True)
+        out = self.errors(
+            other(0),
+            fail(10, "a", "Bash", "Error: /s/a.py line 12 not found"),
+            fail(20, "b", "Bash", "Error: /x/y/b.py line 99 not found\nmore"),  # a repeat
+            fail(30, "c", "Read", "File 'abc' missing"),
+            fail(40, "d", "Bash", "Permission denied"),
+            fail(50, "e", "Read", 'File "def" missing'),  # a repeat, not consecutive
+            fail(60, "f", "Bash", "id deadbeef12 failed"),
+            fail(70, "g", "Bash", "id 0123abcd99 failed"),  # a repeat
+            fail(80, "h", "Grep", "Error: /s/a.py line 12 not found"),  # another tool
+            ask(90, "qz", 100, 5))
+        # Requests after the first repeat's result (at 21): qc ... qh and qz.
+        self.assertEqual(out, ["errors | m1 | 8 | 5 | 3 | 7"])
+        self.assertNotIn("secret", " ".join(lines(SESSION, "m1", "--streaks")))
+        self.assertEqual(self.errors(other(0), fail(10, "a", "Bash", "x"),
+                                     fail(20, "b", "Bash", "y"), name="m2"),
+                         ["errors | m2 | 2 | 2 | 0 | 0"])
+        self.assertEqual(usage.signature("Bash", "at 0x1f2e3d4c: 'q' in C:\\x\\y.py, 42"),
+                         ("Bash", "at H: Q in P, N"))
+
+    def test_since_bounds_them(self):
+        groups = (other(0), ask(1, "q1", 100, 10, ("e1", "Edit", {"file_path": "/s/a.py"})),
+                  reply(2, "e1", "boom", error=True),
+                  ask(3, "q2", 200, 20, ("e2", "Edit", {"file_path": "/s/a.py"})),
+                  reply(4, "e2", "boom", error=True),
+                  ask(5, "q3", 300, 30, ("e3", "Edit", {"file_path": "/s/a.py"})),
+                  reply(6, "e3", "ok"), ask(7, "q4", 400, 40, self.TEST), reply(8, "t1", "OK"),
+                  ask(9, "q5", 500, 50))
+        self.agent(self.new, "m1", None, groups)
+        flags = ("--streaks", "--tools", "--prefix", "--after-green")
+        self.assertEqual(lines(SESSION, "m1", *flags)[1:], [
+            "streaks | m1 | 0 | 0 | none", "errors | m1 | 2 | 1 | 1 | 3",
+            "tools | m1 | Edit | 3 | 10 | 2 | 32", "tools | m1 | Bash | 1 | 2 | 0 | 2",
+            "reads | m1 | 0 | 0 | 0 | 0 | 0", "map | m1 | 0 | 0 | 0",
+            "prefix | m1 | 100 | 1500 | 6.7", "after green | m1 | 4 of 5 | 1 | 0 | 50 | 500"])
+        self.assertEqual(lines(SESSION, "m1", *flags, "--since", stamp(3))[1:], [
+            "streaks | m1 | 0 | 0 | none", "errors | m1 | 1 | 1 | 0 | 0",
+            "tools | m1 | Edit | 2 | 6 | 1 | 16", "tools | m1 | Bash | 1 | 2 | 0 | 2",
+            "reads | m1 | 0 | 0 | 0 | 0 | 0", "map | m1 | 0 | 0 | 0",
+            "prefix | m1 | 200 | 1400 | 14.3", "after green | m1 | 3 of 4 | 1 | 0 | 50 | 500"])
+
+    def test_unknown_transcript_all_flags(self):
+        self.assertEqual(lines(SESSION, "zz", "--streaks", "--tools", "--prefix",
+                               "--after-green"), [
+            "usage | zz | unknown" + UNKNOWN,
+            "streaks | zz | unknown | unknown | unknown",
+            "errors | zz | unknown | unknown | unknown | unknown",
+            "tools | zz | unknown | unknown | unknown | unknown | unknown",
+            "reads | zz | unknown | unknown | unknown | unknown | unknown",
+            "map | zz | unknown | unknown | unknown",
+            "prefix | zz | unknown | unknown | unknown", "after green | zz | unknown"])
+
+    def test_without_the_flags_the_lines_are_unchanged(self):
+        self.agent(self.new, "m1", None, (other(0), ask(1, "q1", 100, 10, self.TEST),
+                                          reply(2, "t1", "OK")))
+        self.assertEqual(lines(SESSION), [ORCHESTRATOR,
+                                          "usage | m1 | unknown | model-a | 1 | 100 | 0 | 0 | "
+                                          "0 | 10 | 110 | 0 | 0 | 2", REVIEWER, IMPLEMENTER,
+                                          UNTIMED])
+        env = dict(os.environ, CLAUDE_CONFIG_DIR=self.config)
+        p = subprocess.run([sys.executable, "-I", "-B", SCRIPT, SESSION, "a1", "--prefix",
+                            "--after-green"], capture_output=True, env=env, cwd=self.tmp)
+        self.assertEqual((p.returncode, p.stderr), (0, b""))
+        self.assertEqual(p.stdout.decode("ascii").splitlines()[0], IMPLEMENTER)
 
 
 if __name__ == "__main__":

@@ -155,6 +155,14 @@ queries, other code-map calls, searches by Grep, Glob or a Bash `grep`, `rg`, `f
 Tool names only, never inputs or paths; the re-read count can't see changes made by Bash or another
 agent, and the search count only looks at a Bash command's first word.
 
+Since plugin 0.9.24 (by hand, for measuring before building more): each `tools` line also gives
+`carried chars` (a result's characters times the later requests that still held it, up to a
+compaction that dropped it; an upper bound) and the lines are sorted by it; the `reads` line adds
+Bash file reads (`cat`, `head`, `sed -n` ...); `--streaks` adds an `errors` line (errors, distinct
+error signatures, repeats); `--prefix` gives each agent's first request as a share of its input
+tokens (about its fixed prefix); `--after-green` gives what it spent after its last edit passed a
+test command. All heuristics are listed in the script's docstring; none prints inputs or paths.
+
 Two things learn from the record:
 
 - **Within a project:** when reviewers find the same class of defect in two phases, the manager
