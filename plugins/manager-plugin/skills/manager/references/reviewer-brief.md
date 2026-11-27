@@ -67,9 +67,9 @@ an entry it cites (`D<n>`) → `grep -n` it. **Read at the candidate:** the full
 which `check` covers: add the pathspecs `:!<map>` and `:!<map dir>/`, where `<map>` is the `map`
 in `.codemap.json` at the candidate and `<map dir>` is that path without `.md`); the surrounding
 code its correctness depends on. Not PR comments or reviews, the PR description or commit
-messages. With a `Code map` command, run `<code map> changed --base <base> --head <candidate>`
-(pointers only, never a filter) and, before any broad search of code or vault, `<code map> query
-<term>` (and read the vault index).
+messages. With a `Code map` command: `<code map> changed --base <base> --head <candidate>`
+(pointers only, never a filter); before broad searches, `<code map> query <term>` and vault
+index; changed functions' callers: `<code map> calls <name>` plus grep.
 
 **Review for.** Phase PR: acceptance criteria; bugs,
 edge cases, broken invariants in touched code and its callers; security and data safety; project

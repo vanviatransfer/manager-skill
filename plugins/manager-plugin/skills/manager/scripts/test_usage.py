@@ -712,6 +712,15 @@ class StreakTest(Fixture):
                                      failing(30, "t3", "Edit", one)),
                          ["streaks | s1 | 1 | 3 | Edit"])
 
+    def test_an_id_that_is_not_a_string_is_its_own_call(self):
+        odd = failing(5, "o1")
+        odd[0]["message"]["content"][0]["id"] = ["not", "a", "string"]
+        nameless = call(6, "o2")
+        nameless[0]["message"]["content"][0]["id"] = {"a": 1}
+        self.assertEqual(self.streak(odd, nameless, failing(10, "t1"), failing(20, "t2"),
+                                     failing(30, "t3")),
+                         ["streaks | s1 | 1 | 3 | Bash"])
+
     def test_since_bounds_them(self):
         self.agent(self.new, "s1", None, (failing(10, "t1"), failing(20, "t2"),
                                           failing(30, "t3"), failing(40, "t4")))
@@ -823,6 +832,21 @@ class ToolsTest(Fixture):
             used(21, "g1", "Grep", {"pattern": "x"}), used(22, "g2", "Glob", {"pattern": "*"}),
             kind="map")
         self.assertEqual(out, ["map | t1 | 2 | 2 | 6"])
+
+    def test_calls_is_another_map_call(self):
+        out = self.tools(bash(10, "b1", "python3 /x/codemap.py calls helper --all"), kind="map")
+        self.assertEqual(out, ["map | t1 | 0 | 1 | 0"])
+
+    def test_timeout_options_with_a_value_word(self):
+        out = self.tools(
+            bash(10, "b1", "timeout -s KILL 120 grep -rn x ."),
+            bash(11, "b2", "timeout -k 5 120 rg x"),
+            bash(12, "b3", "timeout --signal KILL 60 find . -name x"),
+            bash(13, "b4", "timeout --kill-after 5 --signal=TERM 60 git grep x"),
+            bash(14, "b5", "timeout -sKILL --preserve-status 9 grep x f"),
+            bash(15, "b6", "timeout -k 5 120 make test"),  # not a search
+            kind="map")
+        self.assertEqual(out, ["map | t1 | 0 | 0 | 5"])
 
     def test_since_bounds_them(self):
         self.agent(self.new, "t1", None, (
