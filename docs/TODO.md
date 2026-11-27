@@ -1970,23 +1970,28 @@ the staleness idea (item 37) is dropped.
   `possible:` (every other occurrence of the name in Python code, with a kind tag: unresolved
   `call`, `attribute call`, `reference`, `assignment`, `decorator`, `getattr`, `import`,
   `other definition`, `string`); `text:` (whole-word occurrences in every text file the map scans,
-  any language, and how many are on lines listed above; then `renamed: <names>; grep those too`
-  when the function is bound to other names anywhere, and a note when the name is passed or
-  stored, whose calls are not followed). Then `not parsed:` (files `ast` rejected or could not
-  read) and always a `coverage:` line.
+  any language, and how many are on lines listed above, with the reasons the list may be
+  incomplete: `renamed:` names, passed or stored uses, `possible` entries, unparsed files, a
+  cut). Then `not parsed:` (files `ast` rejected or could not read) and always a `coverage:`
+  line. A bare-name call of a parameter or a name assigned in its function or at module level is
+  `call (shadowed)`, never a caller.
 - **Coverage rule (owner).** An incomplete caller list must never look complete. False positives
   in `possible` are fine; silent false negatives are not. The output never says "no callers"; an
-  empty section says `none found`; the `text:` line says "all on lines listed above" only when
-  no renamed binding and no passed or stored use exists; the coverage line (static Python calls
-  only; not seen: dynamic calls, other languages, untracked files and others outside the map;
-  grep the name and its renamed names before changing the function) is printed on every run
-  and never cut, nor are `text:` and `not parsed:`. The PR #77 review found calls through a
-  renamed binding dropped while the count said all were listed; fixed before landing.
+  empty section says `none found`. The `text:` line is conservative by construction (a
+  whitelist): it says "all on lines listed above (tracked files only)" only when `possible`,
+  `not parsed:` and `renamed:` are empty and no section was cut; otherwise it names the reasons
+  and ends "grep the rest". The coverage line (static Python calls only; not seen: dynamic
+  calls, literal getattr followed only as far as an assigned name, other languages, untracked
+  or large files; grep the name and its renamed names before changing the function) is printed
+  on every run and never cut, nor are `text:` and `not parsed:`. The PR #77 reviews found calls
+  through renamed bindings, literal getattr or `__dict__` lookups and unreadable files missing
+  while the count said all were listed; fixed before landing.
 - **Limits.** No types: `obj.name()` on an instance is only `possible`; `from m import *`, imports
   it cannot resolve and their aliases are `possible`; a name bound inside a function is followed
   in its file only; tuple unpacking, containers and return values are not followed; shadowing
-  by a local name is not seen; the map's own import rules decide which file a module is. Parsed with the running Python's `ast`,
-  which is fine because nothing is committed: newer syntax than that Python is `not parsed`.
+  is checked by name, not statement order; the map's own import rules decide which file a
+  module is. Parsed with the running Python's `ast`, which is fine because nothing is
+  committed: newer syntax than that Python is `not parsed`.
 - **Cap.** 40 lines per section per name, then `… <k> more (rerun with --all)`; `possible` lists
   code entries before strings, each part by path and line. `--budget` stays `query` only.
 - **Cost.** Live and opt-in: no page, index or hook change; no hook runs it. code-map

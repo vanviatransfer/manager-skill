@@ -1421,10 +1421,12 @@ def query_ranked(term, budget, info, importers, mentions, vault):
 CALLS_LIMIT = 40  # the lines of one section of one name; `--all`: no cap
 CALLS_NAME = re.compile(r"^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*$")
 ATTR_CALLS = ("getattr", "setattr", "hasattr", "delattr")
-CALLS_COVERAGE = ("coverage: static Python calls only; not seen: dynamic calls (getattr with "
-                  "computed names, exec), other languages, untracked files and others outside "
-                  "the map; calls through `from m import *`, imports it cannot resolve and "
-                  "methods on objects of unknown type are under possible; other names the "
+CALLS_COVERAGE = ("coverage: static Python calls only; not seen: dynamic calls (exec, getattr "
+                  "or lookups with computed names; a literal getattr or lookup is listed, and "
+                  "followed only as far as the name it is assigned to), other languages, "
+                  "untracked files, files over 512 KB or not text and others outside the map; "
+                  "calls through `from m import *`, imports it cannot resolve, shadowed names "
+                  "and methods on objects of unknown type are under possible; other names the "
                   "function is bound to are under renamed; before changing this function's "
                   "signature or behaviour, also grep for the name and those.")
 
@@ -1437,11 +1439,34 @@ def module_name(path):
     return stem.replace("/", ".")
 
 
+def stored_names(body):
+    """The names a block assigns, binds as a loop, `with` or `except` target, or deletes,
+    nested blocks included, the functions and classes it defines not."""
+    found, todo = set(), list(body)
+    while todo:
+        node = todo.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            continue
+        if isinstance(node, ast.Name) and not isinstance(node.ctx, ast.Load):
+            found.add(node.id)
+        elif isinstance(node, ast.ExceptHandler) and node.name:
+            found.add(node.name)
+        todo.extend(ast.iter_child_nodes(node))
+    return found
+
+
+def literal_lookup(node, name):
+    """Whether a call or subscript holds the name as a whole string literal (`getattr(x,
+    "f")`, `x.__dict__["f"]`, `attrgetter("f")(x)`)."""
+    return isinstance(node, (ast.Call, ast.Subscript)) and any(
+        isinstance(n, ast.Constant) and n.value == name for n in ast.walk(node))
+
+
 class CallsFile:
     """One parsed Python file: its definitions by qualified name (`Class.method`, nested ones
     under their function), its top-level names and its import bindings (name -> (spec, the
     imported name)); spec: ("mod", level, dotted) or ("from", level, module, name); and its
-    module-level aliases (`alias = core.helper`: name -> the Name or Attribute assigned)."""
+    module-level assignments (`alias = core.helper`: name -> the expression assigned)."""
 
     def __init__(self, path, text, tree):
         self.path, self.lines, self.tree = path, text.split("\n"), tree
@@ -1449,11 +1474,11 @@ class CallsFile:
         for node in tree.body:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 self.tops.add(node.name)
-            elif isinstance(node, (ast.Assign, ast.AnnAssign)) \
-                    and isinstance(node.value, (ast.Name, ast.Attribute)):
+            elif isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None:
                 for t in node.targets if isinstance(node, ast.Assign) else [node.target]:
                     if isinstance(t, ast.Name):
                         self.assigns[t.id] = node.value
+        self.stores = stored_names(tree.body)  # names assigned at module level
         self.collect(tree, [])
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
@@ -1503,7 +1528,7 @@ class Calls:
         self.module_aliases = set(self.renamed)  # `x.<alias>()` counts only for these
         for path, f in sorted(parsed.items()):
             self.file = f
-            self.handled = set()
+            self.handled, self.scopes = set(), []
             self.walk(f.tree, [])
 
     def find_aliases(self):
@@ -1519,13 +1544,16 @@ class Calls:
                 found = [b for b, (spec, orig) in f.bindings.items() if orig in spelled
                          or self.canonical(self.spec(path, spec)) in self.keys]
                 for a, value in f.assigns.items():
-                    word = value.id if isinstance(value, ast.Name) else value.attr
-                    if word in spelled or self.canonical(("sym", path, a)) in self.keys:
+                    word = value.id if isinstance(value, ast.Name) else getattr(value, "attr", "")
+                    if word in spelled or self.canonical(("sym", path, a)) in self.keys \
+                            or any(literal_lookup(value, w) for w in spelled):
                         found.append(a)
                 for b, (spec, orig) in f.bindings.items():  # `import x as <name>`: x too
                     if b in spelled and orig != self.name:
                         self.renamed.add(orig)
                 for a, value in f.assigns.items():
+                    if not isinstance(value, (ast.Name, ast.Attribute)):
+                        continue
                     word = value.id if isinstance(value, ast.Name) else value.attr
                     if a in spelled and word != self.name:
                         self.renamed.add(word)
@@ -1645,10 +1673,17 @@ class Calls:
                     self.add(d, "decorator", self.end_line(d))
                     self.handled.add(id(d))
             inner = stack + [("class" if isinstance(node, ast.ClassDef) else "def", node.name)]
+            if not isinstance(node, ast.ClassDef):  # its parameters and assigned names
+                a = node.args
+                params = a.posonlyargs if hasattr(a, "posonlyargs") else []
+                params = params + a.args + a.kwonlyargs + [x for x in (a.vararg, a.kwarg) if x]
+                self.scopes.append({x.arg for x in params} | stored_names(node.body))
             for field, value in ast.iter_fields(node):
                 for child in value if isinstance(value, list) else [value]:
                     if isinstance(child, ast.AST):
                         self.walk(child, inner if field == "body" else stack)
+            if not isinstance(node, ast.ClassDef):
+                self.scopes.pop()
             return
         if isinstance(node, ast.Call):
             func = node.func
@@ -1656,7 +1691,11 @@ class Calls:
             if note is not None:
                 self.handled.add(id(func))
                 line = self.end_line(func)
-                if self.canonical(self.resolve(func, stack)) in self.keys:
+                shadowed = isinstance(func, ast.Name) and (
+                    any(func.id in scope for scope in self.scopes) or func.id in f.stores)
+                if shadowed:  # a parameter or a name assigned here may be something else
+                    self.add(func, "call" + (note or " (shadowed)"), line)
+                elif self.canonical(self.resolve(func, stack)) in self.keys:
                     self.callers.add((f.path, line, self.where(stack)))
                 else:
                     kind = "attribute call" if isinstance(func, ast.Attribute) else "call"
@@ -1667,12 +1706,16 @@ class Calls:
                     self.handled.add(id(arg))
                     self.add(arg, func.id)
         elif isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None \
-                and self.ident(node.value) is not None:  # `h = helper` in any scope
+                and (self.ident(node.value) is not None  # `h = helper` in any scope
+                     or literal_lookup(node.value, self.name)):  # `h = getattr(m, "helper")`
+            named = self.ident(node.value) is not None
             for t in node.targets if isinstance(node, ast.Assign) else [node.target]:
                 if isinstance(t, ast.Name) and t.id != self.name:
                     self.renamed.add(t.id)
                     self.aliases[f.path].add(t.id)
-                    if id(node.value) not in self.handled:  # followed: no `reference`
+                    if not named:
+                        self.add(node.value, "renamed to %s" % t.id)
+                    elif id(node.value) not in self.handled:  # followed: no `reference`
                         self.handled.add(id(node.value))
                         self.add(node.value, "renamed to %s" % t.id, self.end_line(node.value))
         elif isinstance(node, (ast.Import, ast.ImportFrom)):
@@ -1727,6 +1770,30 @@ def calls_parse(root, files):
     return parsed, failed
 
 
+def text_line(found, total, shown, unparsed, capped):
+    """The `text:` line. It says every occurrence is listed only when nothing else could hold a
+    call: no `possible` entry, no file left unparsed, no other name, no cut; else it says why
+    not and ends with `grep the rest`."""
+    line = "text: %d occurrence%s of %s, " % (total, "" if total == 1 else "s", found.name)
+    if total == shown and not (found.possible or unparsed or found.renamed or capped):
+        return line + "all on lines listed above (tracked files only)"
+    line += "%d on lines listed above" % shown
+    if found.renamed:
+        line += "; renamed: %s" % ", ".join(sorted(found.renamed))
+    stored = sum(1 for _, _, kind in found.possible
+                 if kind.split(" (")[0] in ("reference", "attribute reference"))
+    if stored:
+        line += "; passed or stored at %d place%s, calls through %s not followed" % (
+            stored, "" if stored == 1 else "s", "it" if stored == 1 else "them")
+    if found.possible:
+        line += "; %d possible" % len(found.possible)
+    if unparsed:
+        line += "; %d Python file%s not parsed" % (unparsed, "" if unparsed == 1 else "s")
+    if capped:
+        line += "; cut (rerun with --all)"
+    return line + "; grep the rest"
+
+
 def calls_lines(root, targets, files, out_rel, everything=False):
     """The lines `calls` prints; see `references/calls.md`."""
     parsed, failed = calls_parse(root, files)
@@ -1740,7 +1807,7 @@ def calls_lines(root, targets, files, out_rel, everything=False):
     out = []
     for target in targets:
         found = Calls(parsed, known, target)
-        listed = set()
+        listed, capped = set(), False
         out.append("calls %s" % target)
         code_first = sorted(found.possible, key=lambda i: (i[2] == "string", i))
         for head, items, show in (
@@ -1756,6 +1823,7 @@ def calls_lines(root, targets, files, out_rel, everything=False):
                 out.append("  " + show(item))
                 listed.add(item[:2])
             if len(keep) < len(items):
+                capped = True
                 out.append("  … %d more (rerun with --all)" % (len(items) - len(keep)))
         total = shown = 0
         for path in sorted(texts):
@@ -1764,20 +1832,7 @@ def calls_lines(root, targets, files, out_rel, everything=False):
                 total += hits
                 if hits and (path, n) in listed:
                     shown += hits
-        stored = sum(1 for _, _, kind in found.possible
-                     if kind.split(" (")[0] in ("reference", "attribute reference"))
-        line = "text: %d occurrence%s of %s, " % (total, "" if total == 1 else "s", found.name)
-        if total == shown and not found.renamed and not stored:
-            line += "all on lines listed above"
-        else:
-            line += "%d on lines listed above" % shown
-            if found.renamed:
-                line += "; renamed: %s" % ", ".join(sorted(found.renamed))
-            if stored:
-                line += "; passed or stored at %d place%s above, calls through %s not followed" \
-                    % (stored, "" if stored == 1 else "s", "it" if stored == 1 else "them")
-            line += "; grep %s" % ("those too" if found.renamed else "the rest")
-        out.append(line)
+        out.append(text_line(found, total, shown, len(failed), capped))
     if failed:
         out.append("not parsed: " + ", ".join("%s (%s)" % item for item in sorted(failed)))
     out.append(CALLS_COVERAGE)
