@@ -12,9 +12,12 @@ inside them count for nothing.
 
 Recognised at file and namespace level, kind-tagged (`query` prints the kind):
 - functions: definitions, and declarations (`function declaration`, mostly in headers); a
-  definition and its declarations (the same qualified name, the same file first, then the same
-  number of parameters) are one symbol: `explore` and `calls` print the definition with
-  `(declared <file>:<line>)`;
+  definition and its declarations are one symbol: `explore` and `calls` print the definition
+  with `(declared <file>:<line>)`. A declaration pairs when its qualified name ends the
+  definition's (a definition is never less qualified: a top-level `f` is not `a::f`; under
+  `using namespace a;` an unqualified definition stays unpaired), the nearest scope first, then
+  the same number of parameters (an overload with another count is not taken unless it is the
+  only candidate), then the same file;
 - `class`, `struct`, `union`, `enum`, `enum class`, `namespace` (nested, and `namespace a::b`),
   `typedef` (also `typedef struct {...} Name;` and function pointer types), `using X = ...`;
 - `#define` macros, object-like and function-like (not include guards);
@@ -40,7 +43,10 @@ initializers continue the declaration they belong to).
 
 Multi-line signatures are read up to 40 lines; a longer head is not classified. `#if 0` blocks
 are skipped. Other `#if`/`#ifdef` branches are all read; when that leaves the braces unbalanced
-(each branch opening its own `{`), only the first branch of each is read.
+(each branch opening its own `{`), only the first branch of each is read, unless that scan
+stops earlier than the first. A scan that stops (a `{` or `(` in a declaration never closed)
+reads nothing after that line: the page marks the file `(scan stopped at line N: a bracket never
+closes)` and `explore` adds `scan stopped at line N` to its approximate-range note.
 
 The map page lists namespace-level symbols per file (one per name, a definition before a
 declaration; macros, then namespaces last) and the Unreal members that Blueprints may use.
@@ -60,7 +66,8 @@ declaration; macros, then namespaces last) and the Unreal members that Blueprint
 - RPCs and native events: a definition `X_Implementation` or `X_Validate` with no declaration of
   its own pairs with the `UFUNCTION` declaration `X` (`Server`, `Client`, `NetMulticast`,
   `BlueprintNativeEvent`, `WithValidation`), so `explore X` and `calls X` show them, with the
-  tag and the declaration's location.
+  tag and the declaration's location; the declaration says `(bodies: X_Implementation,
+  X_Validate)`.
 - Log categories: `DECLARE_LOG_CATEGORY_EXTERN(LogMyGame, ...)` and `DEFINE_LOG_CATEGORY(...)`.
 - On the map page, members tagged `UFUNCTION`, and `UPROPERTY` with a `Blueprint` specifier,
   are listed after their class (`AMyActor::Fire [UFUNCTION BlueprintCallable]`).
@@ -76,7 +83,10 @@ declaration; macros, then namespaces last) and the Unreal members that Blueprint
 ## Includes
 
 `#include "..."` is resolved to a tracked file: relative to the including file, then the include
-roots: in an Unreal project its own module's `Public/`, `Private/` and `Classes/`, then every other
+roots: in an Unreal project its own module's folder, `Public/`, `Private/`, `Classes/`, the
+module's parent folder, and the folders its `Build.cs` adds with `PublicIncludePaths` /
+`PrivateIncludePaths` (string literals, each relative to the module folder and to its parent,
+and `Path.Combine(ModuleDirectory, "X")`; other computed paths are not read), then every other
 module's; then the repository root and every folder named `include`, `inc`, `src` or `Source`
 (shallowest first); last, a single tracked file matching ignoring case. `#include <...>` is
 followed only under those roots other than the repository root (`<fmt/core.h>` to
@@ -88,9 +98,12 @@ Counted, never followed, and named on the page's **C and C++ includes** section:
 includes, `"..."` includes not found among the tracked files (engine headers such as
 `CoreMinimal.h`, system and generated headers, `*.generated.h`), and computed ones
 (`#include MACRO`). `query` adds `<k> of its includes not followed` to a path. Compiler include
-paths (`-I`, CMake, `.vcxproj`) are not read, so a header found only through them is unresolved;
-`impact` on a header says `not followed: <...> includes of a <name>` with the files whose
-unresolved `<...>` include ends in its file name, since they may include it.
+paths (`-I`, CMake, `.vcxproj`) are not read, so a header found only through them is unresolved.
+An unresolved include (either form) whose path ends a tracked file's path (whole folder names:
+`"gtest/gtest.h"` ends `test/gtest/gtest/gtest.h`) is counted apart on the page, not as an
+engine or system header; when only one tracked file matches, `impact` on it says `not followed:
+possibly imported by <files>` and `query` lists them as `possibly imported by`, never as
+importers (the count `imported by N` leaves them out). When several files match, none is named.
 
 ## `explore` and `calls`
 
@@ -123,3 +136,5 @@ unresolved `<...>` include ends in its file name, since they may include it.
   function is unclassified (skipped, the next one still seen).
 - Classes, structs and functions defined inside a function body are not symbols.
 - An RPC body pairs by name only; overloads of `X` are not told apart.
+- `possibly imported by` is a guess from the path alone: the include may name a header of the
+  same path outside the repository or one chosen by an include path not read.

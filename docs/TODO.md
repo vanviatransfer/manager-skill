@@ -2146,7 +2146,7 @@ in its simpler, name-based form; item 38's question form and the paid benchmark 
 ### 45. Code map C/C++ and Unreal Engine (plugin 0.9.27)
 
 Why: item 41. The owner will use the map on Unreal Engine game projects and plain C/C++, where
-`.c .h .cpp .cc .cxx .hpp .hh .inl` files had only a language label.
+`.c .h .cpp .cc .cxx .hpp .hxx .hh .inl` files had only a language label.
 
 - **Symbols.** Line patterns over text with comments, strings and characters blanked, no
   compiler: functions (definitions and declarations, kind-tagged), classes, structs, unions,
@@ -2194,6 +2194,19 @@ Why: item 41. The owner will use the map on Unreal Engine game projects and plai
   `<...>` includes followed under the project's include folders (`impact` names `<...>`
   includes of the same file name it cannot follow); Python `SyntaxWarning`s from parsing
   repository files are silenced in `calls` and `explore`.
+- **Review fix round 2.** Tails after a parameter list match each macro word whole (`\b`), so
+  runs of `ABSL_...` or `ENGINE_DEPRECATED(...)` words no longer backtrack exponentially
+  (`__attribute__((...))` and `__declspec(...)` accepted; template brackets matched three levels
+  deep without overlap); timing tests pin it. Names hold no line breaks (multi-line template
+  arguments are taken off before qualifying). Unreal include roots add the module folder, its
+  parent and the `Build.cs` `PublicIncludePaths` / `PrivateIncludePaths` literals; an unresolved
+  include whose path ends exactly one tracked file's path is a `possibly imported by` note on
+  `impact` and `query` (never an importer), and the page counts such includes apart from
+  engine, system and generated headers. A declaration pairs only with definitions as qualified
+  or more, the nearest scope first, overloads by parameter count; an RPC declaration names its
+  bodies. When braces don't balance, the scan that read further is kept; a stopped scan is
+  marked on the page and in `explore` (`scan stopped at line N`). C++ names are echoed as typed
+  (`A::b`).
 - **Known misses.** Macros are not expanded (macro-made declarations, X-macros, a macro opening
   a brace); K&R C definitions; overloads and specialisations are separate entries; compiler
   include paths (CMake, `-I`) are not read; `Build.cs` conditions are not evaluated.

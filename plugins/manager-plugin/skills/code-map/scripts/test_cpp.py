@@ -5,6 +5,7 @@ python3 -m unittest discover -s <this folder>
 import os
 import subprocess
 import sys
+import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -412,14 +413,37 @@ class CppTest(unittest.TestCase):
         out = self.run_ok("query", "Fire")
         self.assertIn("MyActor.cpp:10 AMyActor::Fire (method; UFUNCTION BlueprintCallable)", out)
 
+    def test_pairing_direction_scope_and_overloads(self):
+        h = codemap.CppFile("p.h", "namespace a { void f(); }\nvoid g(int x);\n"
+                                   "void g(int x, int y);\nvoid k(int x);\n"
+                                   "namespace a { void h(); }\nvoid h();\n")
+        c = codemap.CppFile("p.cpp", "void f() {}\nvoid g(int x, int y) {}\nvoid k() {}\n"
+                                     "void g() {}\nnamespace a { void h() {} }\n")
+        codemap.cpp_link({"p.h": h, "p.cpp": c})
+        got = {(s["name"], s["line"]): [(d["path"], d["line"]) for d in s.get("declared", ())]
+               for s in c.symbols if not s["decl"]}
+        self.assertEqual(got, {
+            ("f", 1): [],                  # top level: not the `a::f` declaration
+            ("g", 2): [("p.h", 3)],        # the overload with two parameters
+            ("k", 3): [("p.h", 4)],        # the only candidate, whatever its parameters
+            ("g", 4): [],                  # two overloads, neither without parameters
+            ("a", 5): [], ("h", 5): [("p.h", 5)]})  # `a::h`, not the top-level `h`
+
+    def test_rpc_declaration_names_its_bodies(self):
+        out = self.run_ok("explore", "ServerFire")
+        self.assertIn("MyNet.h:11-12 method declaration UMyNet::ServerFire [UFUNCTION Server] "
+                      "(bodies: ServerFire_Implementation, ServerFire_Validate)\n", out)
+
     def test_includes_counted_and_resolved(self):
         page = self.page()
         self.assertIn("9 `#include` lines resolved to tracked files (`\"...\"`, and `<...>` under "
-                      "the project's include folders). Not followed, only counted: 5 `<...>` "
+                      "the project's include folders). Not followed, only counted: 4 `<...>` "
                       "includes not found there, 13 `\"...\"` includes not found among the "
                       "tracked files (engine, system or generated headers), 0 computed "
                       "(`#include MACRO`). Not found most often: `*.generated.h` (4), "
                       "`CoreMinimal.h` (4)", page)
+        self.assertIn(" 1 more name a path that ends a tracked file's path but is under no "
+                      "include folder this tool reads", page)  # `<geo.hpp>`
         self.assertIn("- `Plugins/MyTools/Source/MyTools/Public/ToolLib.h` — imported by 2 files",
                       page)  # from its own module and, through the module roots, from MyGame
         self.assertIn("## Most imported (Python, JavaScript and TypeScript local imports, C and "
@@ -433,8 +457,69 @@ class CppTest(unittest.TestCase):
         self.assertIn("  imported by: modern/use.cpp\n", out)
         out = self.run_ok("impact", "modern/geo.hpp")
         self.assertIn("  imported by: modern/geo.cpp\n", out)
-        self.assertIn("  not followed: `<...>` includes of a `geo.hpp` not under the include "
-                      "folders: modern/use.cpp\n", out)
+        self.assertIn("  not followed: possibly imported by modern/use.cpp (an `#include` path "
+                      "found under no include folder read, ending only this file's path)\n", out)
+        out = self.run_ok("query", "geo.hpp")
+        self.assertIn("  modern/geo.hpp (imported by 1 local files; 1 of its includes not "
+                      "followed)\n    <- modern/geo.cpp\n"
+                      "    possibly imported by modern/use.cpp (not followed: an unresolved "
+                      "`#include` ends this path)\n", out)
+
+    def test_unbalanced_keeps_the_scan_that_read_further(self):
+        text = ("#if X\nint g() {}\n#else\nint g(x, {\n#endif\nint c() {}\n"
+                "namespace n {\nint d() {}\n")  # every branch: stops at 4; the first: to the end
+        cf = codemap.CppFile("u.cpp", text)
+        self.assertEqual((cf.clean, cf.stopped), (False, None))
+        self.assertEqual([s["name"] for s in cf.symbols], ["g", "c", "n", "d"])
+        cf = codemap.CppFile("v.cpp", "int a() {}\nint g(x, {\nint c() {}\n")
+        self.assertEqual((cf.clean, cf.stopped, [s["name"] for s in cf.symbols]),
+                         (False, 2, ["a"]))
+        self.assertIn("(end approximate: braces do not balance in this file; scan stopped at "
+                      "line 2)", codemap.cpp_entry(cf, cf.symbols[0])["note"])
+        info = {"v.cpp": {"symbols": [("a", 1)], "stopped": 2}}
+        self.assertEqual(codemap.file_lines(info, ["v.cpp"], "codemap.py"),
+                         ["- `v.cpp` — a (scan stopped at line 2: a bracket never closes)"])
+
+    def test_tails_never_backtrack(self):
+        """Macro words, `__attribute__((...))` and `__declspec(...)` after a parameter list:
+        matched or refused at once, each word whole."""
+        tails = (" ABSL_MUST_USE_RESULT_AND_LIFETIME_BOUND_ATTRIBUTE_X" * 6 + " x",
+                 ' ENGINE_DEPRECATED(5.1, "Use the other one") CONST_QUALIFIED_THING' * 6 + " +",
+                 " __attribute__((nonnull(1, 2))) __declspec(dllexport)" * 8 + " ?")
+        for tail in tails:
+            for rx in (codemap.C_TAIL_DEF, codemap.C_TAIL_DECL):
+                t = time.perf_counter()
+                self.assertIsNone(rx.match(tail.lstrip()))
+                self.assertLess(time.perf_counter() - t, 1.0, tail)
+        for text in ("A<B>::" * 25 + "x y z(int a) {}\n",
+                     "int f(int a)" + tails[0] + ";\nint g() {}\n",
+                     "template <class T> struct S" + "<T" * 30 + " {};\nint h() {}\n",
+                     "void " + "A<(b) c>::" * 200 + "f(int) {}\n",
+                     "class " + "N<x>::" * 500 + "M<y> : public B {};\n"):
+            t = time.perf_counter()
+            codemap.CppFile("p.cpp", text)
+            self.assertLess(time.perf_counter() - t, 1.0, text)
+        cf = codemap.CppFile("p.cpp", 'void F() const ENGINE_DEPRECATED(5.1, "Use G") '
+                                      "ABSL_ATTRIBUTE_LIFETIME_BOUND __attribute__((pure)) {}\n"
+                                      "int G(int a) __declspec(noinline) noexcept;\n")
+        self.assertEqual([(s["name"], s["kind"]) for s in cf.symbols],
+                         [("F", "function"), ("G", "function declaration")])
+
+    def test_deep_template_specialisations(self):
+        cf = codemap.CppFile("r.h", "template <typename R>\nstruct formatter<\n    R, char,\n"
+                                    "    enable_if_t<bool_constant<kind<R, char>::value != 0 &&\n"
+                                    "        is_fmt<wrap<R>>::value>::value>> {\n"
+                                    "  void parse(int x) {}\n};\n")
+        self.assertEqual([(s["qual"], s["line"]) for s in cf.symbols],
+                         [(["formatter"], 2), (["formatter", "parse"], 6)])
+
+    def test_names_never_hold_line_breaks(self):
+        cf = codemap.CppFile("t.cpp", "template <>\nvoid Box<int,\n  std::map<int, int>>::"
+                                      "put(int a) {}\ntemplate <typename T>\nstruct Spec<T,\n"
+                                      "  int> { int z; };\nvoid Outer<A<B>>::Inner<C>::go() {}\n")
+        self.assertEqual([(s["qual"], s["kind"]) for s in cf.symbols], [
+            (["Box", "put"], "function"), (["Spec"], "struct"),
+            (["Outer", "Inner", "go"], "function")])
 
     def test_cascade_triggers_hide_nothing(self):
         cf = codemap.CppFile("c.cpp", CASCADE)
@@ -466,7 +551,8 @@ class CppTest(unittest.TestCase):
         out = self.run_ok("explore", "ServerFire")
         self.assertIn("explore ServerFire: 3 definitions in 2 files\n", out)
         self.assertIn("Source/MyGame/Private/MyNet.cpp:2-2 method "
-                      "UMyNet::ServerFire_Implementation [UFUNCTION Server] (declared Source/MyGame/Public/MyNet.h:12)", out)
+                      "UMyNet::ServerFire_Implementation [UFUNCTION Server] (declared "
+                      "Source/MyGame/Public/MyNet.h:12)", out)
         self.assertIn("Source/MyGame/Private/MyNet.cpp:3-3 method UMyNet::ServerFire_Validate", out)
         out = self.run_ok("explore", "OnReady")
         self.assertIn("MyNet.cpp:4-4 method UMyNet::OnReady_Implementation [UFUNCTION "
@@ -527,7 +613,8 @@ class CppTest(unittest.TestCase):
         out = self.run_ok("explore", "AMyActor::Fire")
         self.assertIn("Source/MyGame/Private/MyActor.cpp:10-14 method AMyActor::Fire [UFUNCTION "
                       "BlueprintCallable] (declared Source/MyGame/Public/MyActor.h:19)\n", out)
-        self.assertIn("callers: not resolved for C/C++; run calls AMyActor.Fire (text "
+        self.assertIn("explore AMyActor::Fire: 1 definition in 1 file\n", out)  # as typed
+        self.assertIn("callers: not resolved for C/C++; run calls AMyActor::Fire (text "
                       "occurrences) or grep -n -w Fire\n", out)
         out = self.run_ok("explore", "clib_open")
         self.assertIn("clib/src/clib.c:6-11 function clib_open (declared clib/include/clib.h:13)\n"
@@ -563,8 +650,10 @@ class CppTest(unittest.TestCase):
         self.assertFalse(cf.clean)
         heads = [codemap.explore_header(codemap.cpp_entry(cf, s)) for s in cf.symbols]
         self.assertEqual(heads, [
-            "b.c:1-1 function ok (end approximate: braces do not balance in this file)",
-            "b.c:2-8 function broken (end approximate: braces do not balance in this file)"])
+            "b.c:1-1 function ok (end approximate: braces do not balance in this file; scan "
+            "stopped at line 3)",
+            "b.c:2-8 function broken (end approximate: braces do not balance in this file; "
+            "scan stopped at line 3)"])
 
     def test_ifdef_branches_first_branch(self):
         text = ("#ifdef A\nvoid f(int x) {\n#else\nvoid f(long x) {\n#endif\n    g();\n}\n"
@@ -618,6 +707,82 @@ GOLDEN = {  # a Python, JavaScript and TypeScript project; its output under 0.9.
                           "    assert Helper().go(1) == 1\n",
 }
 GOLDEN_SHA256 = "f1611c46ff58f81ddfe6dc531e534ba1bc8b63c3d2eb257858751f5f9247e647"
+
+
+class IncludeRootsTest(unittest.TestCase):
+    """A module's own folder, its parent and its `Build.cs` include paths are include roots;
+    an include found under none of them that ends one tracked file's path is a possible
+    importer, never an importer and never an engine header."""
+
+    def setUp(self):
+        tmp = portability.temp_dir()
+        self.addCleanup(tmp.cleanup)
+        self.root = tmp.name
+        fx = "Plugins/Fx/Source/FxCore/"
+        for rel, data in (
+                ("Game.uproject", '{"FileVersion": 3}\n'),
+                ("Source/Shooter/Shooter.Build.cs",
+                 "public class Shooter : ModuleRules { public Shooter(ReadOnlyTargetRules T) : "
+                 "base(T) {\n  PublicIncludePaths.AddRange(new string[] { \"Shooter\", "
+                 "\"Shooter/Variant_Combat\" });\n  PrivateIncludePaths.Add("
+                 "Path.Combine(ModuleDirectory, \"Variant_Combat\", \"Menu\"));\n"
+                 "  PublicDependencyModuleNames.AddRange(new string[] { \"Core\" }); } }\n"),
+                ("Source/Shooter/ShooterCharacter.h",
+                 "#pragma once\nclass AShooterCharacter {};\n"),
+                ("Source/Shooter/AI/ShooterAI.h",
+                 "#pragma once\n#include \"ShooterCharacter.h\"\n"
+                 "#include \"Shooter/ShooterCharacter.h\"\n#include \"CombatHUD.h\"\n"
+                 "#include \"CombatGame.h\"\n#include \"MenuWidget.h\"\n"
+                 "#include \"Fx/FxSpawner.h\"\n"),
+                ("Source/Shooter/Variant_Combat/CombatGame.h", "#pragma once\nint Combat();\n"),
+                ("Source/Shooter/Variant_Combat/UI/CombatHUD.h", "#pragma once\nint Hud();\n"),
+                ("Source/Shooter/Variant_Combat/Menu/MenuWidget.h", "#pragma once\nint Menu();\n"),
+                (fx + "FxCore.Build.cs", "public class FxCore : ModuleRules {}\n"),
+                (fx + "Public/Fx/FxSpawner.h", "#pragma once\nint Spawn();\n"),
+                (fx + "Private/FxSpawner.cpp",
+                 "#include \"Fx/FxSpawner.h\"\n#include \"FxSpawner.h\"\n"
+                 "int Spawn() { return 1; }\n"),
+                ("test/gtest/gtest/gtest.h", "#pragma once\nint Gtest();\n"),
+                ("test/format-test.cc", "#include \"gtest/gtest.h\"\n#include \"gtest.h\"\n"),
+                ("test/other/gtest.h", "#pragma once\n")):
+            write(self.root, rel, data)
+        subprocess.run(["git", "init", "-q", self.root], check=True)
+        subprocess.run(["git", "-C", self.root, "add", "-A"], check=True)
+
+    def run_ok(self, *args):
+        code, out = run(*args, "--root", self.root)
+        self.assertEqual(code, 0, out)
+        return out
+
+    def test_module_roots_and_build_paths(self):
+        out = self.run_ok("impact", "Source/Shooter/ShooterCharacter.h")
+        self.assertIn("  imported by: Source/Shooter/AI/ShooterAI.h\n", out)
+        for header in ("Source/Shooter/Variant_Combat/CombatGame.h",
+                       "Source/Shooter/Variant_Combat/Menu/MenuWidget.h",
+                       "Plugins/Fx/Source/FxCore/Public/Fx/FxSpawner.h"):
+            out = self.run_ok("impact", header)
+            self.assertIn("Source/Shooter/AI/ShooterAI.h", out.split("  imported by: ")[1])
+            self.assertNotIn("possibly", out)
+
+    def test_suffix_matches_are_possible_importers(self):
+        out = self.run_ok("impact", "Source/Shooter/Variant_Combat/UI/CombatHUD.h")
+        self.assertNotIn("  imported by:", out)
+        self.assertIn("  not followed: possibly imported by Source/Shooter/AI/ShooterAI.h (", out)
+        out = self.run_ok("query", "gtest/gtest.h")
+        self.assertIn("  test/gtest/gtest/gtest.h (imported by 0 local files)\n"
+                      "    possibly imported by test/format-test.cc (not followed: ", out)
+        out = self.run_ok("query", "other/gtest.h")  # `gtest.h` ends two paths: no guess
+        self.assertNotIn("possibly", out)
+        out = self.run_ok("impact", "Plugins/Fx/Source/FxCore/Public/Fx/FxSpawner.h")
+        self.assertIn("  imported by: Plugins/Fx/Source/FxCore/Private/FxSpawner.cpp, "
+                      "Source/Shooter/AI/ShooterAI.h\n", out)  # also a resolved importer: once
+        self.assertNotIn("possibly", out)
+        self.run_ok("build")
+        with open(os.path.join(self.root, "docs", "code-map.md"), encoding="utf-8") as fh:
+            page = fh.read()
+        self.assertIn("0 `\"...\"` includes not found among the tracked files (engine, system or "
+                      "generated headers)", page)
+        self.assertIn(" 4 more name a path that ends a tracked file's path", page)
 
 
 class UnchangedTest(unittest.TestCase):
