@@ -2132,6 +2132,11 @@ in its simpler, name-based form; item 38's question form and the paid benchmark 
   body starts on; a no-match line counts files in languages without map symbols; the closing
   line says when the printed text is not byte-exact; the cut count line for one name in one file
   points to the file. The brief's query sentence now covers broad searches of any kind.
+- **Third fix round.** A Python file with a UTF-8 byte order mark parses (`explore` only; `calls`
+  unchanged); Python files that fail to parse are counted (only their column-0 definitions are
+  seen); a file with lone `\r` line breaks gets a header note and the not byte-exact closing line;
+  a no-match line says which pattern languages were searched by mapped symbols only;
+  `explore x | head` exits quietly.
 - **Not changed.** `query`, `calls`, page formats, the rules block, the search nudge, the
   reviewer brief, the agents, the manager skill, `run-record.md`, `retro.sh`, `usage.py`, the
   eval suites, any ceiling.

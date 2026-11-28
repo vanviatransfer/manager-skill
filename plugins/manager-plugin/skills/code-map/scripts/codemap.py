@@ -1941,6 +1941,7 @@ KIND_WORD = re.compile(r"\b(function|class|interface|type|enum|const|let|var|fun
                        r"fn|mod|module|def|protocol|actor|object|record)\b")
 CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")  # a tab is kept: it is in the line format
 AST_LINES = re.compile(r"\r\n|\r|\n")  # the line breaks `ast` counts (a lone `\r` too)
+LONE_CR = re.compile(r"\r(?!\n)")
 
 
 def qualifies(target, path, qual):
@@ -2020,7 +2021,7 @@ def pattern_entry(path, lang, lines, symbols, name, line, note=""):
 
 
 def explore_header(e):
-    note = e["note"]
+    note = e["note"] + e.get("cr", "")
     if e["end"] > len(e["lines"]):  # never a range the file doesn't hold, unsaid
         note += " (past the end of the file: it has %d lines)" % len(e["lines"])
     return CONTROL.sub("?", "%s:%d-%d %s %s%s" % (e["path"], e["start"], e["end"], e["kind"],
@@ -2083,6 +2084,17 @@ def explore_lines(root, targets, tracked, out_rel, budget=EXPLORE_BUDGET):
     files = [f for f in tracked if not skipped(f, out_rel)]
     parsed, failed = calls_parse(root, files)
     known = set(files)
+    still = []
+    for path, why in failed:  # a UTF-8 BOM: parsed without it (explore only; calls unchanged)
+        text = read_text(root, path)
+        if text is not None and text.startswith("\ufeff"):
+            try:
+                parsed[path] = CallsFile(path, text[1:], ast.parse(text[1:], filename=path))
+                continue
+            except (SyntaxError, RecursionError, ValueError, MemoryError):
+                pass
+        still.append((path, why))
+    failed = still
 
     def source_file(path):
         ext = posixpath.splitext(path)[1].lower()
@@ -2097,15 +2109,20 @@ def explore_lines(root, targets, tracked, out_rel, budget=EXPLORE_BUDGET):
             if text is None:
                 unread += 1
                 continue
+            text = text[1:] if text.startswith("\ufeff") else text
             symbols = pattern_info(text, PATTERN_KEY[ext])[0]
             others.append((path, LANG[ext], text.split("\n"), symbols, ""))
+    unparsed = 0  # Python files `ast` can't parse: only their column-0 definitions are seen
     for path, why in failed:
         text = read_text(root, path)
         if text is None:
             unread += 1
             continue
+        unparsed += 1
+        text = text[1:] if text.startswith("\ufeff") else text
         others.append((path, "Python", text.split("\n"), python_info(text, True)[0],
                        "; not parsed: %s" % why))
+    mapped = sorted({lang for _, lang, _, _, note in others if not note})
     bare = sum(1 for f in files if posixpath.splitext(f)[1].lower() in NO_SYMBOLS)
     split = {}  # path -> its lines as `ast` counts them
 
@@ -2119,13 +2136,18 @@ def explore_lines(root, targets, tracked, out_rel, budget=EXPLORE_BUDGET):
         entries = [python_entry(path, parsed[path], node, qual, ast_lines(path))
                    for path, _, qual in sorted(found.definitions)
                    for node in parsed[path].every[qual]]  # each of one name: overloads, ...
+        for e in entries:  # a lone `\r`: numbered as Python counts lines, not as Read does
+            if LONE_CR.search("\n".join(parsed[e["path"]].lines)):
+                e["cr"] = (" (lines counted as Python counts them; the Read tool sees this "
+                           "file differently)")
         for path, lang, lines, symbols, note in others:
             for name, line in symbols:
                 if qualifies(target, path, name):
                     entries.append(pattern_entry(path, lang, lines, symbols, name, line, note))
         entries.sort(key=lambda e: (e["path"], e["start"]))
         if not entries:
-            blocks.append((explore_near(target, parsed, others, unread, bare), [], False, []))
+            blocks.append((explore_near(target, parsed, others, unread, bare, unparsed,
+                                        mapped), [], False, []))
             continue
         paths = {e["path"] for e in entries}
         head = ["explore %s: %d definition%s in %d file%s" % (
@@ -2164,7 +2186,7 @@ def explore_lines(root, targets, tracked, out_rel, budget=EXPLORE_BUDGET):
             out += lines
             if len(lines) > 1:
                 shown = True
-                inexact = inexact or any(
+                inexact = inexact or bool(e.get("cr")) or any(
                     "\ufffd" in raw or CONTROL.search(raw.rstrip("\r"))
                     for raw in e["lines"][e["start"] - 1:e["end"]])
             left -= chars(lines)
@@ -2183,7 +2205,14 @@ def explore_lines(root, targets, tracked, out_rel, budget=EXPLORE_BUDGET):
                        "--budget" % len(rest))
     if unread and any(entries for _, entries, _, _ in blocks):
         out.append(explore_unread(unread))
+    if unparsed and any(entries for _, entries, _, _ in blocks):
+        out.append("not parsed: %s" % explore_unparsed(unparsed))
     return out + ([EXPLORE_INEXACT if inexact else EXPLORE_CURRENT] if shown else [])
+
+
+def explore_unparsed(unparsed):
+    return ("%d Python file%s not parsed (only their column-0 definitions searched): grep "
+            "them" % (unparsed, "" if unparsed == 1 else "s"))
 
 
 def explore_unread(unread):
@@ -2191,7 +2220,7 @@ def explore_unread(unread):
             "large or not text); grep them" % (unread, "" if unread == 1 else "s"))
 
 
-def explore_near(target, parsed, others, unread=0, bare=0):
+def explore_near(target, parsed, others, unread=0, bare=0, unparsed=0, mapped=()):
     """No definition: at most EXPLORE_NEAR `query`-style near matches (`file:line name`)."""
     term = target.split(".")[-1].lower()
     defs = sorted({(path, line, qual) for path, f in parsed.items()
@@ -2204,6 +2233,11 @@ def explore_near(target, parsed, others, unread=0, bare=0):
         near = [d for d in defs if d[2].split(".")[-1].lower() in close]
     notes = ["%d tracked source file%s not read" % (unread, "" if unread == 1 else "s")] \
         if unread else []
+    if unparsed:
+        notes.append(explore_unparsed(unparsed))
+    if mapped:  # e.g. JavaScript: only exported or top-level symbols are mapped
+        notes.append("%s: only mapped symbols searched; grep -n -w %s" % (
+            ", ".join(mapped), target.split(".")[-1]))
     if bare:  # C, C++, shell, Vue, stubs...: the map lists no symbols for them
         notes.append("%d file%s in languages without symbols: grep them" % (
             bare, "" if bare == 1 else "s"))
@@ -2941,9 +2975,13 @@ def main(argv=None):
             print(re.sub(r"[\x00-\x1f\x7f]", "?", line))
         return 0
     if args.action == "explore":  # live like calls; prints source, so tabs stay
-        for line in explore_lines(root, args.terms, tracked, out_rel,
-                                  args.budget or EXPLORE_BUDGET):
-            print(line)
+        try:
+            for line in explore_lines(root, args.terms, tracked, out_rel,
+                                      args.budget or EXPLORE_BUDGET):
+                print(line)
+            sys.stdout.flush()
+        except BrokenPipeError:  # `explore x | head`: the reader stopped; exit quietly
+            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
         return 0
     diff = []
     if args.action == "changed":

@@ -30,15 +30,19 @@ then line):
 Ranges:
 - **Python**: from `ast` of the running Python, from the first decorator line through
   `end_lineno`, with lines counted as `ast` counts them (`\r\n`, a lone `\r` or `\n`; in a file
-  with lone `\r` line breaks these numbers differ from the Read tool's, so Read by text there).
+  with lone `\r` line breaks these numbers differ from the Read tool's, so its headers add
+  `(lines counted as Python counts them; the Read tool sees this file differently)` and the
+  closing line is the not byte-exact one). A file starting with a UTF-8 byte order mark is parsed
+  without it (`explore` only; `calls` still lists such a file under `not parsed`).
   Kinds: `function`, `method`, `class`, with `async` when it is one. Nested definitions are
   found too (`outer.inner`, `Box.size`), and every definition of one name is printed:
   `@overload` stubs and the implementation, a property's getter and setter, a `def` in each
   branch of an `if`.
 - **Other languages the map lists symbols for** (JavaScript, TypeScript, Go, Java, Kotlin, C#,
   Rust, PHP, Ruby, Swift, Scala) and **Python files that do not parse**: the map's line-pattern
-  symbols; the range runs from the definition line to the line before the next symbol at the same
-  or lower indentation, or the end of the file, trailing blank lines left out, at most 300 lines.
+  symbols (for a Python file, its column-0 `def` and `class` only: its methods are not seen); the
+  range runs from the definition line to the line before the next symbol at the same or lower
+  indentation, or the end of the file, trailing blank lines left out, at most 300 lines.
   The header says `(end approximate)` (and `not parsed: <why>`). No end within 300 lines: the
   header adds `end not found within 300 lines`, its range ends at the 300th line, and the source
   is followed by `end not found within 300 lines: read <path> from line <n>` (or the pointer
@@ -76,6 +80,8 @@ Last, after any `cut:` lines:
 - `not read: <k> tracked source files (secrets, vendored or skipped folders, too large or not
   text); grep them`, when any tracked Python or other symbol-listed source file was not read (as
   `calls` counts them), since a definition there can't be found;
+- `not parsed: <k> Python files not parsed (only their column-0 definitions searched): grep
+  them`, when any Python file failed to parse;
 - when any source was printed, `the source above is the working tree now: Read a range again
   only before an Edit of it`; when a printed range holds bytes that are not UTF-8 (shown as
   U+FFFD) or control characters (shown as `?`), instead `the source above is the working tree
@@ -84,7 +90,10 @@ Last, after any `cut:` lines:
 No exact match: `explore <name>: no definition named <name>; near matches:`, then at most 5
 definitions whose names contain the last part of the name (any case), else close spellings, each
 `path:line name` as `query` prints them, or `none found`. Nothing else, except notes in
-parentheses after the name on that line: `<k> tracked source files not read`, and `<k> files in
+parentheses after the name on that line, in this order: `<k> tracked source files not read`;
+`<k> Python files not parsed (only their column-0 definitions searched): grep them`; `<languages>:
+only mapped symbols searched; grep -n -w <name>` (for the languages found by line pattern, whose
+map lists only some definitions, e.g. JavaScript and TypeScript exports); and `<k> files in
 languages without symbols: grep them` (tracked files of a language the map lists no symbols for,
 such as C, C++, shell, SQL, Vue, Svelte, Dart, PowerShell, and `.pyi` stubs: never searched).
 
@@ -93,12 +102,12 @@ such as C, C++, shell, SQL, Vue, Svelte, Dart, PowerShell, and `.pyi` stubs: nev
 `--budget <n>`: about `<n>` printed characters (default 8,000; characters, not the tokens of
 `query --budget`). Headers, source, members, pointers and the callers lines count against it; the
 callers lines are always printed, so they are taken out first. Not counted: the `over the
-budget` line, the `cut:` lines, the `not read:` line and the closing line about the source. A
-definition that doesn't fit, even in the short form above (at least its header and a pointer),
-is cut, and every cut one is listed at the end, after `over the budget of <n> characters
-(--budget):`, as `cut: path:a-b <kind> <name>` (at most 40, then one count line: `cut: <k>
-more definitions of <name> in <path> not listed; read <path>, raise --budget or grep -n -w
-<name>` when they are all one name in one file, else `cut: <k> more definitions not listed;
+budget` line, the `cut:` lines, the `not read:` and `not parsed:` lines and the closing line about
+the source. A definition that doesn't fit, even in the short form above (at least its header
+and a pointer), is cut, and every cut one is listed at the end, after `over the budget of <n>
+characters (--budget):`, as `cut: path:a-b <kind> <name>` (at most 40, then one count line:
+`cut: <k> more definitions of <name> in <path> not listed; read <path>, raise --budget or grep
+-n -w <name>` when they are all one name in one file, else `cut: <k> more definitions not listed;
 qualify the name or raise --budget`): never silent. With nothing cut, neither line is printed.
 
 ## Limits
@@ -108,5 +117,6 @@ qualify the name or raise --budget`): never silent. With nothing cut, neither li
 - Callers are resolved for Python only, with every limit of `calls` (`calls.md`); for the rest,
   and before changing a signature, grep.
 - Control characters other than a tab print as `?`.
+- Output into a pipe that closes early (`explore x | head`) ends quietly with exit 0.
 
 Output is sorted by path, then line, so the same tree gives the same answer.

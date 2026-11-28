@@ -159,11 +159,13 @@ class ExploreTest(unittest.TestCase):
 
     def test_no_match_lists_near_matches(self):
         out = self.explore("help")
-        self.assertEqual(out, ["explore help: no definition named help; near matches:",
+        self.assertEqual(out, ["explore help: no definition named help (TypeScript: only mapped "
+                               "symbols searched; grep -n -w help); near matches:",
                                "  pkg/core.py:4 helper"])
         self.assertEqual(self.explore("helpr")[1:], ["  pkg/core.py:4 helper"])  # a typo
         self.assertEqual(self.explore("zzzz"),
-                         ["explore zzzz: no definition named zzzz; near matches: none found"])
+                         ["explore zzzz: no definition named zzzz (TypeScript: only mapped "
+                          "symbols searched; grep -n -w zzzz); near matches: none found"])
         for n in range(8):
             self.write("pkg/h%d.py" % n, "def helper_%d():\n    pass\n" % n)
         self.add()
@@ -261,8 +263,10 @@ class ExploreTest(unittest.TestCase):
             fh.write("x = 1\r\rdef old_mac():\r    return 1\r")
         self.add()
         out = self.explore("old_mac")
-        self.assertEqual(out[1:4], ["pkg/cr.py:3-4 function old_mac", "3\tdef old_mac():",
-                                    "4\t    return 1"])
+        self.assertEqual(out[1:4], ["pkg/cr.py:3-4 function old_mac (lines counted as Python "
+                                    "counts them; the Read tool sees this file differently)",
+                                    "3\tdef old_mac():", "4\t    return 1"])
+        self.assertEqual(out[-1], codemap.EXPLORE_INEXACT)
         e = {"path": "a.py", "start": 3, "end": 9, "kind": "function", "name": "f",
              "lines": ["", "", "def f():"], "note": ""}
         self.assertIn("(past the end of the file: it has 3 lines)", codemap.explore_header(e))
@@ -274,7 +278,8 @@ class ExploreTest(unittest.TestCase):
         out = self.explore("helper")
         self.assertIn(codemap.explore_unread(2), out)
         self.assertEqual(self.explore("huge")[0], "explore huge: no definition named huge (2 "
-                         "tracked source files not read); near matches: none found")
+                         "tracked source files not read; TypeScript: only mapped symbols "
+                         "searched; grep -n -w huge); near matches: none found")
 
     def test_approximate_end_not_found_within_the_cap(self):
         body = "".join("  a%d();\n" % n for n in range(400))
@@ -355,8 +360,9 @@ class ExploreTest(unittest.TestCase):
         self.write("pkg/stub.pyi", "def zz() -> int: ...\n")
         self.add()
         self.assertEqual(self.explore("qqq_c")[0],
-                         "explore qqq_c: no definition named qqq_c (2 files in languages "
-                         "without symbols: grep them); near matches: none found")
+                         "explore qqq_c: no definition named qqq_c (TypeScript: only mapped "
+                         "symbols searched; grep -n -w qqq_c; 2 files in languages without "
+                         "symbols: grep them); near matches: none found")
 
     def test_inexact_source_says_so(self):
         with open(os.path.join(self.root, "pkg", "bytes.py"), "wb") as fh:
@@ -374,6 +380,43 @@ class ExploreTest(unittest.TestCase):
         tail = [line for line in out if line.startswith("cut: ") and "more" in line]
         self.assertEqual(tail, ["cut: 5 more definitions of ov in pkg/ov.py not listed; read "
                                 "pkg/ov.py, raise --budget or grep -n -w ov"])
+
+    def test_bom_file_parses(self):
+        self.write("pkg/bom.py", "\ufeffdef bomf():\n    return 1\n\n\nclass B:\n"
+                   "    def bm(self):\n        return bomf()\n")
+        self.add()
+        out = self.explore("bomf")
+        self.assertEqual(out[1:3], ["pkg/bom.py:1-2 function bomf", "1\tdef bomf():"])
+        self.assertIn("  pkg/bom.py:7 in B.bm", out)
+        self.assertEqual(self.explore("B.bm")[1], "pkg/bom.py:6-7 method B.bm")
+        self.assertFalse(any(line.startswith("not parsed") for line in out))
+        code, calls = run("calls", "bomf", "--root", self.root)  # calls: as before, not parsed
+        self.assertIn("not parsed: pkg/bom.py", calls)
+
+    def test_unparsed_files_are_counted(self):
+        self.write("pkg/bad.py", "class K:\n    def meth(self):\n        return (\n")
+        self.write("pkg/ok.py", "def meth():\n    pass\n")
+        self.add()
+        out = self.explore("meth")
+        self.assertEqual(out[0], "explore meth: 1 definition in 1 file")
+        self.assertIn("not parsed: " + codemap.explore_unparsed(1), out)
+        self.assertIn("(" + codemap.explore_unparsed(1) + "; TypeScript: only mapped symbols "
+                      "searched; grep -n -w zork)", self.explore("zork")[0])
+
+    def test_broken_pipe_exits_quietly(self):
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "codemap.py")
+        body = "".join("    x%d = %d\n" % (n, n) for n in range(3000))
+        self.write("pkg/long.py", "def long():\n" + body)
+        self.add()
+        proc = subprocess.Popen([sys.executable, script, "explore", "long", "--budget",
+                                 "200000", "--root", self.root],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        proc.stdout.readline()
+        proc.stdout.close()
+        err = proc.stderr.read()
+        proc.stderr.close()
+        self.assertEqual(proc.wait(), 0)
+        self.assertNotIn(b"Traceback", err)
 
     def test_bad_name_and_flags(self):
         for argv in (["explore"], ["explore", "a-b"], ["explore", "x", "--budget", "0"],
