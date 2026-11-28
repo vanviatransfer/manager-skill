@@ -2207,6 +2207,19 @@ Why: item 41. The owner will use the map on Unreal Engine game projects and plai
   bodies. When braces don't balance, the scan that read further is kept; a stopped scan is
   marked on the page and in `explore` (`scan stopped at line N`). C++ names are echoed as typed
   (`A::b`).
+- **Review fix round 3 (scaling).** Declaration pairing indexes declarations by name and
+  enclosing scope and classes by last name part (was definitions x classes and x same-name
+  declarations); includes are resolved once per (folder, form, path) through a path-suffix
+  index, the nearest root winning and equally near different files left unresolved; one
+  blanking pass with a first-character check, no per-line `#if` recomputation, regex-driven
+  bracket scans. An open-source game engine (8,347 C/C++ files, 154 MB): about 25 s per action, was 2 to 2.5 min;
+  the synthetic 100-module Unreal project 3.4 s, was 73 s. Also: an `=` inside parentheses
+  (a default argument) no longer makes a block an initializer, C++20 `requires` clauses and
+  underscore-led tail macros (`__THROW`, `__wur`) are read, a chain of brace initializers is
+  linear, a definition inside a class body pairs only with its own class, `explore`/`calls`
+  take `~X`, `X::~X` and `operator==`, `calls` on a C/C++-only name uses C/C++ wording, and
+  `<Lib/x.h>` resolves from the repository root when `Lib/` is a top-level header folder.
+  No on-disk cache: repositories that size stay over 10 s per action (owner's decision).
 - **Known misses.** Macros are not expanded (macro-made declarations, X-macros, a macro opening
   a brace); K&R C definitions; overloads and specialisations are separate entries; compiler
   include paths (CMake, `-I`) are not read; `Build.cs` conditions are not evaluated.

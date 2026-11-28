@@ -49,6 +49,7 @@ import bisect
 import contextlib
 import difflib
 import io
+import itertools
 import json
 import os
 import posixpath
@@ -366,13 +367,15 @@ def package_entries(root, known):
 # every `#if` branch is read again with only the first branch of each; when that doesn't
 # balance either, its ranges are marked approximate.
 C_EXT = (".c", ".h", ".cpp", ".cc", ".cxx", ".hpp", ".hh", ".hxx", ".inl")
+C_HEADERS = (".h", ".hpp", ".hh", ".hxx", ".inl")
 C_LANGS = {"C", "C++", "C/C++"}
-C_TOKEN = re.compile(
+C_TOKEN = re.compile(  # each starts with one of these characters: checked first (fast)
+    r"(?=[/\"'uULR])(?:"
     r"//(?:[^\n\\]|\\.)*"  # a line comment, continued by a backslash
     r"|/\*.*?(?:\*/|\Z)"
     r"|(?<!\w)(?:u8|[uUL])?R\"([^ ()\\\t\n]{0,16})\(.*?\)\1\""  # a raw string
     r"|(?:(?<!\w)(?:u8|[uUL]))?\"(?:[^\"\\\n]|\\.)*\"?"
-    r"|(?:(?<!\w)(?:u8|[uUL])|(?<!\w))'(?:[^'\\\n]|\\.){1,10}'", re.S)  # not 1'000
+    r"|(?:(?<!\w)(?:u8|[uUL])|(?<!\w))'(?:[^'\\\n]|\\.){1,10}')", re.S)  # not 1'000
 C_NOT_NEWLINE = re.compile(r"[^\n]")
 C_NOT_QUOTE = re.compile(r"[^\n\"']")
 C_DIRECTIVE = re.compile(r"^\s*#\s*([A-Za-z_]\w*)?(.*)$", re.S)
@@ -380,6 +383,8 @@ C_INCLUDE = re.compile(r"^\s*#\s*(?:include|import|include_next)\s*([<\"])([^>\"
 C_DEFINE = re.compile(r"\s*([A-Za-z_]\w*)(\()?(.*)$", re.S)
 C_ZERO = re.compile(r"^\(?\s*(0|1|false|true)\s*\)?$")
 C_SIG = re.compile(r"[{};]")
+C_SPACE = re.compile(r"\s*")
+C_NEXT_DECLARATOR = re.compile(r"\s*,\s*[A-Za-z_]\w*(?:\s*\[[^\[\]]*\])*\s*=?\s*$")
 C_BRACES = re.compile(r"[{}]")
 C_API = re.compile(r"\b[A-Z][A-Z0-9_]*_API\b")  # `class MYGAME_API AMyActor`
 C_WRAPPED_TYPE = re.compile(r"\s*([A-Z][A-Z0-9_]*)\s*\((?=[^()]*\)\s*[A-Za-z_~][^()]*\()")
@@ -395,6 +400,7 @@ C_PREFIX = re.compile(
     r"|(?P<declare>(?:DECLARE_\w*(?:DELEGATE|EVENT)\w*|DECLARE_LOG_CATEGORY_(?:EXTERN|CLASS)|"
     r"DEFINE_LOG_CATEGORY(?:_STATIC)?)\s*\()"
     r"|(?P<template>template\s*<)"
+    r"|(?P<requires>requires\b)"
     r"|(?P<export>[A-Z_][A-Z0-9_]*\s+(?=(?:template|class|struct|union|enum|namespace|inline|"
     r"static|constexpr|consteval|extern|typedef|using|auto|void|bool|char|int|unsigned|"
     r"signed|long|short|float|double|const|virtual|explicit|friend)\b))"
@@ -402,6 +408,8 @@ C_PREFIX = re.compile(
     r"|(?P<externc>extern\s*\"[^\"\n]*\"(?=\s*[A-Za-z_]))"
     r"|(?P<macro>[A-Z_][A-Z0-9_]*\s*\((?=[^\n]*?\)[ \t]*\n)|[A-Z_][A-Z0-9_]+[ \t]*\n)"
     r"|(?P<call>[A-Z_][A-Z0-9_]*\s*\()")  # a macro call over lines, alone on its last line
+C_INNER_GROUP = re.compile(r"\([^()]*\)|<[^<>()=;]*>")
+C_REQ_NAME = re.compile(r"(?:::)?[A-Za-z_]\w*(?:\s*::\s*[A-Za-z_]\w*)*")
 C_NAMESPACE = re.compile(r"^(?:inline\s+)?namespace\b\s*([\w:\s]*?)\s*(?:\[\[.*?\]\]\s*)?$", re.S)
 C_EXTERN_BLOCK = re.compile(r"^extern\s*\"[^\"\n]*\"\s*$")
 C_ARG_PARENS = r"\([^();]*\)"  # `(sizeof(T) > 4)`, `f({})`: six levels deep
@@ -421,7 +429,7 @@ C_ENUM = re.compile(r"^(typedef\s+)?enum\b\s*(class\b|struct\b)?\s*(?:\[\[.*?\]\
 C_PARENS = r"\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)"  # up to three levels deep
 C_TAIL_WORDS = (  # `\b` after each word: a macro is one word, never split (no backtracking)
     r"(?:(?:const|volatile|noexcept|override|final|mutable|try)\b|&&|&|(?:throw|noexcept)\s*%s|"
-    r"(?:__attribute__|__declspec)\s*%s|\[\[[^\]]*\]\]|[A-Z][A-Z0-9_]*\b(?:\s*%s)?)"
+    r"_[A-Za-z_]\w*\b(?:\s*%s)?|\[\[[^\]]*\]\]|[A-Z][A-Z0-9_]*\b(?:\s*%s)?)"
     % (C_PARENS, C_PARENS, C_PARENS))
 C_TAIL_DEF = re.compile(r"^(?:(?:%s|->\s*(?:[^{;:]|::)+?|requires\b[^{;]*)\s*)*(?::(?!:).*)?$"
                         % C_TAIL_WORDS, re.S)
@@ -448,6 +456,12 @@ C_USING = re.compile(r"^using\s+([A-Za-z_]\w*)\s*(?:\[\[.*?\]\]\s*)?=", re.S)
 
 def c_blank(m):
     s = m.group(0)
+    if "\n" not in s:  # the common cases without a regex: as the substitutions below
+        if s[0] == "/":
+            return " " * len(s)
+        inner = s[1:-1]
+        if s[0] in "\"'" and '"' not in inner and "'" not in inner:
+            return s[0] + " " * len(inner) + s[-1]
     return (C_NOT_NEWLINE if s[0] == "/" else C_NOT_QUOTE).sub(" ", s)
 
 
@@ -485,6 +499,42 @@ def c_angle_close(text, i):
     return -1
 
 
+def c_outside_groups(text):
+    """`text` without its parenthesised parts and template arguments (`f(int a = 0)` -> `f`;
+    innermost first, so each pass is linear)."""
+    prev = None
+    while prev != text:
+        prev, text = text, C_INNER_GROUP.sub("", text)
+    return text
+
+
+def c_requires_end(text, k):
+    """The index after a C++20 `requires` clause's constraint starting at text[k]: names
+    (`a::b<T>`), parenthesised expressions and `true`/`false`, joined by `&&` / `||`; or k."""
+    end = k
+    while True:
+        m = re.compile(r"\s*").match(text, end)
+        j = m.end()
+        if j < len(text) and text[j] == "(":
+            j = c_close(text, j, "(", ")") + 1
+            if j <= 0:
+                return k
+        else:
+            m = C_REQ_NAME.match(text, j)
+            if not m:
+                return k
+            j = m.end()
+            if j < len(text) and text[j] == "<":
+                j = c_angle_close(text, j) + 1
+                if j <= 0:
+                    return k
+        end = j
+        m = re.compile(r"\s*(?:&&|\|\|)").match(text, end)
+        if not m:
+            return end
+        end = m.end()
+
+
 def c_brace_end(s, i):
     """The index of the `}` closing the `{` at s[i] (comments and strings blanked), or -1."""
     depth = 0
@@ -495,20 +545,44 @@ def c_brace_end(s, i):
     return -1
 
 
+def c_ends_with_word(t, k, words, whole=True):
+    """Whether t[:k], trailing spaces taken off, ends with one of `words` (`whole`: as a whole
+    word)."""
+    j = k
+    while j > 0 and t[j - 1].isspace():
+        j -= 1
+    for w in words:
+        if t.endswith(w, 0, j) and (not whole or j == len(w) or not (
+                t[j - len(w) - 1].isalnum() or t[j - len(w) - 1] == "_")):
+            return True
+    return False
+
+
+C_OPERATOR_WORD = re.compile(r"\boperator\b")
+C_WS = re.compile(r"\s+")
+C_ANGLE_INNER = re.compile(r"<[^<>]*>")
+C_PAREN_STOPS = re.compile(r"[<>(={};]")
+C_SPLIT_STOPS = re.compile(r"[(<\[{)>\]},]")
+
+
 def c_first_paren(t):
     """The index of the first `(` outside template brackets, -1 if none or an `=` comes first."""
     angle, k, n = 0, 0, len(t)
     while k < n:
+        m = C_PAREN_STOPS.search(t, k)
+        if not m:
+            return -1
+        k = m.start()
         c = t[k]
         if c == "<":
-            if t[k + 1:k + 2] in ("<", "=") or t[:k].rstrip().endswith("operator"):
+            if t[k + 1:k + 2] in ("<", "=") or c_ends_with_word(t, k, ("operator",), False):
                 k += 2
                 continue
             angle += 1
         elif c == ">" and angle:
             angle -= 1
         elif c == "(":
-            if not angle and not re.search(r"\b(?:decltype|__typeof__|typeof)\s*$", t[:k]):
+            if not angle and not c_ends_with_word(t, k, ("decltype", "__typeof__", "typeof")):
                 return k
             end = c_close(t, k, "(", ")")
             if end < 0:
@@ -522,18 +596,17 @@ def c_first_paren(t):
 
 def c_split(text):
     """The parts of a parameter or argument list, split at commas outside brackets."""
-    parts, depth, cur = [], 0, []
-    for c in text:
+    parts, depth, start = [], 0, 0
+    for m in C_SPLIT_STOPS.finditer(text):
+        c = m.group()
         if c in "(<[{":
             depth += 1
         elif c in ")>]}":
             depth = max(depth - 1, 0)
-        elif c == "," and not depth:
-            parts.append("".join(cur))
-            cur = []
-            continue
-        cur.append(c)
-    parts.append("".join(cur))
+        elif not depth:
+            parts.append(text[start:m.start()])
+            start = m.end()
+    parts.append(text[start:])
     return [] if len(parts) == 1 and not parts[0].strip() else parts
 
 
@@ -541,15 +614,15 @@ def c_function(t, end_ch):
     """(qualifier parts, name, prefix, parameter count, name offset, tail) of a function
     declarator in t (a declaration with its leading macros stripped), or None. end_ch: the `{`
     or `;` after."""
-    m = re.search(r"\boperator\b", t)
+    m = C_OPERATOR_WORD.search(t)
     if m:
         op = C_OPERATOR.match(t, m.end())
         if not op:
             return None
         sym = op.group(1).strip()
         open_ = op.end() - 1
-        name = "operator" + (re.sub(r"\s+", "", sym) if not sym[:1].isalpha()
-                             else " " + re.sub(r"\s+", " ", sym))
+        name = "operator" + (C_WS.sub("", sym) if not sym[:1].isalpha()
+                             else " " + C_WS.sub(" ", sym))
         q = C_QUALIFIER.search(t, 0, m.start())
         quals, at = q.group(1), m.start()
         prefix = t[:q.start()]
@@ -569,7 +642,7 @@ def c_function(t, end_ch):
         q = C_NAME_BEFORE.search(t, 0, open_)
         if not q:
             return None
-        quals, name, at = q.group(1), re.sub(r"\s+", "", q.group(2)), q.start(2)
+        quals, name, at = q.group(1), C_WS.sub("", q.group(2)), q.start(2)
         prefix = t[:q.start()]
         if name.lstrip("~") in C_KEYWORDS:
             return None
@@ -581,7 +654,7 @@ def c_function(t, end_ch):
         return None
     prefix = prefix.strip()
     words = C_IDENT.findall(prefix)
-    if "=" in re.sub(r"<[^<>]*>", "", prefix) or prefix.endswith((".", "->", ",")) or (
+    if "=" in C_ANGLE_INNER.sub("", prefix) or prefix.endswith((".", "->", ",")) or (
             words and words[0] in C_KEYWORDS and words[0] != "decltype"):
         return None
     params = c_split(t[open_ + 1:close])
@@ -598,9 +671,9 @@ def c_qual_parts(text):
     is [a, B, c]; a specialisation is named by its template), spaces and newlines removed."""
     prev = None
     while prev != text:
-        prev, text = text, re.sub(r"<[^<>]*>", "", text)
+        prev, text = text, C_ANGLE_INNER.sub("", text)
     text = text.split("<")[0]  # unbalanced: the name before it
-    return [re.sub(r"\s+", "", x) for x in text.split("::") if x.strip()]
+    return [C_WS.sub("", x) for x in text.split("::") if x.strip()]
 
 
 def c_unwrap_name(t, open_):
@@ -668,14 +741,15 @@ class CppFile:
         n = len(self.code)
         live_all, live_first = [True] * n, [True] * n
         frames, guard, i, self.dead = [], None, 0, set()  # dead: lines of `#if 0` and such
+        dead_all = dead_first = False  # under a branch not taken (every / first branches)
         while i < n:
-            m = C_DIRECTIVE.match(self.code[i])
-            dead_all = any(not f["all"] for f in frames)
+            line = self.code[i]
+            m = C_DIRECTIVE.match(line) if "#" in line else None
             if dead_all:
                 self.dead.add(i)
             if not m:
                 live_all[i] = not dead_all
-                live_first[i] = not any(not f["first"] for f in frames)
+                live_first[i] = not dead_first
                 i += 1
                 continue
             j = i
@@ -713,6 +787,8 @@ class CppFile:
                 else:
                     self.computed += 1
             guard = rest.split()[0] if word == "ifndef" and rest.split() else None
+            dead_all = any(not f["all"] for f in frames)
+            dead_first = any(not f["first"] for f in frames)
             i = j + 1
         return live_all, live_first
 
@@ -725,16 +801,15 @@ class CppFile:
     def scan(self, live):
         """(symbols, whether the braces balanced, the line where the scan gave up or None) of
         the text with these lines live."""
-        s = "\n".join(c if ok else "" for c, ok in zip(self.code, live))
-        starts, k = [0], s.find("\n")
-        while k >= 0:
-            starts.append(k + 1)
-            k = s.find("\n", k + 1)
+        rows = [c if ok else "" for c, ok in zip(self.code, live)]
+        s = "\n".join(rows)
+        starts = list(itertools.accumulate((len(r) + 1 for r in rows[:-1]), initial=0))
 
         def line(pos):
             return bisect.bisect_right(starts, pos)
         found, stack, ok, stopped = [], [], True, None  # stack: (kind, names, symbol, info)
         pos = head = 0
+        init_head, init_end = None, 0  # a declaration after an initializer's braces
         after = None  # a class closed just before this declaration (`} Name;`)
         while True:
             m = C_SIG.search(s, pos)
@@ -750,6 +825,14 @@ class CppFile:
                         sym["end"] = line(at)
                     after = info if kind == "class" else None
                 pos = head = at + 1
+                continue
+            if c == "{" and head == init_head and C_NEXT_DECLARATOR.match(s, init_end, at):
+                # `int a{1}, b{2}`: one more initializer of that declaration
+                end = c_brace_end(s, at)
+                if end < 0:
+                    ok, stopped = False, line(at)
+                    break
+                pos = init_end = end + 1
                 continue
             raw = s[head:at]
             if raw.count("(") > raw.count(")"):  # inside parentheses: part of the declaration
@@ -772,7 +855,10 @@ class CppFile:
             after = None
             pos, again, ok = self.opening(s, t, base, attach, tag, at, line, scope, stack, found,
                                           long_head)
-            head = head if again is None else again
+            if again is None or again < 0:  # the declaration goes on; -1: after an initializer
+                init_head, init_end = (head, pos) if again is not None else (None, 0)
+            else:
+                head, init_head = again, None
             if not ok:
                 stopped = line(at)
                 break
@@ -792,11 +878,10 @@ class CppFile:
         attribute, Unreal macro) or None, the reflection tag) of a declaration's text, its
         leading access labels and macros taken off; Unreal delegate and log category macros met
         on the way become symbols."""
-        h = C_API.sub(lambda m: " " * len(m.group()), raw)
+        h = C_API.sub(lambda m: " " * len(m.group()), raw) if "_API" in raw else raw
         k, attach, tag = 0, None, ""
         while True:
-            while k < len(h) and h[k].isspace():
-                k += 1
+            k = C_SPACE.match(h, k).end()
             m = C_PREFIX.match(h, k)
             if not m:
                 break
@@ -810,11 +895,13 @@ class CppFile:
                     c_close(h, h.index("(", k), "(", ")") + 1
             elif kind == "template":
                 end = c_angle_close(h, end - 1) + 1
+            elif kind == "requires":  # a C++20 clause before the declaration
+                end = c_requires_end(h, end)
             if kind in ("macro", "call") and not h[end:].strip():
                 break  # the whole declaration is the macro call
             if end <= k:
                 break
-            if kind in ("ue", "template", "attr"):
+            if kind in ("ue", "template", "attr", "requires"):
                 attach = head + k if attach is None else attach
             if kind == "ue":
                 macro = m.group().split("(")[0].strip()
@@ -853,7 +940,8 @@ class CppFile:
 
     def opening(self, s, t, base, attach, tag, at, line, scope, stack, found, long_head):
         """A `{`: push a namespace, class or `extern "C"` scope, or skip an enum's, a function's
-        or an initializer's braces. Returns (pos, head, ok)."""
+        or an initializer's braces. Returns (pos, head, ok): head None when the declaration
+        goes on (a constructor's member initializer), -1 after an initializer (`x{1}`)."""
         names, parent, in_class, class_name = scope
         start = line(attach if attach is not None else base)
         stripped = t.strip()
@@ -925,9 +1013,10 @@ class CppFile:
             return end + 1, end + 1, True
         if long_head or re.match(r"^[A-Za-z_]\w*\s*\(.*\)\s*$", stripped, re.S):
             return end + 1, end + 1, True  # not classified, or a macro's block (`TEST(a) {`)
-        if "=" in re.sub(r"(?:operator\s*)?[=!<>]=|\[[^\]]*\]", "", stripped) or (
+        if "=" in c_outside_groups(re.sub(r"(?:operator\s*)?[=!<>]=|\[[^\]]*\]", "",
+                                           stripped)) or (
                 re.search(r"[\w>\]]\s*$", stripped) and "(" not in stripped):
-            return end + 1, None, True  # an initializer (`= {...}`, `x{1}`): it goes on
+            return end + 1, -1, True  # an initializer (`= {...}`, `x{1}`): it goes on
         return end + 1, end + 1, True  # not classified: skipped, the next declaration is apart
 
     def statement(self, t, base, attach, tag, at, line, scope, found, after):
@@ -1049,39 +1138,97 @@ def cpp_roots(files, root=None):
     return modules, other
 
 
-def resolve_include(path, spec, known, roots, lower=None, angle=False):
-    """The tracked file an `#include "spec"` names: relative to the including file, then its own
-    Unreal module's roots, every other module's, then the other roots; last, when one tracked
-    file matches ignoring case (`lower`: {lower-case path: [paths]}), that one. Or None.
-    `angle` (`#include <spec>`): only under the module roots and the include-like folders (not
-    the including file's folder, not the repository root, not ignoring case)."""
-    spec = spec.replace("\\", "/").strip()
-    if not spec or spec.startswith("/") or re.match(r"^[A-Za-z]:", spec):
-        return None
-    modules, other = roots
-    here = posixpath.dirname(path)
-    own, d = None, here
-    while own is None:
-        if d in modules:
-            own = d
-        elif not d:
-            break
-        d = posixpath.dirname(d)
-    bases = [here] + (modules[own] if own is not None else []) + [
-        r for m in sorted(modules) if m != own for r in modules[m]] + other
-    if angle:
-        bases, lower = [b for b in bases[1:] if b], None
-    cands = []
-    for b in bases:
-        c = posixpath.normpath(posixpath.join(b, spec) if b else spec)
-        if c in known:
-            return c
-        cands.append(c)
-    for c in cands if lower else ():
-        found = lower.get(c.lower(), [])
-        if len(found) == 1:
-            return found[0]
-    return None
+def tree_distance(a, b):
+    """Folder steps from folder `a` to folder `b` (up to their common folder, then down)."""
+    pa, pb = a.split("/") if a else [], b.split("/") if b else []
+    n = 0
+    while n < len(pa) and n < len(pb) and pa[n] == pb[n]:
+        n += 1
+    return len(pa) - n + len(pb) - n
+
+
+class CppIncludes:
+    """Resolves `#include`s to tracked files (`resolve`), each (folder, kind, path) once.
+    `"spec"`: relative to the including file, then its own Unreal module's roots, then, among
+    every other module's roots and the other roots (`cpp_roots`), the match whose root is
+    nearest the including file (folder steps); two different files equally near: unresolved.
+    Last, when one tracked file matches ignoring case, that one. `<spec>`: the same without the
+    including file's folder, the case-insensitive pass and the repository root, except that the
+    root counts when the first folder of `spec` is a top-level folder holding headers
+    (`<Lib/x.h>` from `Lib/x.h`). `ends`: {every path suffix (whole folder names): files}."""
+
+    def __init__(self, files, root=None):
+        self.files, self.known = files, set(files)
+        self.modules, other = cpp_roots(files, root)
+        self.pool = set(other) | {r for rs in self.modules.values() for r in rs}
+        self.angle_pool = self.pool - {""}
+        self.order = other + [r for m in sorted(self.modules) for r in self.modules[m]]
+        self.ends, self.lends, self.cache, self.owner = {}, {}, {}, {}
+        for f in files:
+            parts = f.split("/")
+            for i in range(len(parts)):
+                self.ends.setdefault("/".join(parts[i:]), []).append(f)
+        self.top = {f.split("/")[0] for f in files
+                    if "/" in f and f.lower().endswith(C_HEADERS)}
+
+    def own(self, here):
+        if here not in self.owner:
+            d = here
+            while d not in self.modules and d:
+                d = posixpath.dirname(d)
+            self.owner[here] = d if d in self.modules else None
+        return self.owner[here]
+
+    def resolve(self, path, kind, spec, known=None):
+        """The tracked file `#include <spec>` (`kind` "<") or `"spec"` names, or None; `known`:
+        another set of paths to look in (no cache, no case-insensitive pass)."""
+        here = posixpath.dirname(path)
+        key = (here, kind, spec)
+        if known is None and key in self.cache:
+            return self.cache[key]
+        found = self.lookup(here, kind == "<", spec, known)
+        if known is None:
+            self.cache[key] = found
+        return found
+
+    def lookup(self, here, angle, spec, known):
+        spec = spec.replace("\\", "/").strip()
+        if not spec or spec.startswith("/") or re.match(r"^[A-Za-z]:", spec):
+            return None
+        among = self.known if known is None else known
+        own = self.own(here)
+        first = ([] if angle else [here]) + (self.modules[own] if own is not None else [])
+        for b in first:
+            if b or not angle:
+                c = posixpath.normpath(posixpath.join(b, spec) if b else spec)
+                if c in among:
+                    return c
+        norm = posixpath.normpath(spec)
+        pool = self.pool if not angle or (norm.split("/")[0] in self.top and "/" in norm) \
+            else self.angle_pool
+        if norm.split("/")[0] == ".." or known is not None:  # rare: try each root
+            cands = [(b, posixpath.normpath(posixpath.join(b, spec) if b else spec))
+                     for b in self.order if b in pool]
+            cands = [(b, c) for b, c in cands if c in among]
+        else:
+            cands = [(f[:-len(norm) - 1] if f != norm else "", f)
+                     for f in self.ends.get(norm, ())]
+            cands = [(b, f) for b, f in cands if b in pool]
+        if cands:
+            near = min(tree_distance(here, b) for b, _ in cands)
+            best = {f for b, f in cands if tree_distance(here, b) == near}
+            return best.pop() if len(best) == 1 else None
+        if angle or known is not None:
+            return None
+        if not self.lends:
+            for f in self.files:
+                parts = f.lower().split("/")
+                for i in range(len(parts)):
+                    self.lends.setdefault("/".join(parts[i:]), []).append(f)
+        found = {f for f in self.lends.get(norm.lower(), ())
+                 if (f[:-len(norm) - 1] if len(f) > len(norm) else "") in pool
+                 or (f[:-len(norm) - 1] if len(f) > len(norm) else "") in first}
+        return found.pop() if len(found) == 1 else None
 
 
 def cpp_suffix(a, b):
@@ -1097,32 +1244,48 @@ def cpp_ends(qual, tail):
 
 def cpp_link(cfiles):
     """Pair each function, method or log category definition with its declarations (the same
-    name, the declaration's qualified name ending the definition's, the longest such first;
+    name, the declaration's qualified name ending the definition's (the same one for a
+    definition inside its class body), the longest such first;
     then the same number of parameters, or the only candidate left; the same file first):
     `declared` on the definition, `defined` on the declaration, the
     declaration's Unreal tag as `inherited`. A definition `X::f` outside its class is a method
     when a class `X` is known. Classes: {qualified name: symbol}."""
-    classes, decls = {}, {}
+    classes, decls, by_last, order = {}, {}, {}, {}  # decls: {(name, scope's last part): [...]}
     for path in sorted(cfiles):
         for s in cfiles[path].symbols:
             if s["kind"] in ("class", "struct", "union"):
-                classes.setdefault(tuple(s["qual"]), s)
+                q = tuple(s["qual"])
+                if q not in classes:
+                    classes[q] = s
+                    by_last.setdefault(q[-1], []).append(q)
             if s["decl"]:
-                decls.setdefault(s["name"], []).append(s)
+                key = (s["name"], s["qual"][-2] if len(s["qual"]) > 1 else None)
+                decls.setdefault(key, []).append(s)
+                order[id(s)] = len(order)
+
+    def matching(name, qual):  # the declarations whose qualified name ends `qual`
+        scope = qual[-2] if len(qual) > 1 else None
+        found = decls.get((name, scope), []) if scope is not None else []
+        both = found + decls.get((name, None), [])
+        if found and len(both) > len(found):
+            both.sort(key=lambda c: order[id(c)])  # in file order, as one list was
+        return [c for c in both if cpp_ends(qual, c["qual"])]
+
     for path in sorted(cfiles):
         for s in cfiles[path].symbols:
             if s["decl"] or s["kind"].split(" ")[0] not in ("function", "method", "log"):
                 continue
-            if s.get("qualified") and s["kind"] == "function" and any(
-                    cpp_suffix(tuple(s["qual"][:-1]), q) for q in classes):
+            if s.get("qualified") and s["kind"] == "function" and len(s["qual"]) > 1 and any(
+                    cpp_suffix(tuple(s["qual"][:-1]), q) for q in by_last.get(s["qual"][-2], ())):
                 s["kind"] = "method"
-            cands = [c for c in decls.get(s["name"], ()) if cpp_ends(s["qual"], c["qual"])
-                     and c["kind"].startswith("log") == s["kind"].startswith("log")]
+            cands = [c for c in matching(s["name"], s["qual"])
+                     if c["kind"].startswith("log") == s["kind"].startswith("log")
+                     and (s["parent"] is None or c["qual"] == s["qual"])]  # in a class: its own
             rpc = UE_RPC_BODY.match(s["name"])
             if rpc and not cands:  # `Fire_Implementation` / `Fire_Validate` of `UFUNCTION Fire`
                 qual = s["qual"][:-1] + [rpc.group(1)]
-                cands = [c for c in decls.get(rpc.group(1), ()) if cpp_ends(qual, c["qual"])
-                         and c["tag"].startswith("UFUNCTION")]
+                cands = [c for c in matching(rpc.group(1), qual)
+                         if c["tag"].startswith("UFUNCTION")]
             longest = max((len(c["qual"]) for c in cands), default=0)  # the nearest scope
             cands = [c for c in cands if len(c["qual"]) == longest]
             exact = [c for c in cands if c["params"] == s["params"]
@@ -1290,21 +1453,14 @@ def scan(root, out_rel, tracked, gone=()):
     known = set(files)
     wider, lost = known | set(gone), {}
 
-    roots = cpp_roots(files, root) if any(f.lower().endswith(C_EXT) for f in files) else None
-    lower = {}
-    ends = {}  # every path suffix (whole folder names) of a tracked file: the files
-    for f in files if roots else ():
-        lower.setdefault(f.lower(), []).append(f)
-        parts = f.split("/")
-        for i in range(len(parts)):
-            ends.setdefault("/".join(parts[i:]), []).append(f)
+    incs = CppIncludes(files, root) if any(f.lower().endswith(C_EXT) for f in files) else None
 
     def targets(path, ext, raw, among):
         if ext == ".py":
             return {resolve_python(path, lvl, mod, among) for lvl, mod in raw}
         if ext in C_EXT:
-            return {resolve_include(path, spec, among, roots, lower if among is known else None,
-                                    kind == "<") for kind, spec in raw}
+            return {incs.resolve(path, kind, spec, None if among is known else among)
+                    for kind, spec in raw}
         return {resolve_js(path, spec, among) for _, spec in raw} if ext in JS_EXT else set()
 
     info, cfiles = {}, {}
@@ -1336,14 +1492,14 @@ def scan(root, out_rel, tracked, gone=()):
         info[path] = {"lang": LANG[ext], "symbols": symbols, "deps": sorted(deps)}
         if path in cfiles:  # includes counted, not followed: `<...>`, not found, computed
             cf = cfiles[path]
-            found = [targets(path, ext, [(kind, spec)], known) != {None}
-                     for _, kind, spec in cf.includes]
+            found = [incs.resolve(path, kind, spec) is not None for _, kind, spec in cf.includes]
             info[path].update(resolved=sum(found), computed=cf.computed, unresolved=[
                 (kind, spec) for (_, kind, spec), ok in zip(cf.includes, found) if not ok])
             near = {}  # unresolved spec: the tracked files whose path ends with it
             for kind, spec in info[path]["unresolved"]:
                 key = posixpath.normpath(spec.replace("\\", "/").strip())
-                near[spec] = ends.get(key, ()) if key and not key.startswith(("/", "..")) else ()
+                near[spec] = incs.ends.get(key, ()) if key and not key.startswith(
+                    ("/", "..")) else ()
             info[path]["near"] = [(kind, spec, tuple(near[spec]))
                                   for kind, spec in info[path]["unresolved"] if near[spec]]
     cpp_link(cfiles)
@@ -2428,7 +2584,10 @@ def query_ranked(term, budget, info, importers, mentions, vault):
 # Python files with `ast` on every run and writes nothing, so its answer depends on the running
 # Python only for what it prints, never for a page.
 CALLS_LIMIT = 40  # the lines of one section of one name; `--all`: no cap
-CALLS_NAME = re.compile(r"^[A-Za-z_]\w*(?:(?:\.|::)[A-Za-z_]\w*)*$")  # `A::f` is `A.f`
+CALLS_NAME = re.compile(  # `A::f` is `A.f`; C/C++ destructors and operators last
+    r"^(?:[A-Za-z_]\w*(?:\.|::))*(?:[A-Za-z_]\w*|~\s*[A-Za-z_]\w*|"
+    r"operator\s*(?:\(\s*\)|\[\s*\]|[-+*/%^&|~!=<>,]+|(?:new|delete)(?:\s*\[\s*\])?|"
+    r"\s[A-Za-z_][\w\s:<>*&]*))$")
 ATTR_CALLS = ("getattr", "setattr", "hasattr", "delattr")
 CONSTRUCTORS = ("__init__", "__new__", "__post_init__")  # run by a call of their class
 PY_SHEBANG = re.compile(r"^#![^\n]*\bpython")
@@ -2445,6 +2604,14 @@ CALLS_COVERAGE = ("coverage: static Python calls only; not seen: implicit calls 
                   "under possible; other names the function is bound to are under renamed; "
                   "before changing this function's signature or behaviour, also grep for the "
                   "name and those.")
+
+CPP_COVERAGE = ("coverage: C/C++ calls are not resolved: definitions come from line patterns and "
+                "possible lists every whole-word occurrence in the C/C++ files read; not seen: "
+                "code outside the repository (the engine, system headers, other projects), "
+                "names made by macros, calls by reflection or from Blueprint assets, untracked "
+                "files, and tracked files it skips or can't read (counted on the text line); "
+                "before changing this function's signature or behaviour, also grep for the "
+                "name.")
 
 
 def module_name(path):
@@ -2846,10 +3013,11 @@ def calls_parse(root, files):
     return parsed, failed
 
 
-def text_line(found, total, shown, unparsed, capped, unread, other=0, extra=()):
+def text_line(found, total, shown, unparsed, capped, unread, other=0, extra=(), cpp=False):
     """The `text:` line: the counts, each reason that applies, then `grep the rest`. It never
     says every occurrence is listed: a static scan can't know that. `other`: the occurrences in
-    files not parsed as Python (config, notebooks, templates, other languages)."""
+    files not parsed as Python (config, notebooks, templates, other languages); `cpp`: a name
+    defined in C/C++ only, `other` then counts the files neither Python nor C/C++."""
     line = "text: %d occurrence%s of %s, %d on lines listed above" % (
         total, "" if total == 1 else "s", found.name, shown)
     if found.renamed:
@@ -2868,7 +3036,8 @@ def text_line(found, total, shown, unparsed, capped, unread, other=0, extra=()):
     for reason in extra:  # C/C++ (`cpp_calls`)
         line += "; " + reason
     if other:
-        line += "; %d in files not parsed as Python" % other
+        line += ("; %d in other files (not parsed: docs, config, other languages)" if cpp
+                 else "; %d in files not parsed as Python") % other
     if unparsed:
         line += "; %d Python file%s not parsed" % (unparsed, "" if unparsed == 1 else "s")
     if unread:
@@ -3014,7 +3183,10 @@ def calls_lines(root, targets, tracked, out_rel, everything=False, links=0):
     for target in targets:
         found = Calls(parsed, known, target)
         deep |= found.failed
+        python_defs = len(found.definitions)
         named, extra = cpp_calls(found, target, cfiles) if cfiles else ((), [])
+        cpp_only = bool(extra) and not python_defs  # its definitions are C/C++ ones only
+        all_cpp = cpp_only if target == targets[0] else all_cpp and cpp_only
         listed, capped = set(named), False
         out.append("calls %s" % typed(target))
         code_first = sorted(found.possible, key=lambda i: (i[2] == "string", i))
@@ -3045,14 +3217,14 @@ def calls_lines(root, targets, tracked, out_rel, everything=False, links=0):
                 total += hits
                 if hits and (path, n) in listed:
                     shown += hits
-                if not python:
+                if not python and not (cpp_only and path in cfiles):
                     other += hits
         out.append(text_line(found, total, shown, len(failed) + len(found.failed), capped,
-                             unread, other, extra))
+                             unread, other, extra, cpp_only))
     failed = failed + [(path, "nested too deeply") for path in sorted(deep)]
     if failed:
         out.append("not parsed: " + ", ".join("%s (%s)" % item for item in sorted(failed)))
-    out.append(CALLS_COVERAGE)
+    out.append(CPP_COVERAGE if targets and all_cpp else CALLS_COVERAGE)
     return out
 
 
@@ -4070,6 +4242,9 @@ def run_action(argv=None):
         ap.error("--depth must be 1 or more")
     if args.all and args.action != "calls":
         ap.error("--all goes with calls only")
+    if args.action in ("calls", "explore"):  # `~ X`, `operator ==`: as the map stores them
+        args.terms = [re.sub(r"\boperator\s+(?=[^\w\s])", "operator", re.sub(r"~\s+", "~", t))
+                      for t in args.terms]
     if args.action == "explore" and (not args.terms or not all(CALLS_NAME.match(t)
                                                                for t in args.terms)):
         ap.error("explore needs NAME... (a function or class, `module.name` or `Class.method`)")

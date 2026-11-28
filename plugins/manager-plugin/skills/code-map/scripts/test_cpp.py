@@ -429,6 +429,61 @@ class CppTest(unittest.TestCase):
             ("g", 4): [],                  # two overloads, neither without parameters
             ("a", 5): [], ("h", 5): [("p.h", 5)]})  # `a::h`, not the top-level `h`
 
+    def test_default_arguments_requires_and_lowercase_tails(self):
+        cf = codemap.CppFile("d.cpp", "void f1(int a = 0) __THROW { }\nvoid f2() { }\n"
+                                      "static void f4(int b = 1) __wur { }\n"
+                                      "int f6(int c = 2) const_fn { return 0; }\nvoid f7() { }\n"
+                                      "void z(int a = 0) __nonnull((1)) _NOEXCEPT { }\n"
+                                      "template <class T>\nrequires std::integral<T> && "
+                                      "(sizeof(T) > 2)\nT twice(T x) { return x; }\n"
+                                      "template <class T> requires Small<T>\nstruct Box { };\n"
+                                      "int after() { return 0; }\n")
+        self.assertEqual([(s["name"], s["line"], s["start"]) for s in cf.symbols], [
+            ("f1", 1, 1), ("f2", 2, 2), ("f4", 3, 3), ("f7", 5, 5), ("z", 6, 6),
+            ("twice", 9, 7), ("Box", 11, 10), ("after", 12, 12)])  # `const_fn`: unclassified
+
+    def test_brace_initializer_chain_is_linear(self):
+        for n in (4000, 16000):
+            text = "int a0{1}" + "".join(", a%d{1}" % i for i in range(1, n)) + ";\nint z() {}\n"
+            t = time.perf_counter()
+            cf = codemap.CppFile("b.cpp", text)
+            self.assertLess(time.perf_counter() - t, 1.0, n)
+            self.assertEqual([s["name"] for s in cf.symbols], ["z"])
+
+    def test_destructor_and_operator_names(self):
+        write(self.root, "modern/ops.hpp", "struct V {\n  bool operator==(const V& o) const;\n"
+                                           "  ~V();\n};\n")
+        write(self.root, "modern/ops.cpp", "#include \"ops.hpp\"\n"
+                                           "bool V::operator==(const V& o) const { return true; }\n"
+                                           "V::~V() {}\n")
+        subprocess.run(["git", "-C", self.root, "add", "-A"], check=True)
+        for name, head in (("~V", "modern/ops.cpp:3-3 method V::~V"),
+                           ("V::~V", "modern/ops.cpp:3-3 method V::~V"),
+                           ("~ V", "modern/ops.cpp:3-3 method V::~V"),
+                           ("operator==", "modern/ops.cpp:2-2 method V::operator=="),
+                           ("V::operator ==", "modern/ops.cpp:2-2 method V::operator==")):
+            out = self.run_ok("explore", name)
+            self.assertIn(head, out)
+            out = self.run_ok("calls", name)
+            self.assertIn("definitions:\n  %s %s (C++ method)" % (
+                head.split()[0].split("-")[0], head.split()[2]), out)
+
+    def test_calls_wording_for_cpp_only_names(self):
+        out = self.run_ok("calls", "Fire")
+        self.assertIn("\ncoverage: C/C++ calls are not resolved: ", out)
+        self.assertNotIn("static Python calls", out)
+        self.assertNotIn("not parsed as Python", out)
+
+    def test_definition_in_a_class_body_pairs_only_with_its_own_class(self):
+        h = codemap.CppFile("n.h", "struct Node { ~Node(); void f(); };\n")
+        c = codemap.CppFile("c.h", "namespace c { struct Node { ~Node() {} void f() {} }; }\n"
+                                   "Node::~Node() {}\n")
+        codemap.cpp_link({"n.h": h, "c.h": c})
+        got = {("::".join(s["qual"]), s["line"]): len(s.get("declared", ()))
+               for s in c.symbols if s["kind"] == "method"}
+        self.assertEqual(got, {("c::Node::~Node", 1): 0, ("c::Node::f", 1): 0,
+                               ("Node::~Node", 2): 1})
+
     def test_rpc_declaration_names_its_bodies(self):
         out = self.run_ok("explore", "ServerFire")
         self.assertIn("MyNet.h:11-12 method declaration UMyNet::ServerFire [UFUNCTION Server] "
@@ -783,6 +838,74 @@ class IncludeRootsTest(unittest.TestCase):
         self.assertIn("0 `\"...\"` includes not found among the tracked files (engine, system or "
                       "generated headers)", page)
         self.assertIn(" 4 more name a path that ends a tracked file's path", page)
+
+
+class ResolveTest(unittest.TestCase):
+    def test_nearest_root_wins_and_ties_stay_unresolved(self):
+        files = ["libs/alpha/include/util.h", "libs/alpha/src/util.cpp",
+                 "libs/beta/include/util.h", "libs/beta/src/util.cpp", "libs/beta/src/main.cpp",
+                 "app/main.cpp", "Phys/Phys.h", "Phys/Core/Core.h", "Samples/demo.cpp"]
+        incs = codemap.CppIncludes(files)
+        self.assertEqual(incs.resolve("libs/beta/src/util.cpp", '"', "util.h"),
+                         "libs/beta/include/util.h")
+        self.assertEqual(incs.resolve("libs/beta/src/main.cpp", "<", "util.h"),
+                         "libs/beta/include/util.h")
+        self.assertEqual(incs.resolve("libs/alpha/src/util.cpp", '"', "util.h"),
+                         "libs/alpha/include/util.h")
+        self.assertIsNone(incs.resolve("app/main.cpp", '"', "util.h"))  # equally near: none
+        # `<Lib/x.h>` from the repository root: `Phys/` is a top-level folder with headers
+        self.assertEqual(incs.resolve("Samples/demo.cpp", "<", "Phys/Core/Core.h"),
+                         "Phys/Core/Core.h")
+        self.assertIsNone(incs.resolve("Samples/demo.cpp", "<", "Core.h"))
+
+
+class ScaleTest(unittest.TestCase):
+    """Linking declarations and definitions and resolving includes stay about linear."""
+
+    @staticmethod
+    def project(n, modules):
+        files = {}
+        for i in range(n):
+            m = "Source/M%d" % (i % modules)
+            files["%s/M%d.Build.cs" % (m, i % modules)] = ""
+            files["%s/Public/A%d.h" % (m, i)] = (
+                "#pragma once\n#include \"CoreMinimal.h\"\n#include \"A%d.h\"\n"
+                "UCLASS()\nclass A%d : public AActor {\n  GENERATED_BODY()\npublic:\n"
+                "  virtual void BeginPlay() override;\n  virtual void Tick(float D) override;\n"
+                "  UFUNCTION(Server, Reliable)\n  void Fire(int32 N);\n};\n"
+                % ((i + 1) % n, i))
+            files["%s/Private/A%d.cpp" % (m, i)] = (
+                "#include \"A%d.h\"\n#include \"A%d.h\"\n#include <vector>\n"
+                "void A%d::BeginPlay() { Super::BeginPlay(); }\n"
+                "void A%d::Tick(float D) { Super::Tick(D); }\n"
+                "void A%d::Fire_Implementation(int32 N) {}\n" % (i, (i * 7) % n, i, i, i))
+        return files
+
+    def timed(self, n, modules):
+        files = self.project(n, modules)
+        t = time.perf_counter()
+        incs = codemap.CppIncludes(sorted(files))
+        cfiles = {p: codemap.CppFile(p, text) for p, text in files.items()
+                  if p.endswith((".h", ".cpp"))}
+        resolved = sum(incs.resolve(p, kind, spec) is not None
+                       for p, cf in cfiles.items() for _, kind, spec in cf.includes)
+        codemap.cpp_link(cfiles)
+        elapsed = time.perf_counter() - t
+        self.assertEqual(resolved, 3 * n)  # not `CoreMinimal.h`, `<vector>`
+        fire = [s for s in cfiles["Source/M0/Private/A0.cpp"].symbols if s["name"] ==
+                "Fire_Implementation"][0]
+        self.assertEqual([d["path"] for d in fire["declared"]], ["Source/M0/Public/A0.h"])
+        return elapsed
+
+    def test_classes_scale_linearly(self):
+        small, large = self.timed(250, 10), self.timed(1000, 10)
+        self.assertLess(large, 30.0)
+        self.assertLess(large / max(small, 1e-3), 4 * 3, (small, large))
+
+    def test_many_modules_include_heavy(self):
+        small, large = self.timed(300, 30), self.timed(1200, 120)
+        self.assertLess(large, 30.0)
+        self.assertLess(large / max(small, 1e-3), 4 * 3, (small, large))
 
 
 class UnchangedTest(unittest.TestCase):

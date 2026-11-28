@@ -28,18 +28,24 @@ Recognised at file and namespace level, kind-tagged (`query` prints the kind):
 - signatures: trailing return types (`auto f() -> std::string`), `decltype(auto)`, nested
   `noexcept(noexcept(...))`, a parenthesised name (`int (max)(int, int)`), a function returning a
   function pointer (`void (*get_cb(void))(int)`), and `>` inside a template argument's
-  parentheses (`enable_if_t<(sizeof(T) > 4)>`);
+  parentheses (`enable_if_t<(sizeof(T) > 4)>`), and tail words after the parameter list:
+  `const`, `noexcept(...)`, `override`, upper-case macros (`ENGINE_DEPRECATED(...)`) and
+  underscore-led ones (`__THROW`, `__wur`, `_NOEXCEPT`, `__nonnull((1))`,
+  `__attribute__((...))`); a lower-case macro without a leading underscore (`const_fn`) leaves
+  the function unclassified;
 - out-of-class definitions `Ret Class::Method(...)`: a `method` of `Class` when that class is
   known, with the declaration's location;
-- prefixes skipped before a declaration: `template <...>`, `inline`, `static`, `constexpr`,
-  `virtual`, `explicit`, `extern "C"`, `[[attributes]]`, `__declspec(...)`, `__attribute__((...))`,
-  an upper-case macro before a keyword or type (`MYLIB_EXPORT template <...> class X`,
-  `class MYLIB_EXPORT X`, `MYLIB_PUBLIC(int) f()`), and an upper-case macro call alone on its
-  line or lines (`DISABLE_WARNINGS_PUSH_(...)`).
+- prefixes skipped before a declaration: `template <...>`, a C++20 `requires` clause (names,
+  `<...>` arguments and parenthesised expressions joined by `&&` / `||`), `inline`, `static`,
+  `constexpr`, `virtual`, `explicit`, `extern "C"`, `[[attributes]]`, `__declspec(...)`,
+  `__attribute__((...))`, an upper-case macro before a keyword or type (`MYLIB_EXPORT
+  template <...> class X`, `class MYLIB_EXPORT X`, `MYLIB_PUBLIC(int) f()`), and an upper-case
+  macro call alone on its line or lines (`DISABLE_WARNINGS_PUSH_(...)`).
 
 A brace block the patterns cannot classify is skipped on its own: the next declaration starts
 after it, so one miss does not hide the definitions that follow (only `= {...}` and `x{...}`
-initializers continue the declaration they belong to).
+initializers continue the declaration they belong to; an `=` inside parentheses or template
+arguments, such as a default argument, is not an initializer).
 
 Multi-line signatures are read up to 40 lines; a longer head is not classified. `#if 0` blocks
 are skipped. Other `#if`/`#ifdef` branches are all read; when that leaves the braces unbalanced
@@ -87,12 +93,17 @@ roots: in an Unreal project its own module's folder, `Public/`, `Private/`, `Cla
 module's parent folder, and the folders its `Build.cs` adds with `PublicIncludePaths` /
 `PrivateIncludePaths` (string literals, each relative to the module folder and to its parent,
 and `Path.Combine(ModuleDirectory, "X")`; other computed paths are not read), then every other
-module's; then the repository root and every folder named `include`, `inc`, `src` or `Source`
-(shallowest first); last, a single tracked file matching ignoring case. `#include <...>` is
-followed only under those roots other than the repository root (`<fmt/core.h>` to
-`include/fmt/core.h`; a project header of the same name as a system one, such as a tracked
-`include/string.h`, is then taken for `<string.h>`). Resolved includes are imports: `query`
-paths, the page's "Most imported", `impact` and `changed` use them.
+module's and the repository root and every folder named `include`, `inc`, `src` or `Source`:
+of the files found under these, the one whose root is nearest the including file (fewest folder
+steps, so `libs/beta/src/x.cpp` gets `libs/beta/include/util.h`, not alpha's); two different
+files equally near leave the include unresolved. Last, a single tracked file matching ignoring
+case. `#include <...>` is followed only under those roots other than the repository root
+(`<fmt/core.h>` to `include/fmt/core.h`; a project header of the same name as a system one,
+such as a tracked `include/string.h`, is then taken for `<string.h>`); the repository root
+counts for it when the path's first folder is a top-level folder holding headers
+(`<Phys/Phys.h>` to `Phys/Phys.h`). Each folder, form and path is resolved once per run.
+Resolved includes are imports: `query` paths, the page's "Most imported", `impact` and
+`changed` use them.
 
 Counted, never followed, and named on the page's **C and C++ includes** section: other `<...>`
 includes, `"..."` includes not found among the tracked files (engine headers such as
@@ -111,8 +122,9 @@ importers (the count `imported by N` leaves them out). When several files match,
   balance; otherwise the end is approximate (`end approximate: braces do not balance in this
   file`), as for other languages. A class too big to show lists its members with ranges (and
   where an out-of-class definition is). A name matching a class and its constructor shows the
-  class; `X::X` names the constructor. `callers:` says they are not resolved and points to
-  `calls`.
+  class; `X::X` names the constructor; destructors and operators are named as written
+  (`~X`, `X::~X`, `operator==`, `X::operator bool`; spaces after `~` or `operator` are
+  dropped). `callers:` says they are not resolved and points to `calls`.
 - `calls` resolves nothing for C/C++. It prints the definitions, then every whole-word
   occurrence under `possible:`, kind-tagged by its text (`call`, `member call`, `qualified call`,
   `reference`, `macro`, `string`, `other definition`, `delegate binding (AddDynamic)`, `delegate
@@ -120,10 +132,14 @@ importers (the count `imported by N` leaves them out). When several files match,
   templates, macros, virtual dispatch, function pointers and delegates; the count bound to a
   delegate or timer; a `UFUNCTION` may be called by reflection or from Blueprints; lines in `#if
   0` blocks are not listed. Code outside the repository (the engine, other projects) is never
-  seen. Grep the rest.
+  seen. Grep the rest. For a name defined only in C/C++, the `text:` line counts occurrences in
+  files neither Python nor C/C++ as `in other files`, and the `coverage:` line describes C/C++
+  (nothing resolved) instead of Python's static calls.
 
 ## Known misses
 
+- Speed: C/C++ files are parsed on every action, about 6 to 8 MB of source a second; a
+  repository with 150 MB of C/C++ takes about 25 s per action, nothing is cached.
 - Macros are not expanded: a declaration produced by a macro (`DECLARE_CLASS(...)`, X-macros) is
   not seen, and a macro that opens or closes a brace unbalances the file (approximate ranges).
 - A function whose body never closes in the text keeps an unknown end; definitions after it, inside
