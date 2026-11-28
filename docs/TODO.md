@@ -2118,9 +2118,15 @@ in its simpler, name-based form; item 38's question form and the paid benchmark 
 - **Read rule.** The implementer brief's step 1: locate, then read (`<code map> explore
   <name>`, else `grep -n`), large files by range, unchanged files once.
 - **Ceilings kept.** The code-map `SKILL.md` gains a two-line `explore` entry by rewording
-  others (9,469 -> 9,499 characters of 9,500). The implementer brief stays at its ceiling
-  (1,355 -> 1,357 words of 1,357, as `str.split` counts; `wc -w` in the C locale says 1,338):
-  neighbouring step 1 and 2 sentences were reworded, every rule kept.
+  others (9,469 -> 9,499 characters of 9,500). The implementer brief: 1,355 -> 1,356 words of
+  1,357, as `str.split` counts (`wc -w` in the C locale counts fewer); neighbouring step 1, 2
+  and 5 sentences were reworded, every rule kept.
+- **Review fix round.** Every definition of a repeated qualified name prints (`@overload` stubs,
+  a property's getter and setter, a `def` per `if` branch; class members once per node); Python
+  lines are split as `ast` counts them (a lone `\r` too), and a range past the end of a file says
+  so; tracked source files not read are counted; an approximate range with no end within 300
+  lines says the end is unknown; a definition near the budget is shortened to its header and a
+  pointer before it is cut; a closing line says the printed source is the working tree now.
 - **Not changed.** `query`, `calls`, page formats, the rules block, the search nudge, the
   reviewer brief, the agents, the manager skill, `run-record.md`, `retro.sh`, `usage.py`, the
   eval suites, any ceiling.

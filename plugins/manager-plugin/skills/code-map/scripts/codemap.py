@@ -1485,7 +1485,7 @@ class CallsFile:
         self.defs, self.tops, self.bindings, self.assigns = {}, set(), {}, {}
         self.classes = {}  # qualified class name -> whether it has a base other than object
         self.decorated = set()  # qualified names of the decorated definitions
-        self.nodes = {}  # qualified name -> its definition node (`explore` prints its range)
+        self.every = {}  # qualified name -> all its definition nodes (`explore` prints each)
         for node in tree.body:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 self.tops.add(node.name)
@@ -1514,7 +1514,7 @@ class CallsFile:
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 qual = ".".join(stack + [child.name])
                 self.defs.setdefault(qual, child.lineno)
-                self.nodes.setdefault(qual, child)
+                self.every.setdefault(qual, []).append(child)
                 if child.decorator_list:
                     self.decorated.add(qual)
                 if isinstance(child, ast.ClassDef):
@@ -1931,9 +1931,12 @@ EXPLORE_APPROX = 300  # the most lines an approximate (not `ast`) range spans
 EXPLORE_MEMBERS = 40  # the members listed for a class too big to show
 EXPLORE_CUTS = 40  # the `cut:` lines listed, then one count
 EXPLORE_NEAR = 5  # near matches for a name with no definition
+EXPLORE_CURRENT = ("the source above is the working tree now: Read a range again only before "
+                   "an Edit of it")
 KIND_WORD = re.compile(r"\b(function|class|interface|type|enum|const|let|var|func|struct|trait|"
                        r"fn|mod|module|def|protocol|actor|object|record)\b")
 CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")  # a tab is kept: it is in the line format
+AST_LINES = re.compile(r"\r\n|\r|\n")  # the line breaks `ast` counts (a lone `\r` too)
 
 
 def qualifies(target, path, qual):
@@ -1946,7 +1949,7 @@ def qualifies(target, path, qual):
 def approx_end(lines, symbols, line, cap=EXPLORE_APPROX):
     """(end, capped) of a definition found by line pattern: the line before the next symbol of
     its file at the same or lower indentation, or the end of the file, trailing blank lines
-    left out, at most `cap` lines."""
+    left out; capped: no end within `cap` lines (end is then the last of those)."""
     def indent(n):
         text = lines[n - 1] if n - 1 < len(lines) else ""
         return len(text) - len(text.lstrip())
@@ -1960,8 +1963,8 @@ def approx_end(lines, symbols, line, cap=EXPLORE_APPROX):
     return (line + cap - 1, True) if end - line + 1 > cap else (end, False)
 
 
-def python_entry(path, f, qual):
-    node = f.nodes[qual]
+def python_entry(path, f, node, qual, lines):
+    """One definition node of a parsed file; `lines`: the file split as `ast` counts lines."""
     start = min([d.lineno for d in node.decorator_list] + [node.lineno])
     parent = qual.rpartition(".")[0]
     kind = "class" if isinstance(node, ast.ClassDef) else (
@@ -1970,29 +1973,33 @@ def python_entry(path, f, qual):
         kind = "async " + kind
     first = node.body[0].lineno if node.body else node.lineno
     members = []
-    if isinstance(node, ast.ClassDef):
+    if isinstance(node, ast.ClassDef):  # each member node once, also two of one name
         for child in node.body:
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                members.append(python_entry(path, f, qual + "." + child.name))
+                members.append(python_entry(path, f, child, qual + "." + child.name, lines))
     return {"path": path, "start": start, "end": node.end_lineno, "kind": kind, "name": qual,
-            "lines": f.lines, "sig": max(node.lineno, first - 1), "members": members,
-            "note": "", "lang": "Python", "body": first}
+            "lines": lines, "sig": max(node.lineno, first - 1), "members": members,
+            "note": "", "lang": "Python", "body": first, "capped": False}
 
 
 def pattern_entry(path, lang, lines, symbols, name, line, note=""):
     end, capped = approx_end(lines, symbols, line)
     m = KIND_WORD.search(lines[line - 1]) if line - 1 < len(lines) else None
-    note = "end approximate%s%s" % (", cut at %d lines" % EXPLORE_APPROX if capped else "", note)
     kind = m.group(1) if m else "definition"
     kind = "function" if kind in ("def", "fn", "func") else kind
-    return {"path": path, "start": line, "end": end, "kind": kind,
-            "name": name, "lines": lines, "sig": line, "members": [], "note": " (%s)" % note,
-            "lang": lang, "body": line + 1}
+    note = "end approximate%s%s" % (
+        "; end not found within %d lines" % EXPLORE_APPROX if capped else "", note)
+    return {"path": path, "start": line, "end": end, "kind": kind, "name": name,
+            "lines": lines, "sig": line, "members": [], "note": " (%s)" % note,
+            "lang": lang, "body": line + 1, "capped": capped}
 
 
 def explore_header(e):
+    note = e["note"]
+    if e["end"] > len(e["lines"]):  # never a range the file doesn't hold, unsaid
+        note += " (past the end of the file: it has %d lines)" % len(e["lines"])
     return CONTROL.sub("?", "%s:%d-%d %s %s%s" % (e["path"], e["start"], e["end"], e["kind"],
-                                                  e["name"], e["note"])).replace("\t", "?")
+                                                  e["name"], note)).replace("\t", "?")
 
 
 def explore_source(e, first, last):
@@ -2003,7 +2010,11 @@ def explore_source(e, first, last):
 
 
 def explore_pointer(e, first):
-    return "body not shown: read %s:%d-%d" % (CONTROL.sub("?", e["path"]), first, e["end"])
+    path = CONTROL.sub("?", e["path"])
+    if e["capped"]:
+        return "body not shown: read %s from line %d; end not found within %d lines" % (
+            path, first, EXPLORE_APPROX)
+    return "body not shown: read %s:%d-%d" % (path, first, e["end"])
 
 
 def chars(lines):
@@ -2012,7 +2023,11 @@ def chars(lines):
 
 def explore_fit(e, left):
     """The lines one definition prints within `left` characters, or None (cut)."""
-    full = [explore_header(e)] + explore_source(e, e["start"], e["end"])
+    source = explore_source(e, e["start"], e["end"])
+    full = [explore_header(e)] + source
+    if e["capped"]:  # all its lines shown, its end still unknown
+        full.append("end not found within %d lines: read %s from line %d" % (
+            EXPLORE_APPROX, CONTROL.sub("?", e["path"]), e["end"] + 1))
     if chars(full) <= left:
         return full
     if e["members"]:  # a class: its signature, its members' ranges, a pointer
@@ -2023,17 +2038,19 @@ def explore_fit(e, left):
         if len(e["members"]) > EXPLORE_MEMBERS:
             lines.append("  … %d more members" % (len(e["members"]) - EXPLORE_MEMBERS))
         lines.append(explore_pointer(e, e["body"]))
-        return lines if chars(lines) <= left else None
-    lines = [explore_header(e)]  # a function: its first lines, at least the signature, then
-    source = full[1:]  # a pointer to the rest
-    keep = e["sig"] - e["start"] + 1
-    used = chars(lines) + chars(source[:keep]) + len(explore_pointer(e, e["end"])) + 1
-    if used > left:
-        return None
+        if chars(lines) <= left:
+            return lines
+    # its first lines (the whole signature, or none), then a pointer to the rest
+    head = [explore_header(e)]
+    used = chars(head) + len(explore_pointer(e, e["end"])) + 1
+    keep = 0
     while keep < len(source) - 1 and used + len(source[keep]) + 1 <= left:
         used += len(source[keep]) + 1
         keep += 1
-    return lines + source[:keep] + [explore_pointer(e, e["start"] + keep)]
+    if keep < e["sig"] - e["start"] + 1:
+        keep = 0
+    lines = head + source[:keep] + [explore_pointer(e, e["start"] + keep)]
+    return lines if chars(lines) <= left else None
 
 
 def explore_lines(root, targets, tracked, out_rel, budget=EXPLORE_BUDGET):
@@ -2041,31 +2058,48 @@ def explore_lines(root, targets, tracked, out_rel, budget=EXPLORE_BUDGET):
     files = [f for f in tracked if not skipped(f, out_rel)]
     parsed, failed = calls_parse(root, files)
     known = set(files)
+
+    def source_file(path):
+        ext = posixpath.splitext(path)[1].lower()
+        return ext in (".py", ".pyw") or ext in PATTERN_KEY
+    unread = sum(1 for f in tracked if skipped(f, out_rel) and source_file(f)
+                 and not is_map_page(f, out_rel))  # secrets, vendored or skipped folders
     others = []  # (path, language, lines, symbols, note) found by line pattern
     for path in files:
         ext = posixpath.splitext(path)[1].lower()
         if ext in PATTERN_KEY:
             text = read_text(root, path)
-            if text is not None:
-                symbols = pattern_info(text, PATTERN_KEY[ext])[0]
-                others.append((path, LANG[ext], text.split("\n"), symbols, ""))
+            if text is None:
+                unread += 1
+                continue
+            symbols = pattern_info(text, PATTERN_KEY[ext])[0]
+            others.append((path, LANG[ext], text.split("\n"), symbols, ""))
     for path, why in failed:
         text = read_text(root, path)
-        if text is not None:
-            others.append((path, "Python", text.split("\n"), python_info(text, True)[0],
-                           "; not parsed: %s" % why))
+        if text is None:
+            unread += 1
+            continue
+        others.append((path, "Python", text.split("\n"), python_info(text, True)[0],
+                       "; not parsed: %s" % why))
+    split = {}  # path -> its lines as `ast` counts them
+
+    def ast_lines(path):
+        if path not in split:
+            split[path] = AST_LINES.split("\n".join(parsed[path].lines))
+        return split[path]
     blocks = []  # per name: (lines before its definitions, definitions, headers only, after)
     for target in targets:
         found = Calls(parsed, known, target)
-        entries = [python_entry(path, parsed[path], qual)
-                   for path, _, qual in sorted(found.definitions)]
+        entries = [python_entry(path, parsed[path], node, qual, ast_lines(path))
+                   for path, _, qual in sorted(found.definitions)
+                   for node in parsed[path].every[qual]]  # each of one name: overloads, ...
         for path, lang, lines, symbols, note in others:
             for name, line in symbols:
                 if qualifies(target, path, name):
                     entries.append(pattern_entry(path, lang, lines, symbols, name, line, note))
         entries.sort(key=lambda e: (e["path"], e["start"]))
         if not entries:
-            blocks.append((explore_near(target, parsed, others), [], False, []))
+            blocks.append((explore_near(target, parsed, others, unread), [], False, []))
             continue
         paths = {e["path"] for e in entries}
         head = ["explore %s: %d definition%s in %d file%s" % (
@@ -2093,7 +2127,7 @@ def explore_lines(root, targets, tracked, out_rel, budget=EXPLORE_BUDGET):
                          % target.split(".")[-1])
         blocks.append((head, entries, many, after))
     left = budget - sum(chars(head) + chars(after) for head, _, _, after in blocks)
-    out, cut = [], []
+    out, cut, shown = [], [], False
     for head, entries, many, after in blocks:
         out += head
         for e in entries:
@@ -2102,17 +2136,25 @@ def explore_lines(root, targets, tracked, out_rel, budget=EXPLORE_BUDGET):
                 cut.append("cut: " + explore_header(e))
                 continue
             out += lines
+            shown = shown or len(lines) > 1
             left -= chars(lines)
         out += after
     if len(cut) > EXPLORE_CUTS:
         cut[EXPLORE_CUTS:] = ["cut: %d more definitions not listed; qualify the name" % (
             len(cut) - EXPLORE_CUTS)]
     if cut:
-        out.append("over the budget of %d characters (--budget):" % budget)
-    return out + cut
+        out += ["over the budget of %d characters (--budget):" % budget] + cut
+    if unread and any(entries for _, entries, _, _ in blocks):
+        out.append(explore_unread(unread))
+    return out + ([EXPLORE_CURRENT] if shown else [])
 
 
-def explore_near(target, parsed, others):
+def explore_unread(unread):
+    return ("not read: %d tracked source file%s (secrets, vendored or skipped folders, too "
+            "large or not text); grep them" % (unread, "" if unread == 1 else "s"))
+
+
+def explore_near(target, parsed, others, unread=0):
     """No definition: at most EXPLORE_NEAR `query`-style near matches (`file:line name`)."""
     term = target.split(".")[-1].lower()
     defs = sorted({(path, line, qual) for path, f in parsed.items()
@@ -2123,8 +2165,10 @@ def explore_near(target, parsed, others):
         close = set(difflib.get_close_matches(term, {d[2].split(".")[-1].lower() for d in defs},
                                               EXPLORE_NEAR, 0.75))
         near = [d for d in defs if d[2].split(".")[-1].lower() in close]
-    lines = ["explore %s: no definition named %s; near matches:%s" % (
-        target, target, "" if near else " none found")]
+    lines = ["explore %s: no definition named %s%s; near matches:%s" % (
+        target, target, " (%d tracked source file%s not read)" % (
+            unread, "" if unread == 1 else "s") if unread else "",
+        "" if near else " none found")]
     return lines + [CONTROL.sub("?", "  %s:%d %s" % d) for d in near[:EXPLORE_NEAR]]
 
 

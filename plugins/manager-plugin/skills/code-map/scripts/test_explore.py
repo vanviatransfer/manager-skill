@@ -95,6 +95,7 @@ class ExploreTest(unittest.TestCase):
             "  pkg/core.py:22 in decorated",
             "  pkg/use.py:5 in user",
             "possible: 1 (calls helper lists them)",  # the import in use.py
+            codemap.EXPLORE_CURRENT,
         ])
 
     def test_method_and_module_qualified(self):
@@ -139,7 +140,8 @@ class ExploreTest(unittest.TestCase):
         self.assertEqual(len(pointer), 1)
         shown = int(out[out.index(pointer[0]) - 1].split("\t")[0])
         self.assertEqual(pointer[0], "body not shown: read pkg/big.py:%d-202" % (shown + 1))
-        self.assertLessEqual(sum(len(line) + 1 for line in out), 600)
+        self.assertEqual(out[-1], codemap.EXPLORE_CURRENT)  # not counted, as the cut lines
+        self.assertLessEqual(sum(len(line) + 1 for line in out[:-1]), 600)
 
     def test_js_ts_approximate_end_and_callers_line(self):
         out = self.explore("render")
@@ -150,6 +152,7 @@ class ExploreTest(unittest.TestCase):
             "2\t  return a;",
             "3\t}",
             "callers: not resolved for TypeScript; grep -n -w render",
+            codemap.EXPLORE_CURRENT,
         ])
         self.assertEqual(self.explore("View")[1], "web/view.ts:5-7 class View (end approximate)")
         self.assertEqual(self.explore("view.render")[1][:15], "web/view.ts:1-3")
@@ -206,6 +209,99 @@ class ExploreTest(unittest.TestCase):
         self.assertEqual(out[1], "pkg/broken.py:1-2 function broken (end approximate; not "
                                  "parsed: syntax error, line 1)")
         self.assertIn("callers: not resolved in Python files not parsed; grep -n -w broken", out)
+
+    def test_every_definition_of_one_qualified_name(self):
+        self.write("pkg/many.py", (
+            "from typing import overload\n"             # 1
+            "\n"                                        # 2
+            "\n"                                        # 3
+            "@overload\n"                               # 4
+            "def conv(x: int) -> int: ...\n"            # 5
+            "@overload\n"                               # 6
+            "def conv(x: str) -> str: ...\n"            # 7
+            "def conv(x):\n"                            # 8
+            "    return x\n"                            # 9
+            "\n"                                        # 10
+            "\n"                                        # 11
+            "class Outer:\n"                            # 12
+            "    @property\n"                           # 13
+            "    def val(self):\n"                      # 14
+            "        return 1\n"                        # 15
+            "\n"                                        # 16
+            "    @val.setter\n"                         # 17
+            "    def val(self, v):\n"                   # 18
+            "        pass\n"                            # 19
+            "\n"                                        # 20
+            "\n"                                        # 21
+            "if True:\n"                                # 22
+            "    def cond():\n"                         # 23
+            "        return 1\n"                        # 24
+            "else:\n"                                   # 25
+            "    def cond():\n"                         # 26
+            "        return 2\n"))                      # 27
+        self.add()
+        out = self.explore("conv")
+        self.assertEqual(out[0], "explore conv: 3 definitions in 1 file")
+        self.assertEqual([line for line in out if line.startswith("pkg/")], [
+            "pkg/many.py:4-5 function conv", "pkg/many.py:6-7 function conv",
+            "pkg/many.py:8-9 function conv"])
+        out = self.explore("Outer.val")
+        self.assertEqual([line for line in out if line.startswith("pkg/")], [
+            "pkg/many.py:13-15 method Outer.val", "pkg/many.py:17-19 method Outer.val"])
+        out = self.explore("Outer", "--budget", "290")  # members once each, setter included
+        self.assertEqual([line for line in out if line.startswith("  1")],
+                         ["  13-15 method Outer.val", "  17-19 method Outer.val"], out)
+        out = self.explore("cond")
+        self.assertEqual([line for line in out if line.startswith("pkg/")], [
+            "pkg/many.py:23-24 function cond", "pkg/many.py:26-27 function cond"])
+
+    def test_lone_carriage_returns_count_as_ast_counts_them(self):
+        with open(os.path.join(self.root, "pkg", "cr.py"), "w", encoding="utf-8",
+                  newline="") as fh:
+            fh.write("x = 1\r\rdef old_mac():\r    return 1\r")
+        self.add()
+        out = self.explore("old_mac")
+        self.assertEqual(out[1:4], ["pkg/cr.py:3-4 function old_mac", "3\tdef old_mac():",
+                                    "4\t    return 1"])
+        e = {"path": "a.py", "start": 3, "end": 9, "kind": "function", "name": "f",
+             "lines": ["", "", "def f():"], "note": ""}
+        self.assertIn("(past the end of the file: it has 3 lines)", codemap.explore_header(e))
+
+    def test_files_not_read_are_counted(self):
+        self.write("pkg/huge.py", "def huge():\n" + "    x = 1\n" * 60000)  # over 512 KB
+        self.write("vendor/lib.js", "export function vend() {}\n")
+        self.add()
+        out = self.explore("helper")
+        self.assertIn(codemap.explore_unread(2), out)
+        self.assertEqual(self.explore("huge")[0], "explore huge: no definition named huge (2 "
+                         "tracked source files not read); near matches: none found")
+
+    def test_approximate_end_not_found_within_the_cap(self):
+        body = "".join("  a%d();\n" % n for n in range(400))
+        self.write("web/big.ts", "export function big() {\n" + body + "}\n")
+        self.add()
+        out = self.explore("big", "--budget", "500")
+        self.assertEqual(out[1], "web/big.ts:1-300 function big (end approximate; end not "
+                                 "found within 300 lines)")
+        self.assertTrue(any(line.startswith("body not shown: read web/big.ts from line ")
+                            and line.endswith("; end not found within 300 lines") for line in out))
+        out = self.explore("big", "--budget", "20000")
+        self.assertIn("end not found within 300 lines: read web/big.ts from line 301", out)
+
+    def test_near_the_limit_shortened_not_cut(self):
+        sig = "".join("        argument_number_%d,\n" % n for n in range(6))
+        self.write("pkg/wide.py", "def wide(\n" + sig + "):\n    return 0\n")
+        self.add()
+        full = self.explore("wide")
+        header = "pkg/wide.py:1-9 function wide"
+        pointer = "body not shown: read pkg/wide.py:1-9"
+        fixed = [line for line in full if not line.startswith(("pkg/", " ", "body"))
+                 and "\t" not in line and line != codemap.EXPLORE_CURRENT]
+        budget = sum(len(line) + 1 for line in fixed + [header, pointer]) + 10
+        out = self.explore("wide", "--budget", str(budget))  # no room for the signature
+        self.assertIn(header, out)
+        self.assertIn(pointer, out)
+        self.assertFalse(any(line.startswith("cut:") for line in out))
 
     def test_bad_name_and_flags(self):
         for argv in (["explore"], ["explore", "a-b"], ["explore", "x", "--budget", "0"],

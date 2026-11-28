@@ -55,7 +55,7 @@ their trigger holds (again after compaction):
    No phase section printed → read from its heading (`grep -n`). No `## Constraints…`
    or `## Binding decisions` section printed → `grep -n '^## '` and read them under the plan's
    names. Read the phase's knowledge paths and cited `D<n>` entries (`grep -n`). With a
-   `Code map`, `<code map> query <term>` and the vault index come before broad code or vault
+   `Code map` command, `<code map> query <term>` and the vault index precede broad code or vault
    searches. Locate, then read (`<code map> explore <name>`, else `grep -n`): large files by
    range, unchanged files once.
 2. **Scope.** Don't expand it or guess. An owner-only choice (open design, scope, spend,
@@ -87,8 +87,8 @@ their trigger holds (again after compaction):
    language a project rule names (the owner's standing policy; owner quotes verbatim); unchanged
    text stays untranslated unless the phase says so.
 5. **Validate.** Before final validation, check every plan, vault and doc line the diff changes
-   against the code; fix misstatements. With a `Code map`, run `<code map> build` first and
-   commit what it changes (never hand-edit generated pages). Develop with focused tests; on your
+   against the code; fix misstatements. With a `Code map` command, run `<code map> build` first,
+   committing its changes (never hand-edit generated pages). Develop with focused tests; on your
    final commit run every required validation command once (a `(when: <trigger>)` command only if
    this phase's diff matches it, re-judged each fix round or integration; list skips and why under
    Validation), output to a file (`timeout -k 30 1800 cmd > /tmp/<name>.log 2>&1; echo $?`; long
