@@ -9,10 +9,9 @@ A generated map of the repository, so agents read one page to see where to look 
 targeted `grep` instead of exploring. It contains:
 - a directories table, entry points, the most imported files, and the top-level symbols per file;
 - for the vault: an index of every page (path, title, words, how many pages link to it), broken
-  links and orphan pages. An agent reads this one table instead of opening pages to find the
-  right one.
+  links and orphan pages, so an agent reads one table instead of opening pages to find one.
 
-It is produced by `scripts/codemap.py`, a Python 3.8+ script that uses only the standard library:
+`scripts/codemap.py` produces it, a Python 3.8+ script using only the standard library:
 - files come from `git ls-files` (outside a git repository, from the folder tree; symlinks and
   tracked third-party or output folders such as `node_modules`, `vendor`, `third_party`, `dist`,
   `coverage` and `.venv` are skipped);
@@ -35,7 +34,7 @@ goes, or a `build` refused over the layout: read `references/layout.md` first.
 ## Command
 
 Resolve once per session:
-- **Script:** `${CLAUDE_SKILL_DIR}/scripts/codemap.py`. Quote the path; it may contain spaces on
+- **Script:** `${CLAUDE_SKILL_DIR}/scripts/codemap.py`. Quote it; it may contain spaces on
   Windows.
 - **Python:** the first of `python3`, `python` and `py -3` whose `--version` exits 0 and prints
   `Python 3.8` or later. On Windows, `python3` may be a store stub that fails this check.
@@ -48,12 +47,12 @@ No Python → read `references/python-install.md` first (the install offer).
 - `<cmd> build`: writes the map. Above 150 source files it adds one page per directory group,
   splitting directories with more than 150 files by subdirectory (files directly in one folder stay
   together; a page lists at most 800 files, then points to `query`), and above 150 vault pages a
-  separate vault-pages page. It deletes map pages it generated earlier
-  that are now gone. It touches no other file except `.codemap.json` on the first run, and it
+  separate vault-pages page. It deletes its earlier pages that are now gone. It touches no
+  other file except `.codemap.json` on the first run, and it
   refuses (exit 2, nothing written) to overwrite a file it didn't write, including a hand-written
   page in the map's page folder.
 - `<cmd> check`: exit 0 if the map matches the repository, 1 if it is stale, 2 if the layout is
-  invalid (for example a hand-written file in the map's page folder) or git fails. It writes
+  invalid (e.g. a hand-written file in the map's page folder) or git fails. It writes
   nothing, so it is safe on a shared checkout. It also prints broken vault links as warnings.
   `check --quiet`: the same full check and exit codes, one short line or nothing.
 - `<cmd> query <term>`: definitions whose names contain the term (`file:line`), matching paths,
@@ -76,8 +75,10 @@ No Python → read `references/python-install.md` first (the install offer).
   either: read `references/impact-budget.md` first.
 - `<cmd> calls <name>...`: who calls a Python function, before changing it; using it: read
   `references/calls.md` first.
+- `<cmd> explore <name>...`: a definition's source and callers, before reading it; using it:
+  read `references/explore.md` first.
 
-- `<cmd> rules-hint` (`--remove` to take it out): writes the rules block (`references/setup.md`)
+- `<cmd> rules-hint` (`--remove`: take it out): writes the rules block (`references/setup.md`)
   into `AGENTS.md` and `CLAUDE.md` at the repository root (each created if missing, with a one-line
   title).
 - `<cmd> install-hook` / `uninstall-hook`: the git commit hook (`references/commit-hooks.md`).
@@ -90,22 +91,22 @@ rules block** by hand, or a rules block that is outdated: read `references/setup
 ## Keeping it current: the commit hooks (opt-in)
 
 Work outside a manager phase skips `build`, so the map can go stale. Two hooks guard it at commit
-time. Both are off until the owner turns them on; turn one on only after the owner says yes.
+time. Both stay off until the owner says yes to turning one on.
 
 Turning the **Git pre-commit hook** or the **Claude Code commit check** on or off, or a commit one
 of them stopped or blocked: read `references/commit-hooks.md` first.
 
 ## Map first: the search nudge (on by default)
 
-The rules block is advice, and sessions still start with broad `grep` and glob searches. The
-plugin's `PreToolUse` hook on Grep, Glob and Bash (`hooks/codemap-search-nudge.sh`, logic in
+Despite the rules block, sessions start with broad `grep` and glob searches. The plugin's
+`PreToolUse` hook on Grep, Glob and Bash (`hooks/codemap-search-nudge.sh`, logic in
 `scripts/search_nudge.py`) makes the first one a nudge:
 - It acts only in a repository (the session's working directory, up to the folder holding `.git`)
   whose `.codemap.json` is a plain file with a `map`. Everywhere else it does nothing.
 - The first broad search of a session is blocked once, with one line: run this skill's
   `query <term>` (or read the vault index or the map page) first, and if that doesn't answer it,
-  repeat the search, which is then allowed. Every later search in that session is allowed. The
-  line names the runnable command, `<python> "<plugin>/skills/code-map/scripts/codemap.py" query
+  repeat the search, which is then allowed, as is every later one in that session. The line
+  names the runnable command, `<python> "<plugin>/skills/code-map/scripts/codemap.py" query
   <term> --root "<repo top>"` (the Python the wrapper found; the plugin folder from
   `CLAUDE_PLUGIN_ROOT`; quoted, forward slashes on Windows; `--root` keeps answers repo-wide
   from a subfolder), so agents without the Skill tool can run it; when that path can't be

@@ -39,8 +39,8 @@ their trigger holds (again after compaction):
 
 1. **Read** only the `Project rules` files (no such field: `CLAUDE.md`, `AGENTS.md`), any
    `Handoff` note and, of the plan, only this phase's section, the constraints, the binding
-   decisions and the `## Phases` preamble (status values, fix-round limit) (base SHA missing:
-   fetch as in step 3 first):
+   decisions and the `## Phases` preamble (status values, fix-round limit) (no base SHA: step 3's
+   fetch first):
    ```
    git show <base-sha>:<plan-path> | <python> "<plan.py>" phase <id>
    ```
@@ -54,17 +54,18 @@ their trigger holds (again after compaction):
    ```
    No phase section printed → read from its heading (`grep -n`). No `## Constraints…`
    or `## Binding decisions` section printed → `grep -n '^## '` and read them under the plan's
-   names. Read the phase's knowledge paths and, by `grep -n`, entries it cites (`D<n>`). With a
-   `Code map` command, run `<code map> query <term>` (and read the vault index) before any broad
-   search of code or vault.
+   names. Read the phase's knowledge paths and cited `D<n>` entries (`grep -n`). With a
+   `Code map` command, `<code map> query <term>` and the vault index precede broad searches.
+   Locate, then read (`<code map> explore <name>`, else `grep -n`): large files by range,
+   unchanged files once (again after compaction).
 2. **Scope.** Don't expand it or guess. An owner-only choice (open design, scope, spend,
    credentials, anything the project reserves) → stop, report `NEEDS_OWNER_DECISION` with options.
    Write the least that meets acceptance: reuse existing code, the standard library or
    native features first; duplicate no project script or test; no abstraction, option or
    scaffolding the plan doesn't need.
-   Before changing a function, find its callers (`<code map> calls <name>` if set, then grep)
-   and keep them working; a root cause outside scope
-   → report it (Risks or `NEEDS_OWNER_DECISION`); don't fix it. Code you move or merge keeps its
+   Before changing a function, find its callers (`<code map> calls <name>`, then grep),
+   keep them working; report, don't fix, a root cause outside scope (Risks or
+   `NEEDS_OWNER_DECISION`). Code you move or merge keeps its
    error handling and validation. Acceptance, project rules, required tests,
    validation, error handling and security always win.
 3. **Git.** Fetch each branch by refspec (shallow clone: bounded `--depth`):
@@ -86,8 +87,8 @@ their trigger holds (again after compaction):
    language a project rule names (the owner's standing policy; owner quotes verbatim); unchanged
    text stays untranslated unless the phase says so.
 5. **Validate.** Before final validation, check every plan, vault and doc line the diff changes
-   against the code; fix misstatements. With a `Code map` command, run `<code map> build` first and
-   commit what it changes (never hand-edit generated pages). Develop with focused tests; on your
+   against the code; fix misstatements. With a `Code map` command, run `<code map> build` first,
+   committing its changes (never hand-edit generated pages). Develop with focused tests; on your
    final commit run every required validation command once (a `(when: <trigger>)` command only if
    this phase's diff matches it, re-judged each fix round or integration; list skips and why under
    Validation), output to a file (`timeout -k 30 1800 cmd > /tmp/<name>.log 2>&1; echo $?`; long

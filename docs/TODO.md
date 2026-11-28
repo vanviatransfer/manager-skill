@@ -2093,3 +2093,52 @@ it can re-read), plus the review notes on items 40 (PR #77) and 42 (PR #78).
 
 Not changed: the manager skill, the reviewer brief, the agents, `run-record.md`, `retro.sh`, the
 eval suites, any ceiling.
+
+### 44. Code map `explore` and the read rule (plugin 0.9.26)
+
+Why: one real 9-phase run measured with item 42's `usage.py --tools`. Of all tool-result
+characters carried in context across later requests, file reads (Read plus Bash `cat`, `head`,
+`sed`) were 59% and searches 16%; test and build output 0.24% (already sent to log files). Most
+reads were already ranged: the cost is how much is read and how long it stays (about 80-100
+later requests). The largest single results were 33-55k-character whole-file reads, and
+implementers re-read the same file 87 times. This builds item 37's second idea (item 38: explore)
+in its simpler, name-based form; item 38's question form and the paid benchmark stay open.
+
+- **What.** `codemap.py explore <name>... [--budget <chars>]`, live like `query` and `calls`,
+  read-only, standard library. Per exact definition: `path:start-end <kind> <name>`, then the
+  source of that range, line-numbered as `cat -n` (Python: the `ast` range from the first
+  decorator; other languages with map symbols: to the next symbol at the same or lower
+  indentation, at most 300 lines, marked `(end approximate)`). Over the budget left, a class
+  prints its signature and members' ranges and a function its first lines, each with `body not
+  shown: read path:a-b`. Then Python callers from `calls` (at most 10, `more: <k>`, the
+  `possible` count) or `callers: not resolved for <language>; grep -n -w <name>`. A name in more
+  than 3 files: headers only. No match: at most 5 near matches. Default budget 8,000 printed
+  characters; every definition cut is listed as `cut: path:a-b <kind> <name>` (at most 40, then
+  a count). `references/explore.md`; tests in `scripts/test_explore.py`.
+- **Read rule.** The implementer brief's step 1: locate, then read (`<code map> explore
+  <name>`, else `grep -n`), large files by range, unchanged files once (again after compaction).
+- **Ceilings kept.** The code-map `SKILL.md` gains a two-line `explore` entry by rewording
+  others (9,469 -> 9,499 characters of 9,500). The implementer brief: 1,355 -> 1,356 words of
+  1,357, as `str.split` counts (`wc -w` in the C locale counts fewer); neighbouring step 1, 2
+  and 5 sentences were reworded, every rule kept.
+- **Review fix round.** Every definition of a repeated qualified name prints (`@overload` stubs,
+  a property's getter and setter, a `def` per `if` branch; class members once per node); Python
+  lines are split as `ast` counts them (a lone `\r` too), and a range past the end of a file says
+  so; tracked source files not read are counted; an approximate range with no end within 300
+  lines says the end is unknown; a definition near the budget is shortened to its header and a
+  pointer before it is cut; a closing line says the printed source is the working tree now.
+- **Second fix round.** Class members are found under `if`, `try` and `with` in the class body;
+  a class signature stops before a member's decorator, a function signature runs to the line its
+  body starts on; a no-match line counts files in languages without map symbols; the closing
+  line says when the printed text is not byte-exact; the cut count line for one name in one file
+  points to the file. The brief's query sentence now covers broad searches of any kind.
+- **Third fix round.** A Python file with a UTF-8 byte order mark parses (`explore` only; `calls`
+  unchanged); Python files that fail to parse are counted (only their column-0 definitions are
+  seen); a file with lone `\r` line breaks gets a header note and the not byte-exact closing line;
+  a no-match line says which pattern languages were searched by mapped symbols only;
+  `explore x | head` exits quietly.
+- **Not changed.** `query`, `calls`, page formats, the rules block, the search nudge, the
+  reviewer brief, the agents, the manager skill, `run-record.md`, `retro.sh`, `usage.py`, the
+  eval suites, any ceiling.
+- **Next step.** Measure again with `usage.py --tools` on a run after this lands: read
+  characters carried and re-reads per implementer, and how often agents call `explore`.
