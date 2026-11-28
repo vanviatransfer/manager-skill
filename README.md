@@ -175,7 +175,9 @@ adds Bash file reads (`cat`, `head`, `sed -n` ...; not with an output redirectio
 `--streaks` adds an `errors` line (errors, distinct error signatures, repeats); `--prefix` gives
 each agent's first request as a share of its input tokens (about its fixed prefix); `--after-green`
 gives what it spent after its last edit passed a test command. All heuristics are listed in the
-script's docstring; none prints inputs or paths.
+script's docstring; none prints inputs or paths. Since 0.9.28 a Bash edit (`sed -i`, a redirect or
+heredoc into a file, a Python write) counts as an edit, and the `--prefix` share is the first
+request times the requests over the input (an upper bound, at most 100; the line had no consumer).
 
 Two things learn from the record:
 
