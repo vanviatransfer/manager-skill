@@ -303,6 +303,78 @@ class ExploreTest(unittest.TestCase):
         self.assertIn(pointer, out)
         self.assertFalse(any(line.startswith("cut:") for line in out))
 
+    def test_members_under_if_try_with(self):
+        self.write("pkg/cls.py", (
+            "class C:\n"                                 # 1
+            "    try:\n"                                 # 2
+            "        def t(self):\n"                     # 3
+            "            return 1\n"                     # 4
+            "    except ImportError:\n"                  # 5
+            "        def t(self):\n"                     # 6
+            "            return 2\n"                     # 7
+            "    with open('x') as f:\n"                 # 8
+            "        def w(self):\n"                     # 9
+            "            pass\n"                         # 10
+            "    if True:\n"                             # 11
+            "        def i(self):\n"                     # 12
+            "            pass\n"                         # 13
+            "\n"                                         # 14
+            "    def plain(self):\n"                     # 15
+            "        pass\n"))                           # 16
+        self.add()
+        out = self.explore("C", "--budget", "320")
+        self.assertEqual([line for line in out if line.startswith("  ") and "-" in line[:8]], [
+            "  3-4 method C.t", "  6-7 method C.t", "  9-10 method C.w",
+            "  12-13 method C.i", "  15-16 method C.plain"], out)
+
+    def test_class_signature_stops_before_a_decorated_member(self):
+        self.write("pkg/dec.py", (
+            "class D(\n"                                 # 1
+            "    object,\n"                              # 2
+            "):\n"                                       # 3
+            "    @property\n"                            # 4
+            "    def p(self):\n"                         # 5
+            "        return 1\n"                         # 6
+            + "".join("\n    def m%d(self):\n        return %d\n" % (n, n) for n in range(9))))
+        self.add()
+        out = self.explore("D", "--budget", "500")
+        start = out.index("pkg/dec.py:1-33 class D")
+        self.assertEqual(out[start + 1:start + 5], [
+            " 1\tclass D(", " 2\t    object,", " 3\t):", "  4-6 method D.p"], out)
+        self.assertIn("body not shown: read pkg/dec.py:4-33", out)
+
+    def test_multi_line_signature_with_its_body_on_the_last_line(self):
+        self.write("pkg/sig.py", "def s(a,\n      b): return (a +\n" + "    b)\n" * 30)
+        self.add()
+        out = self.explore("s", "--budget", "330")
+        self.assertEqual(out[2:4], [" 1\tdef s(a,", " 2\t      b): return (a +"], out)
+        self.assertTrue(any(line.startswith("body not shown: read pkg/sig.py:") for line in out))
+
+    def test_no_match_counts_files_without_symbols(self):
+        self.write("src/lib.c", "int qqq_c(void) { return 0; }\n")
+        self.write("pkg/stub.pyi", "def zz() -> int: ...\n")
+        self.add()
+        self.assertEqual(self.explore("qqq_c")[0],
+                         "explore qqq_c: no definition named qqq_c (2 files in languages "
+                         "without symbols: grep them); near matches: none found")
+
+    def test_inexact_source_says_so(self):
+        with open(os.path.join(self.root, "pkg", "bytes.py"), "wb") as fh:
+            fh.write(b"def odd():\n    return '\xff\x01'\n")
+        self.add()
+        out = self.explore("odd")
+        self.assertEqual(out[-1], codemap.EXPLORE_INEXACT)
+        self.assertEqual(self.explore("helper")[-1], codemap.EXPLORE_CURRENT)
+
+    def test_many_cuts_of_one_name_in_one_file(self):
+        self.write("pkg/ov.py", "from typing import overload\n\n" + "".join(
+            "@overload\ndef ov(x: 'T%d') -> int: ...\n" % n for n in range(45)))
+        self.add()
+        out = self.explore("ov", "--budget", "100")
+        tail = [line for line in out if line.startswith("cut: ") and "more" in line]
+        self.assertEqual(tail, ["cut: 5 more definitions of ov in pkg/ov.py not listed; read "
+                                "pkg/ov.py, raise --budget or grep -n -w ov"])
+
     def test_bad_name_and_flags(self):
         for argv in (["explore"], ["explore", "a-b"], ["explore", "x", "--budget", "0"],
                      ["explore", "x", "--all"]):

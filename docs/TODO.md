@@ -2116,7 +2116,7 @@ in its simpler, name-based form; item 38's question form and the paid benchmark 
   characters; every definition cut is listed as `cut: path:a-b <kind> <name>` (at most 40, then
   a count). `references/explore.md`; tests in `scripts/test_explore.py`.
 - **Read rule.** The implementer brief's step 1: locate, then read (`<code map> explore
-  <name>`, else `grep -n`), large files by range, unchanged files once.
+  <name>`, else `grep -n`), large files by range, unchanged files once (again after compaction).
 - **Ceilings kept.** The code-map `SKILL.md` gains a two-line `explore` entry by rewording
   others (9,469 -> 9,499 characters of 9,500). The implementer brief: 1,355 -> 1,356 words of
   1,357, as `str.split` counts (`wc -w` in the C locale counts fewer); neighbouring step 1, 2
@@ -2127,6 +2127,11 @@ in its simpler, name-based form; item 38's question form and the paid benchmark 
   so; tracked source files not read are counted; an approximate range with no end within 300
   lines says the end is unknown; a definition near the budget is shortened to its header and a
   pointer before it is cut; a closing line says the printed source is the working tree now.
+- **Second fix round.** Class members are found under `if`, `try` and `with` in the class body;
+  a class signature stops before a member's decorator, a function signature runs to the line its
+  body starts on; a no-match line counts files in languages without map symbols; the closing
+  line says when the printed text is not byte-exact; the cut count line for one name in one file
+  points to the file. The brief's query sentence now covers broad searches of any kind.
 - **Not changed.** `query`, `calls`, page formats, the rules block, the search nudge, the
   reviewer brief, the agents, the manager skill, `run-record.md`, `retro.sh`, `usage.py`, the
   eval suites, any ceiling.

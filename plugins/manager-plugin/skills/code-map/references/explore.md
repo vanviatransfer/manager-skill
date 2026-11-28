@@ -29,10 +29,12 @@ then line):
 
 Ranges:
 - **Python**: from `ast` of the running Python, from the first decorator line through
-  `end_lineno`, with lines counted as `ast` counts them (`\r\n`, a lone `\r` or `\n`). Kinds:
-  `function`, `method`, `class`, with `async` when it is one. Nested definitions are found too
-  (`outer.inner`, `Box.size`), and every definition of one name is printed: `@overload` stubs and
-  the implementation, a property's getter and setter, a `def` in each branch of an `if`.
+  `end_lineno`, with lines counted as `ast` counts them (`\r\n`, a lone `\r` or `\n`; in a file
+  with lone `\r` line breaks these numbers differ from the Read tool's, so Read by text there).
+  Kinds: `function`, `method`, `class`, with `async` when it is one. Nested definitions are
+  found too (`outer.inner`, `Box.size`), and every definition of one name is printed:
+  `@overload` stubs and the implementation, a property's getter and setter, a `def` in each
+  branch of an `if`.
 - **Other languages the map lists symbols for** (JavaScript, TypeScript, Go, Java, Kotlin, C#,
   Rust, PHP, Ruby, Swift, Scala) and **Python files that do not parse**: the map's line-pattern
   symbols; the range runs from the definition line to the line before the next symbol at the same
@@ -46,11 +48,13 @@ Ranges:
   `func` print as `function`).
 
 A definition larger than the budget left:
-- a class: its signature lines, then its members, each `  start-end <kind> <name>` (every
-  member node once, two of one name included; at most 40, then a count), then `body not shown:
-  read path:a-b`;
+- a class: its signature lines (up to its body's first statement, a decorator of a member
+  included), then its members, each `  start-end <kind> <name>` (every member node once, two of
+  one name included, also those under `if`, `try` or `with` in the class body; at most 40, then
+  a count), then `body not shown: read path:a-b`;
 - anything else, or a class whose member list does not fit: its first lines (the whole
-  signature, or none when the signature does not fit), then `body not shown: read path:a-b` for
+  signature, up to the line its body starts on when that line holds the signature's end too;
+  or none when the signature does not fit), then `body not shown: read path:a-b` for
   the lines not shown.
 
 A name defined in more than 3 files prints headers only, no source, and says so on its first
@@ -73,12 +77,16 @@ Last, after any `cut:` lines:
   text); grep them`, when any tracked Python or other symbol-listed source file was not read (as
   `calls` counts them), since a definition there can't be found;
 - when any source was printed, `the source above is the working tree now: Read a range again
-  only before an Edit of it`.
+  only before an Edit of it`; when a printed range holds bytes that are not UTF-8 (shown as
+  U+FFFD) or control characters (shown as `?`), instead `the source above is the working tree
+  now, but not byte-exact (...): Read the range before an Edit of it`.
 
 No exact match: `explore <name>: no definition named <name>; near matches:`, then at most 5
 definitions whose names contain the last part of the name (any case), else close spellings, each
-`path:line name` as `query` prints them, or `none found`. Nothing else, except, when source
-files were not read, `(<k> tracked source files not read)` after the name on that line.
+`path:line name` as `query` prints them, or `none found`. Nothing else, except notes in
+parentheses after the name on that line: `<k> tracked source files not read`, and `<k> files in
+languages without symbols: grep them` (tracked files of a language the map lists no symbols for,
+such as C, C++, shell, SQL, Vue, Svelte, Dart, PowerShell, and `.pyi` stubs: never searched).
 
 ## Budget
 
@@ -88,8 +96,10 @@ callers lines are always printed, so they are taken out first. Not counted: the 
 budget` line, the `cut:` lines, the `not read:` line and the closing line about the source. A
 definition that doesn't fit, even in the short form above (at least its header and a pointer),
 is cut, and every cut one is listed at the end, after `over the budget of <n> characters
-(--budget):`, as `cut: path:a-b <kind> <name>` (at most 40, then one count line): never
-silent. With nothing cut, neither line is printed.
+(--budget):`, as `cut: path:a-b <kind> <name>` (at most 40, then one count line: `cut: <k>
+more definitions of <name> in <path> not listed; read <path>, raise --budget or grep -n -w
+<name>` when they are all one name in one file, else `cut: <k> more definitions not listed;
+qualify the name or raise --budget`): never silent. With nothing cut, neither line is printed.
 
 ## Limits
 

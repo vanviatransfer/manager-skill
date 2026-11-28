@@ -55,9 +55,9 @@ their trigger holds (again after compaction):
    No phase section printed → read from its heading (`grep -n`). No `## Constraints…`
    or `## Binding decisions` section printed → `grep -n '^## '` and read them under the plan's
    names. Read the phase's knowledge paths and cited `D<n>` entries (`grep -n`). With a
-   `Code map` command, `<code map> query <term>` and the vault index precede broad code or vault
-   searches. Locate, then read (`<code map> explore <name>`, else `grep -n`): large files by
-   range, unchanged files once.
+   `Code map` command, `<code map> query <term>` and the vault index precede broad searches.
+   Locate, then read (`<code map> explore <name>`, else `grep -n`): large files by range,
+   unchanged files once (again after compaction).
 2. **Scope.** Don't expand it or guess. An owner-only choice (open design, scope, spend,
    credentials, anything the project reserves) → stop, report `NEEDS_OWNER_DECISION` with options.
    Write the least that meets acceptance: reuse existing code, the standard library or
