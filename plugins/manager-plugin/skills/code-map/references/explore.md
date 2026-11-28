@@ -10,7 +10,8 @@ last part equal, the qualifier matching the end of the dotted name), never as a 
 
 It is live, like `query` and `calls`: every run reads the working tree's files (the files the map
 scans, with the same exclusions; files that may hold secrets are never read), reuses the `calls`
-parse and resolution, and writes nothing. No page, index or `.codemap.json` changes.
+parse and resolution, and writes nothing. Only tracked files are searched: a new file counts once
+it is `git add`ed. No page, index or `.codemap.json` changes.
 
 ## Using it
 
@@ -33,7 +34,7 @@ Ranges:
   with lone `\r` line breaks these numbers differ from the Read tool's, so its headers add
   `(lines counted as Python counts them; the Read tool sees this file differently)` and the
   closing line is the not byte-exact one). A file starting with a UTF-8 byte order mark is parsed
-  without it (`explore` only; `calls` still lists such a file under `not parsed`).
+  without it (as `calls` does).
   Kinds: `function`, `method`, `class`, with `async` when it is one. Nested definitions are
   found too (`outer.inner`, `Box.size`), and every definition of one name is printed:
   `@overload` stubs and the implementation, a property's getter and setter, a `def` in each
@@ -50,12 +51,18 @@ Ranges:
   map lists count, so a range may hold other code after the definition ends.
   Kind: the keyword on the definition line (`class`, `interface`, `const`, ...; `def`, `fn`,
   `func` print as `function`).
+- **C and C++** (`cpp.md`): brace matching, skipping comments, strings and characters; exact
+  when the file's braces balance, else the end is approximate as above, with `(end approximate:
+  braces do not balance in this file)`. The header adds the Unreal tag (`[UFUNCTION
+  BlueprintCallable]`) and, for a definition, `(declared <path>:<line>)`; a class's members add
+  where an out-of-class definition is (`(defined <path>:a-b)`).
 
 A definition larger than the budget left:
-- a class: its signature lines (up to its body's first statement, a decorator of a member
-  included), then its members, each `  start-end <kind> <name>` (every member node once, two of
-  one name included, also those under `if`, `try` or `with` in the class body; at most 40, then
-  a count), then `body not shown: read path:a-b`;
+- a class: its signature lines (from its first line, its own decorators included, to the line
+  before its body's first statement, or before that statement's first decorator when it has
+  one), then its members, each `  start-end <kind> <name>` (every member node once, two of one
+  name included, also those under `if`, `try` or `with` in the class body; at most 40, then a
+  count), then `body not shown: read path:a-b`;
 - anything else, or a class whose member list does not fit: its first lines (the whole
   signature, up to the line its body starts on when that line holds the signature's end too;
   or none when the signature does not fit), then `body not shown: read path:a-b` for
@@ -70,6 +77,8 @@ Then, once per name:
   An empty list prints `callers: none resolved (not proof of none; run calls <name>)`. The
   callers are those of every matching definition; qualify the name for one. `calls.md` has what
   resolves and what doesn't.
+- C and C++: `callers: not resolved for C/C++; run calls <name> (text occurrences) or grep -n -w
+  <name>`;
 - other languages: `callers: not resolved for <language>; grep -n -w <name>`; a Python file that
   does not parse: `callers: not resolved in Python files not parsed; grep -n -w <name>`.
 
@@ -95,27 +104,27 @@ parentheses after the name on that line, in this order: `<k> tracked source file
 only mapped symbols searched; grep -n -w <name>` (for the languages found by line pattern, whose
 map lists only some definitions, e.g. JavaScript and TypeScript exports); and `<k> files in
 languages without symbols: grep them` (tracked files of a language the map lists no symbols for,
-such as C, C++, shell, SQL, Vue, Svelte, Dart, PowerShell, and `.pyi` stubs: never searched).
+such as shell, SQL, Vue, Svelte, Dart, PowerShell, and `.pyi` stubs: never searched).
 
 ## Budget
 
-`--budget <n>`: about `<n>` printed characters (default 8,000; characters, not the tokens of
-`query --budget`). Headers, source, members, pointers and the callers lines count against it; the
-callers lines are always printed, so they are taken out first. Not counted: the `over the
-budget` line, the `cut:` lines, the `not read:` and `not parsed:` lines and the closing line about
-the source. A definition that doesn't fit, even in the short form above (at least its header
-and a pointer), is cut, and every cut one is listed at the end, after `over the budget of <n>
-characters (--budget):`, as `cut: path:a-b <kind> <name>` (at most 40, then one count line:
-`cut: <k> more definitions of <name> in <path> not listed; read <path>, raise --budget or grep
+`--budget <n>`: about `<n>` printed characters (default 8,000; characters, not the tokens of `query
+--budget`). The `explore <name>:` head line, headers, source, members, pointers and the callers
+lines count against it; the callers lines are always printed, so they are taken out first. Not
+counted: the `over the budget` line, the `cut:` lines, the `not read:` and `not parsed:` lines and
+the closing line about the source. A definition that doesn't fit, even in the short form above (at
+least its header and a pointer), is cut, and every cut one is listed at the end, after `over the
+budget of <n> characters (--budget):`, as `cut: path:a-b <kind> <name>` (at most 40, then one count
+line: `cut: <k> more definitions of <name> in <path> not listed; read <path>, raise --budget or grep
 -n -w <name>` when they are all one name in one file, else `cut: <k> more definitions not listed;
 qualify the name or raise --budget`): never silent. With nothing cut, neither line is printed.
 
 ## Limits
 
-- Python ranges are exact for the working tree as the running Python parses it; other ranges are
-  approximate and marked so.
-- Callers are resolved for Python only, with every limit of `calls` (`calls.md`); for the rest,
-  and before changing a signature, grep.
+- Python ranges are exact for the working tree as the running Python parses it, C and C++ ranges
+  when the file's braces balance; other ranges are approximate and marked so.
+- Callers are resolved for Python only (C and C++: text occurrences via `calls`), with every
+  limit of `calls` (`calls.md`); for the rest, and before changing a signature, grep.
 - Control characters other than a tab print as `?`.
 - Output into a pipe that closes early (`explore x | head`) ends quietly with exit 0.
 

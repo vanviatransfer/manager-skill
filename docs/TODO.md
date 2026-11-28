@@ -2008,7 +2008,7 @@ the staleness idea (item 37) is dropped.
   call (as `tools()` does) instead of crashing; `calls` counts as a code-map action.
 - **Tests.** `skills/code-map/scripts/test_calls.py`.
 
-### 41. Code map: C and C++ support (owner, noted, not built)
+### 41. Code map: C and C++ support (owner; built in item 45, plugin 0.9.27)
 
 The owner wants C and C++ covered later, for Unreal Engine game projects (Blender's Python is
 already covered). Today `.c`, `.h`, `.cpp`, `.cc` and `.hpp` files get only a language label: no
@@ -2142,3 +2142,45 @@ in its simpler, name-based form; item 38's question form and the paid benchmark 
   eval suites, any ceiling.
 - **Next step.** Measure again with `usage.py --tools` on a run after this lands: read
   characters carried and re-reads per implementer, and how often agents call `explore`.
+
+### 45. Code map C/C++ and Unreal Engine (plugin 0.9.27)
+
+Why: item 41. The owner will use the map on Unreal Engine game projects and plain C/C++, where
+`.c .h .cpp .cc .cxx .hpp .hh .inl` files had only a language label.
+
+- **Symbols.** Line patterns over text with comments, strings and characters blanked, no
+  compiler: functions (definitions and declarations, kind-tagged), classes, structs, unions,
+  enums, namespaces (nested and `a::b`), `typedef`/`using`, `#define` macros, class members for
+  `explore`; `template<>`, specifiers, attributes, out-of-class `Ret Class::Method`, signatures
+  up to 40 lines; `#if 0` skipped, the first `#if` branch when all branches unbalance the braces.
+  A declaration and its definition are one symbol with both locations.
+- **Unreal.** `UCLASS`/`USTRUCT`/`UENUM`/`UINTERFACE`/`UFUNCTION`/`UPROPERTY`/`UDELEGATE` tags
+  (compact, on the page and in `query`, `explore` and `calls`; Blueprint-visible members listed),
+  `*_API` and `GENERATED_BODY()` skipped, `DECLARE_*DELEGATE*` types and log categories as
+  symbols. A **Unreal Engine** page section: `.uproject`/`.uplugin`, each `*.Build.cs` module's
+  public and private dependencies as written; with a `.uproject`, `Binaries/`, `Intermediate/`,
+  `Saved/`, `DerivedDataCache/` and `.vs/` (plugins too) are not scanned; `.uasset`/`.umap`
+  never read, and the page says Blueprint and level references are not seen.
+- **Includes.** `#include "..."` resolved relative to the file, then module `Public/`,
+  `Private/`, `Classes/` roots, then `include`/`src`-style folders; importers, `impact`,
+  `changed` and "Most imported" use them. `<...>`, unresolved and computed includes are counted
+  and named on a **C and C++ includes** page section; `query` says how many of a file's includes
+  were not followed.
+- **`explore`.** Brace-matched exact ranges, approximate when a file's braces don't balance;
+  class members with ranges and where out-of-class definitions are; a definition shows its
+  declaration's location. **`calls`.** Nothing resolved: definitions, every whole-word occurrence
+  as `possible` (kind-tagged: call, member or qualified call, delegate binding, by name, string,
+  macro), and the reasons on the `text:` line (overloads, templates, macros, virtual dispatch,
+  function pointers and delegates, `#if 0` lines, delegate bindings, `UFUNCTION` reflection and
+  Blueprints). `references/cpp.md`; tests in `scripts/test_cpp.py`.
+- **Follow-ups from item 44.** `explore` prints the closing working-tree line only when source
+  was printed; `explore.md` says only tracked files are searched, counts the head line in the
+  budget and words the class signature rule plainly; `calls` strips a UTF-8 byte order mark
+  before parsing, so such Python files are no longer `not parsed` (the only change to `calls`
+  output for Python: files with a BOM); every action exits quietly on a closed pipe.
+- **Unchanged.** Python, JavaScript and TypeScript output is byte-identical to 0.9.26 (a test
+  pins it); the "Most imported" heading changes only when a C/C++ file is ranked. Code-map
+  `SKILL.md`: 9,499 -> 9,498 characters of 9,500 (reworded). No ceiling raised.
+- **Known misses.** Macros are not expanded (macro-made declarations, X-macros, a macro opening
+  a brace); K&R C definitions; overloads and specialisations are separate entries; compiler
+  include paths (CMake, `-I`) are not read; `Build.cs` conditions are not evaluated.

@@ -356,7 +356,7 @@ class ExploreTest(unittest.TestCase):
         self.assertTrue(any(line.startswith("body not shown: read pkg/sig.py:") for line in out))
 
     def test_no_match_counts_files_without_symbols(self):
-        self.write("src/lib.c", "int qqq_c(void) { return 0; }\n")
+        self.write("src/run.sh", "qqq_c() { return 0; }\n")  # C files have symbols since 0.9.27
         self.write("pkg/stub.pyi", "def zz() -> int: ...\n")
         self.add()
         self.assertEqual(self.explore("qqq_c")[0],
@@ -390,8 +390,9 @@ class ExploreTest(unittest.TestCase):
         self.assertIn("  pkg/bom.py:7 in B.bm", out)
         self.assertEqual(self.explore("B.bm")[1], "pkg/bom.py:6-7 method B.bm")
         self.assertFalse(any(line.startswith("not parsed") for line in out))
-        code, calls = run("calls", "bomf", "--root", self.root)  # calls: as before, not parsed
-        self.assertIn("not parsed: pkg/bom.py", calls)
+        code, calls = run("calls", "bomf", "--root", self.root)  # calls too since 0.9.27
+        self.assertNotIn("not parsed", calls)
+        self.assertIn("  pkg/bom.py:7 in B.bm", calls.splitlines())
 
     def test_unparsed_files_are_counted(self):
         self.write("pkg/bad.py", "class K:\n    def meth(self):\n        return (\n")
