@@ -170,7 +170,9 @@ def git_index(root):
     return entries
 
 
-def git_files(root, entries=None):
+def git_files(root, entries=None, vendored=None):
+    """The tracked files; outside git, the files on disk. `vendored`: a list, filled outside git
+    with the `VENDORED` folders the walk left out."""
     if entries is None:
         entries = git_index(root)
     if entries is not None:  # symlinks (mode 120000) are skipped on every OS
@@ -178,6 +180,10 @@ def git_files(root, entries=None):
     else:
         files = []
         for dirpath, dirnames, filenames in os.walk(root):
+            if vendored is not None:
+                rel = os.path.relpath(dirpath, root).replace(os.sep, "/")
+                vendored += [d if rel == "." else rel + "/" + d for d in dirnames
+                             if d in VENDORED and not os.path.islink(os.path.join(dirpath, d))]
             dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
             for name in filenames:
                 rel = os.path.relpath(os.path.join(dirpath, name), root)
@@ -194,15 +200,25 @@ def skipped(path, out_rel):
     return path.endswith(SKIP_SUFFIXES)
 
 
-def vendored_info(tracked):
-    """(tracked files under a `VENDORED` folder, those folders: outermost, sorted)."""
+def vendored_info(tracked, walked=None):
+    """(tracked files under a `VENDORED` folder, those folders: outermost, sorted; one inside
+    another skipped folder, `dist/vendor/`, is not counted). Outside git, `walked`: (root, the
+    vendored folders `git_files` left out), their files counted on disk, none read."""
     folders, count = set(), 0
+    if walked is not None:
+        root, folders = walked
+        for folder in folders:
+            for _, _, filenames in os.walk(os.path.join(root, *folder.split("/"))):
+                count += len(filenames)
+        return count, sorted(folders)
     for path in tracked:
         parts = path.split("/")[:-1]
         for i, part in enumerate(parts):
             if part in VENDORED:
                 folders.add("/".join(parts[:i + 1]))
                 count += 1
+                break
+            if part in SKIP_DIRS:
                 break
     return count, sorted(folders)
 
@@ -443,7 +459,8 @@ C_ENUM = re.compile(r"^(typedef\s+)?enum\b\s*(class\b|struct\b)?\s*(?:\[\[.*?\]\
                     r"([A-Za-z_]\w*)?\s*(?::\s*[\w:\s]+)?$", re.S)
 C_PARENS = r"\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)"  # up to three levels deep
 C_TAIL_WORDS = (  # `\b` after each word: a macro is one word, never split (no backtracking)
-    r"(?:(?:const|volatile|noexcept|override|final|mutable|try)\b|&&|&|(?:throw|noexcept)\s*%s|"
+    r"(?:(?:const|volatile|noexcept|override|final|mutable|try)\b|&&|&|"
+    r"(?:throw|noexcept|asm)\s*%s|"
     r"_[A-Za-z_]\w*\b(?:\s*%s)?|\[\[[^\]]*\]\]|[A-Z][A-Z0-9_]*\b(?:\s*%s)?)"
     % (C_PARENS, C_PARENS, C_PARENS))
 C_TAIL_DEF = re.compile(r"^(?:(?:%s|->\s*(?:[^{;:]|::)+?|requires\b[^{;]*)\s*)*(?::(?!:).*)?$"
@@ -579,8 +596,10 @@ C_ANGLE_INNER = re.compile(r"<[^<>]*>")
 C_PAREN_STOPS = re.compile(r"[<>(={};]")
 C_MACRO_NAME = re.compile(r"[A-Z_][A-Z0-9_]*$")
 C_NAME_PAREN = re.compile(r"\s*([A-Za-z_]\w*)\s*\(")
+C_FRIEND = re.compile(r"(?:(?:inline|constexpr|consteval|static)\s+)*friend\b")  # any order
 C_TAIL_CALLS = {"__declspec", "__attribute__", "noexcept", "throw", "requires", "alignas",
-                "decltype", "__typeof__", "typeof"}
+                "decltype", "__typeof__", "typeof", "__asm__", "__asm", "asm"}
+C_SAL = re.compile(r"_[A-Z]\w*_$")  # `_In_`, `_Requires_lock_held_(cs)`: annotations, not names
 C_SPLIT_STOPS = re.compile(r"[(<\[{)>\]},]")
 
 
@@ -662,7 +681,8 @@ def c_function(t, end_ch):
                 break
             close = c_close(t, open_, "(", ")")
             after = C_NAME_PAREN.match(t, close + 1) if close >= 0 else None
-            if not after or after.group(1) in C_TAIL_CALLS or C_MACRO_NAME.match(after.group(1)):
+            if not after or after.group(1) in C_TAIL_CALLS or C_MACRO_NAME.match(
+                    after.group(1)) or C_SAL.match(after.group(1)):
                 break  # `G(int a) __declspec(...)`, `F() DEPRECATED(...)`: the name came first
             t = t[:q.start(2)] + " " * (close + 1 - q.start(2)) + t[close + 1:]
             open_ = c_first_paren(t)
@@ -1031,7 +1051,7 @@ class CppFile:
                 lead = len(t) - len(t.lstrip())
                 kind = "method" if in_class else "function"
                 scope_names, member = names, parent if in_class else None
-                if in_class and re.match(r"friend\b", stripped):  # a hidden friend: not a member
+                if in_class and C_FRIEND.match(stripped):  # a hidden friend: not a member
                     kind, member, scope_names = "function", None, []
                     for what, ns, _, _ in stack:
                         if what == "class":
@@ -1084,7 +1104,8 @@ class CppFile:
             self.add(self.symbol(m.group(1), "using", line(base + lead + m.start(1)), start,
                                  line(at), line(at), names + [m.group(1)], parent=member), found)
             return
-        if re.match(r"^(?:friend|using|namespace|static_assert|return)\b", text) or \
+        if re.match(r"^(?:using|namespace|static_assert|return)\b", text) or \
+                C_FRIEND.match(text) or \
                 re.match(r"^(?:class|struct|union|enum)\b[^(]*$", text):
             return
         fn = c_function(text, ";")
@@ -2778,6 +2799,22 @@ class CallsFile:
                 self.collect(child, stack)
 
 
+OPERATOR_TOKENS = ("=", "==", "!=", "<", "<=", "<<", "<<=", "<=>", ">", ">=", ">>", ">>=", "+",
+                   "++", "+=", "-", "--", "-=", "->", "->*", "*", "*=", "/", "/=", "%", "%=",
+                   "^", "^=", "&", "&&", "&=", "|", "||", "|=", "!", "~", ",")
+
+
+def name_word(name):
+    """The pattern of a name as a whole word; an operator's name is not matched when the next
+    character continues its token (`operator=` is not in `operator==`; `operator==<T>` is
+    `operator==`)."""
+    op = name[len("operator"):] if name.startswith("operator") else ""
+    more = sorted({t[len(op)] for t in OPERATOR_TOKENS if op and len(t) > len(op)
+                   and t.startswith(op)})
+    after = "[\\w%s]" % re.escape("".join(more)) if more else "\\w"
+    return re.compile(r"(?<!\w)%s(?!%s)" % (re.escape(name), after))
+
+
 class Calls:
     """The definitions, confident callers and possible references of one name (see
     `references/calls.md`)."""
@@ -2785,7 +2822,7 @@ class Calls:
     def __init__(self, parsed, known, target):
         self.parsed, self.known, self.target = parsed, known, target
         self.name = target.split(".")[-1]
-        self.word = re.compile(r"(?<!\w)%s(?!\w)" % re.escape(self.name))
+        self.word = name_word(self.name)
         self.definitions, self.callers, self.possible = set(), set(), set()
         self.keys = set()  # (path, qualified name) of the matching definitions
         for path, f in sorted(parsed.items()):
@@ -3697,8 +3734,7 @@ def explore_near(target, parsed, others, unread=0, bare=0, unparsed=0, mapped=()
     if bare:  # C, C++, shell, Vue, stubs...: the map lists no symbols for them
         notes.append("%d file%s in languages without symbols: grep them" % (
             bare, "" if bare == 1 else "s"))
-    stopped = cpp_stopped_note(cfiles or {}, re.compile(r"(?<!\w)%s(?!\w)" % re.escape(
-        re.split(r"\.|::", target)[-1])))
+    stopped = cpp_stopped_note(cfiles or {}, name_word(re.split(r"\.|::", target)[-1]))
     if stopped:
         notes.append(stopped)
     lines = ["explore %s: no definition named %s%s; near matches:%s" % (
@@ -4423,8 +4459,8 @@ def run_action(argv=None):
                   file=sys.stderr)
             return 2
     try:
-        index = git_index(root)
-        tracked = git_files(root, index)
+        index, walked = git_index(root), []
+        tracked = git_files(root, index, walked)
     except GitError as exc:
         print("error: %s" % exc, file=sys.stderr)
         return 2
@@ -4588,7 +4624,8 @@ def run_action(argv=None):
         return 0
 
     pages = render(info, importers, entries, cmd, out_rel, vault,
-                   unreal_info(root, files, excluded), vendored_info(tracked))
+                   unreal_info(root, files, excluded),
+                   vendored_info(tracked, None if index is not None else (root, walked)))
     stale_extra = sorted(existing - set(pages))
     if args.action == "check":
         bad = []

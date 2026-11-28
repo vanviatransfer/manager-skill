@@ -501,6 +501,59 @@ class CppTest(unittest.TestCase):
                                ("n::GetTypeHash", "function declaration", True): 0,
                                ("n::FKey::Same", "method", False): 0})
 
+    def test_asm_label_and_sal_annotation_tails(self):
+        cf = codemap.CppFile("asm.h", "int MD5(const char*) __asm__(\"x\");\n"
+                                      "int SHA1(const char*) asm(\"y\");\n"
+                                      "int SHA2(const char*) __asm(\"z\");\n"
+                                      "HRESULT DOIT(int) _Requires_lock_held_(cs);\n"
+                                      "HRESULT DONE(_In_ int a) _Acquires_lock_(cs) "
+                                      "_Check_return_;\n"
+                                      "int RUN(int) _Success_(return == 0) { return 0; }\n")
+        self.assertEqual([(s["name"], s["kind"]) for s in cf.symbols], [
+            ("MD5", "function declaration"), ("SHA1", "function declaration"),
+            ("SHA2", "function declaration"), ("DOIT", "function declaration"),
+            ("DONE", "function declaration"), ("RUN", "function")])
+
+    def test_specifiers_before_friend(self):
+        h = codemap.CppFile("f.h", "namespace n {\nstruct W {\n"
+                                   "  inline friend bool operator==(W, W) { return true; }\n"
+                                   "  constexpr friend bool operator<(W, W) { return true; }\n"
+                                   "  constexpr inline friend int g(W) { return 1; }\n"
+                                   "  inline friend int h(W);\n"
+                                   "  inline int k() { return 0; }\n};\n}\n")
+        self.assertEqual([("::".join(s["qual"]), s["kind"], s["parent"] is None)
+                          for s in h.symbols], [
+            ("n", "namespace", True), ("n::W", "struct", True),
+            ("n::operator==", "function", True), ("n::operator<", "function", True),
+            ("n::g", "function", True), ("n::W::k", "method", False)])
+
+    def test_operator_name_is_not_a_longer_operator(self):
+        write(self.root, "modern/eq.hpp", "struct Widget {\n"
+                                          "  Widget& operator=(const Widget& o);\n"
+                                          "  bool operator==(const Widget& o) const;\n"
+                                          "  bool operator<(const Widget& o) const;\n};\n")
+        write(self.root, "modern/eq.cpp", "#include \"eq.hpp\"\n"
+                                          "void f(Widget a, Widget b) {\n"
+                                          "  a.operator=(b);\n"
+                                          "  a.operator==(b);\n"
+                                          "  a.operator<=(b);\n"
+                                          "  a.operator<<(b);\n}\n")
+        subprocess.run(["git", "-C", self.root, "add", "-A"], check=True)
+        out = self.run_ok("calls", "Widget::operator=")
+        self.assertIn("  modern/eq.cpp:3 member call\n", out)
+        self.assertNotIn("modern/eq.cpp:4", out)
+        self.assertNotIn("modern/eq.hpp:3", out)
+        out = self.run_ok("calls", "Widget::operator<")
+        self.assertIn("possible: none found", out)
+        self.assertEqual(codemap.name_word("operator==").findall("operator==(x) f::operator==<T>"
+                                                                 "() operator==x"),
+                         ["operator==", "operator=="])  # template arguments: the same name
+        self.assertEqual(codemap.name_word("operator<").findall(
+            "operator<<(a) operator<=(a) operator<=>(a) operator<(a)"), ["operator<"])
+        self.assertEqual(codemap.name_word("operator-").findall(
+            "operator--() operator->() operator-=(a) operator-(a)"), ["operator-"])
+        self.assertEqual(codemap.name_word("f").pattern, r"(?<!\w)f(?!\w)")
+
     def test_macro_call_before_the_name(self):
         cf = codemap.CppFile("hb.c", "static inline void HB_PRINTF_FUNC(7, 8)\n"
                                      "_hb_debug_msg(const char *what, int level)\n{\n}\n"
@@ -964,6 +1017,29 @@ class VendoredTest(unittest.TestCase):
                       "`vendor/`).\n\n## `app`", page)
         page = self.build((("app/main.py", "import os\n"),))
         self.assertNotIn("vendored", page)
+
+
+    def test_nested_in_a_skipped_folder(self):
+        page = self.build((("app/main.py", "import os\n"), ("dist/vendor/x.js", "var x;\n"),
+                           ("lib/vendor/y.c", "int y;\n")))
+        self.assertIn("Not scanned: vendored folders (1 tracked files: `lib/vendor/`).", page)
+        self.assertNotIn("dist/", page)
+        self.assertEqual(codemap.vendored_info(["dist/vendor/a.js", ".venv/x/vendor/b.py",
+                                                "a/node_modules/vendor/c.js"]),
+                         (1, ["a/node_modules"]))
+
+    def test_outside_git(self):
+        tmp = portability.temp_dir()
+        self.addCleanup(tmp.cleanup)
+        for rel in ("app/main.py", "vendor/lib/x.py", "vendor/lib/deep/y.py", "app/vendor/z.c",
+                    "dist/vendor/w.js", "third_party/README"):
+            write(tmp.name, rel, "x = 1\n")
+        code, out = run("build", "--root", tmp.name)
+        self.assertEqual(code, 0, out)
+        with open(os.path.join(tmp.name, "docs", "code-map.md"), encoding="utf-8") as fh:
+            page = fh.read()
+        self.assertIn("Not scanned: vendored folders (4 tracked files: `app/vendor/`, "
+                      "`third_party/`, `vendor/`).", page)
 
 
 class ScaleTest(unittest.TestCase):

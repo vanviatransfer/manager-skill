@@ -135,35 +135,44 @@ With `--after-green`, after them (off by default):
 
 - What an agent spent after its last change already passed validation. The last change: the
   last Edit, MultiEdit, Write or NotebookEdit call, or Bash call that changes a file (below),
-  whose result is no error. Green: the first later Bash call (or that Bash call itself:
-  `sed -i ... && pytest`) that ran a
-  test or validation command and did not error: its command has the word `unittest`, `pytest`
-  or `ctest` (not before a `.`: `pytest.ini`), or `npm test`, `npm run test`, `yarn test`,
-  `pnpm test`, `go test`, `cargo test`, `mvn test`, `gradle test`, `make test` or `make
-  check`; or it redirects output to a `.log` file
-  and later runs `echo $?`, and then its result's last non-blank line must be `0` (the call
-  itself does not fail). A command that hides a failure otherwise (`| tail`) counts as passed.
+  whose result is no error. Green: the first later Bash call (or that Bash call itself when a
+  simple command after its last change runs the test: `sed -i ... && pytest`, not `pytest &&
+  sed -i ...`; a test run is not its last change, whether it writes its output to a file or
+  the whole-text Python rule below takes it for one; since plugin 0.9.29) that ran a test or
+  validation command and did not error: its command has the word `unittest`, `pytest` or
+  `ctest` (not before a `.`: `pytest.ini`), or `npm test`, `npm run test`, `yarn test`, `pnpm
+  test`, `go test`, `cargo test`, `mvn test`, `gradle test`, `make test` or `make check`; or
+  it redirects output to a `.log` file and later runs `echo $?`, and then its result's last
+  non-blank line must be `0` (the call itself does not fail). A command that hides a failure
+  otherwise (`| tail`) counts as passed.
 - k: the requests up to the one that made that call, of the agent's n; after: the requests,
   tool calls and tokens (input as for `--prefix`) after the call, the request that read its
   result included. `none` when there is no change or no green call after the last one.
 - A Bash change (since plugin 0.9.28; before, Bash edits were not seen): the command, split
   into simple commands at unquoted `;`, `|`, `&`, `&&`, `||`, parentheses and newlines (quotes
-  respected; here-document bodies are skipped), has one that runs `sed` with `-i` (`-ni`,
-  `-i.bak`) or `--in-place`, or `perl` with `-i` (`-pi`); writes standard output to a file
-  (`>`, `>>`, `>|`, `&>`, `1>`, `>&f`; `2>` and `>&2` do not), or `tee` (`-a`) into one,
-  the target written; runs `python`, `python3`, `python3.N` or `py` while the whole command
+  respected; here-document bodies are skipped), has one that runs `sed` or `gsed` with `-i`
+  (`-ni`, `-i.bak`) or `--in-place`, or `perl` with `-i` in an option cluster before its
+  script (`-pi`, `-i.bak`; not a letter of a `-M`, `-I` or `-e` argument: `perl -Mstrict -ne`
+  is no change); writes standard output to a file (`>`, `>>`, `>|`, `&>`, `1>`, `>&f`, also a
+  leading `> f.py` or `exec > f.py`; `2>` and `>&2` do not), or `tee` (`-a`) into one, the
+  target written; runs `python`, `python3`, `python3.N` or `py` while the whole command
   text (a `-c` string or a here-document body included) has `open(` with a `w`, `a`, `x` or
   `r+` mode string, `write_text(` or `write_bytes(`; runs `git apply` (not `--check`, `--stat`)
   or `patch` (not `--dry-run`); or runs `mv` or `cp` with two or more operands onto a target
   (the last operand, or `-t`'s value). A target counts unless it is under `/dev/`, ends in
-  `.log` or `.out`, or is under a temp folder (`/tmp`, `/var/tmp`, `$TMPDIR`, `$TMP`, `%TEMP%`,
-  `%TMP%`): a heredoc into a source file (`cat > a.py <<EOF`) is a change, one into
-  `/tmp/x` is not. The command words are judged after leading assignments, `timeout`, `env`,
-  `sudo`, `nohup`, `command`, `exec` and `xargs` (and their option words). `git commit`, `git
-  add`, `git push`, `git rebase` and any other command are no change. A heuristic: it
-  over-counts (a Python write of a report file, a copy into the repository of what is not a
-  source) and under-counts (a script file that writes, `bash -c '...'`, `find -exec sed -i`,
-  `git checkout`, `rm`).
+  `.log` or `.out`, or is under a temp folder (`/tmp`, `/var/tmp`, `$TMPDIR`, `$TMP`,
+  `${TMPDIR:-...}`, `%TEMP%`, `%TMP%`, `C:\\Temp\\`, `...\\AppData\\Local\\Temp\\`,
+  any case): a heredoc into a source file (`cat > a.py <<EOF`) is a change, one into `/tmp/x`
+  is not. A `$VAR` or `${VAR}` in a target is first replaced by the value an earlier simple
+  command of the same call assigned it (`S=/tmp/x; cat > "$S/a.py"`, `export S=...`). The
+  command words are judged after leading assignments, `timeout`, `env`, `sudo` (and the value
+  of its `-u`, `-g`, `-C` ... options), `nohup`, `command`, `exec` and `xargs` (and their
+  option words). `git commit`, `git add`, `git push`, `git rebase` and any other command are no
+  change. A heuristic: it over-counts (a Python write of a report file, the whole command
+  text judged; a copy into the repository of what is not a source; a target still holding a
+  `$VAR` not assigned in the call, `$(mktemp -d)` too, judged as written) and under-counts (a
+  script file that writes, `bash -c '...'`, `find -exec sed -i`, `git checkout`, `git
+  restore`, `rm`).
 
 The order after each `usage` line: `streaks`, `errors`, the `tools` lines, `reads`, `map`,
 `prefix`, `after green`, each only with its flag. `--since` bounds them all; each is
@@ -530,8 +539,15 @@ HEREDOC = re.compile(r"<<(?!<)-?\s*([\"']?)([A-Za-z0-9_.-]+)\1")
 WRITES = re.compile(r"\bopen\([^)]*?[\"'](?:[wax]|r\+)[bt+]*[\"']|\bwrite_(?:text|bytes)\(")
 PYTHON = re.compile(r"(?:python[0-9.]*|py)(?:\.exe)?$")
 TEMP = ("/tmp", "/var/tmp", "$TMPDIR", "${TMPDIR", "$TMP", "${TMP", "%TEMP%", "%TMP%")
+WINDOWS_TEMP = re.compile(r"^[a-z]:[\\/]+te?mp[\\/]|[\\/]appdata[\\/]+local[\\/]+temp[\\/]", re.I)
 WRAPPERS = ("env", "sudo", "nohup", "command", "exec", "xargs")  # run the next word's command
+SUDO_VALUED = ("-u", "-g", "-C", "-D", "-h", "-p", "-r", "-t", "-T", "-U", "-R", "--user",
+               "--group", "--close-from", "--chdir", "--host", "--prompt", "--role", "--type",
+               "--command-timeout", "--other-user", "--chroot")  # `sudo` options with a value
+DECLARES = ("export", "declare", "typeset", "local", "readonly")  # `export S=x`: an assignment
+VARIABLE = re.compile(r"\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))")
 ENDS = (";", "|", "&", "&&", "||", "|&", ";;", "(", ")", "\n")  # end a simple command
+SEDS = ("sed", "gsed")
 
 
 def bodiless(command):
@@ -548,77 +564,132 @@ def bodiless(command):
     return "\n".join(kept)
 
 
+def expand(word, values):
+    """The word with the `$VAR` and `${VAR}` of `values` replaced; others are kept."""
+    return VARIABLE.sub(lambda m: values.get(m.group(1) or m.group(2), m.group(0)), word)
+
+
+def assign(current, values):
+    """`values` with the assignments of a simple command that only assigns (`S=x`, `export
+    S=x`) added, a new dict; a value holding another `$` (`$(mktemp)`, a backquote) unknown."""
+    words = current[1:] if current[:1] and current[0] in DECLARES else current
+    if not words or not all(ASSIGNED.match(w) or w.startswith("-") for w in words):
+        return values
+    values = dict(values)
+    for word in words:
+        if ASSIGNED.match(word):
+            name, _, value = word.partition("=")
+            value = expand(value, values)
+            if "`" in value or re.search(r"\$(?![{A-Za-z_])", value):
+                values.pop(name, None)
+            else:
+                values[name] = value
+    return values
+
+
 def simple(command):
-    """The command's simple commands: its tokens (as `tokens`), split at `ENDS`, each without
-    its leading assignments, `timeout` and `WRAPPERS`."""
-    found, current = [], []
+    """The command's simple commands, each (its tokens (as `tokens`) without its leading
+    assignments, `timeout` and `WRAPPERS`, the variables assigned before it), split at
+    `ENDS`."""
+    found, current, values = [], [], {}
     for token in tokens(bodiless(command)) + [";"]:
         if token in ENDS or (operator(token) and not token.startswith(("<", ">", "&>"))):
             run = first("", current)
             while run and os.path.basename(run[0]) in WRAPPERS:
+                sudo = os.path.basename(run[0]) == "sudo"
                 run = first("", run[1:])
                 while run and run[0].startswith("-"):
-                    run = run[1:]
+                    run = run[2 if sudo and run[0] in SUDO_VALUED else 1:]
             if run:
-                found.append(run)
+                found.append((run, values))
+            values = assign(current, values)
             current = []
         else:
             current.append(token)
     return found
 
 
-def written(target):
+def written(target, values=None):
     """True for a target a write is a change of: not under `/dev/`, not a `.log` or `.out`
-    file, not under a temp folder."""
+    file, not under a temp folder (`${TMPDIR:-/tmp}/x` too; a Windows one: `C:\\Temp\\`,
+    `...\\AppData\\Local\\Temp\\`). `values`: the variables to expand in it first."""
+    target = expand(target, values) if values else target
     if not target or operator(target) or target.startswith("/dev/"):
         return False
-    if target.endswith((".log", ".out")):
+    if target.endswith((".log", ".out")) or WINDOWS_TEMP.search(target):
         return False
     return not any(target == t or target.startswith((t + "/", t + "\\", t + "}"))
+                   or (t.startswith("${") and target.startswith((t + ":", t + "-")))
                    or (t.startswith("%") and target.startswith(t)) for t in TEMP)
+
+
+def perl_in_place(own):
+    """True for `perl` words with `-i` in an option cluster before the script: `-pi`, `-i.bak`;
+    not a letter of a `-M`, `-I`, `-e` ... argument (`-Mstrict`, `-MList::Util=sum`)."""
+    at = 0
+    while at < len(own):
+        word = own[at]
+        if operator(word) or not word.startswith("-") or word in ("-", "--"):
+            break
+        for k, char in enumerate(word[1:] if not word.startswith("--") else ""):
+            if char == "i":
+                return True
+            if char in "eE":  # the code: the rest of the word, or the next one
+                at += k == len(word) - 2
+                break
+            if char in "MmIFxdDC":  # the rest of the word is its argument
+                break
+        at += 1
+    return False
+
+
+def changed(found, values, command):
+    """True for a simple command (`simple`'s) that changes a file (see `--after-green`)."""
+    name = os.path.basename(found[0])
+    own = found[1:]
+    flags = [w[1:] for w in own if w.startswith("-") and not w.startswith("--")]
+    for at, token in enumerate(found):  # `> f.py` alone: the redirection comes first
+        if not operator(token) or not token.startswith((">", "&>")):
+            continue
+        before = found[at - 1] if at else ""
+        target = found[at + 1] if at + 1 < len(found) else ""
+        if token.startswith(">") and before.isdigit() and before != "1":
+            continue  # another descriptor: `2>/dev/null`, `2>&1`
+        if token == ">&" and (target.isdigit() or target == "-"):
+            continue  # a duplication: `>&2`
+        if written(target, values):
+            return True
+    if name in SEDS and (any("i" in f for f in flags) or any(
+            w.startswith("--in-place") for w in own)):
+        return True
+    if name == "perl" and perl_in_place(own):
+        return True
+    if name == "tee" and any(written(w, values) for w in own if not w.startswith("-")):
+        return True
+    if PYTHON.match(name) and WRITES.search(command):
+        return True
+    if name == "git":
+        rest = list(own)
+        while rest and rest[0].startswith("-"):
+            rest = rest[2 if rest[0] in ("-C", "-c") else 1:]
+        if rest[:1] == ["apply"] and not {"--check", "--stat", "--numstat"} & set(rest):
+            return True
+    if name == "patch" and "--dry-run" not in own:
+        return True
+    if name in ("mv", "cp"):
+        operands = [w for w in own if not w.startswith("-") and not operator(w)]
+        if "-t" in own and own.index("-t") + 1 < len(own):
+            target = own[own.index("-t") + 1]
+        else:
+            target = operands[-1] if len(operands) >= 2 else ""
+        if written(target, values):
+            return True
+    return False
 
 
 def bash_change(command):
     """True for a Bash command that changes a file (see `--after-green`)."""
-    for found in simple(command):
-        name = os.path.basename(found[0])
-        own = found[1:]
-        flags = [w[1:] for w in own if w.startswith("-") and not w.startswith("--")]
-        for at, token in enumerate(own):
-            if not operator(token) or not token.startswith((">", "&>")):
-                continue
-            before = own[at - 1] if at else ""
-            target = own[at + 1] if at + 1 < len(own) else ""
-            if token.startswith(">") and before.isdigit() and before != "1":
-                continue  # another descriptor: `2>/dev/null`, `2>&1`
-            if token == ">&" and (target.isdigit() or target == "-"):
-                continue  # a duplication: `>&2`
-            if written(target):
-                return True
-        if name in ("sed", "perl") and (any("i" in f for f in flags) or (
-                name == "sed" and any(w.startswith("--in-place") for w in own))):
-            return True
-        if name == "tee" and any(written(w) for w in own if not w.startswith("-")):
-            return True
-        if PYTHON.match(name) and WRITES.search(command):
-            return True
-        if name == "git":
-            rest = list(own)
-            while rest and rest[0].startswith("-"):
-                rest = rest[2 if rest[0] in ("-C", "-c") else 1:]
-            if rest[:1] == ["apply"] and not {"--check", "--stat", "--numstat"} & set(rest):
-                return True
-        if name == "patch" and "--dry-run" not in own:
-            return True
-        if name in ("mv", "cp"):
-            operands = [w for w in own if not w.startswith("-") and not operator(w)]
-            if "-t" in own and own.index("-t") + 1 < len(own):
-                target = own[own.index("-t") + 1]
-            else:
-                target = operands[-1] if len(operands) >= 2 else ""
-            if written(target):
-                return True
-    return False
+    return any(changed(run, values, command) for run, values in simple(command))
 
 
 def mapped(command):
@@ -855,6 +926,26 @@ def green(event, result):
     return bool(TESTS.search(command)) and not result["error"]
 
 
+def test_run(run):
+    """True for a simple command (`simple`'s) that runs a test: `TESTS` in its words before a
+    redirection, not one of the commands that change a file by their own words."""
+    words = next((run[:at] for at, w in enumerate(run) if operator(w)), run)
+    return os.path.basename(run[0]) not in SEDS + ("perl", "tee", "mv", "cp", "git", "patch") \
+        and bool(TESTS.search(" ".join(words)))
+
+
+def tested_after(command):
+    """True for a command that runs its test after its last change (`sed -i ... && pytest`;
+    not `pytest && sed -i ...`), as `green` finds a test in the simple commands after it. A
+    test run is no change here: its output written to a file, or the whole-text Python rule
+    (`python3 -m pytest` beside a Python edit)."""
+    found = simple(command)
+    at = max((at for at, (run, values) in enumerate(found) if changed(run, values, command)
+              and not test_run(run)), default=-1)
+    rest = " ; ".join(" ".join(run) for run, _ in found[at + 1:])
+    return bool(TESTS.search(rest) or LOGGED.search(rest))
+
+
 def changes(event):
     """True for a call that changes a file: an edit tool's, or a Bash change."""
     command = event["input"].get("command")
@@ -872,7 +963,8 @@ def after_green_line(agent, events):
                  default=None)
     found = None if edited is None else next(  # a Bash change can be its own green
         (at for at in range(edited, len(events)) if events[at]["kind"] == "call"
-         and green(events[at], results.get(events[at]["id"]))), None)
+         and green(events[at], results.get(events[at]["id"])) and (
+             at > edited or tested_after(events[at]["input"]["command"]))), None)
     if found is None:
         return " | ".join(["after green", tag(agent), "none"])
     later = events[found + 1:]
