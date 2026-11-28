@@ -17,7 +17,9 @@ Recognised at file and namespace level, kind-tagged (`query` prints the kind):
   definition's (a definition is never less qualified: a top-level `f` is not `a::f`; under
   `using namespace a;` an unqualified definition stays unpaired), the nearest scope first, then
   the same number of parameters (an overload with another count is not taken unless it is the
-  only candidate), then the same file;
+  only candidate), then the same file; a `friend` function defined in a class body (a hidden
+  friend, `friend bool operator==(...) {...}`) is a function of the enclosing namespace, not a
+  member, and pairs with a namespace-level declaration;
 - `class`, `struct`, `union`, `enum`, `enum class`, `namespace` (nested, and `namespace a::b`),
   `typedef` (also `typedef struct {...} Name;` and function pointer types), `using X = ...`;
 - `#define` macros, object-like and function-like (not include guards);
@@ -39,20 +41,27 @@ Recognised at file and namespace level, kind-tagged (`query` prints the kind):
   `<...>` arguments and parenthesised expressions joined by `&&` / `||`), `inline`, `static`,
   `constexpr`, `virtual`, `explicit`, `extern "C"`, `[[attributes]]`, `__declspec(...)`,
   `__attribute__((...))`, an upper-case macro before a keyword or type (`MYLIB_EXPORT
-  template <...> class X`, `class MYLIB_EXPORT X`, `MYLIB_PUBLIC(int) f()`), and an upper-case
-  macro call alone on its line or lines (`DISABLE_WARNINGS_PUSH_(...)`).
+  template <...> class X`, `class MYLIB_EXPORT X`, `MYLIB_PUBLIC(int) f()`), an upper-case
+  macro call alone on its line or lines (`DISABLE_WARNINGS_PUSH_(...)`), and an upper-case macro
+  call between the return type and the name (`static void PRINTF_FUNC(7, 8) log_msg(...)`: the
+  name is `log_msg`; not when what follows is `__declspec(...)`, `noexcept(...)` or another
+  upper-case macro, which are tail words).
 
 A brace block the patterns cannot classify is skipped on its own: the next declaration starts
 after it, so one miss does not hide the definitions that follow (only `= {...}` and `x{...}`
 initializers continue the declaration they belong to; an `=` inside parentheses or template
 arguments, such as a default argument, is not an initializer).
 
-Multi-line signatures are read up to 40 lines; a longer head is not classified. `#if 0` blocks
-are skipped. Other `#if`/`#ifdef` branches are all read; when that leaves the braces unbalanced
-(each branch opening its own `{`), only the first branch of each is read, unless that scan
-stops earlier than the first. A scan that stops (a `{` or `(` in a declaration never closed)
-reads nothing after that line: the page marks the file `(scan stopped at line N: a bracket never
-closes)` and `explore` adds `scan stopped at line N` to its approximate-range note.
+Multi-line signatures are read up to 40 lines; a longer head is not classified. A directive
+goes on while its lines end with `\`, also inside a comment (`/* a \` in a multi-line
+`#define`). `#if 0` blocks are skipped. Other `#if`/`#ifdef` branches are all read; when that
+leaves the braces unbalanced (each branch opening its own `{`), only the first branch of each
+is read, unless that scan stops earlier than the first. A scan that stops (a `{` or `(` in a
+declaration never closed) reads nothing after that line: the page marks the file `(scan stopped
+at line N: a bracket never closes)` and `explore` adds `scan stopped at line N` to its
+approximate-range note. When the name appears in such a file after the line where its scan
+stopped, `explore` (on its no-match line) and `calls` (a line of its own) say `scan stopped in
+<file> (line N), before a line naming it`.
 
 The map page lists namespace-level symbols per file (one per name, a definition before a
 declaration; macros, then namespaces last) and the Unreal members that Blueprints may use.
@@ -85,6 +94,16 @@ declaration; macros, then namespaces last) and the Unreal members that Blueprint
   `.vs/` in its folder and in every `.uplugin` folder are not scanned (the page counts them).
 - `.uasset` and `.umap` files are never read: Blueprint and level references to C++ are not
   seen, so a `UFUNCTION` or `UPROPERTY` with no text caller may still be used.
+- `Source/ThirdParty/` and other vendored folders are not scanned (next section): their
+  `Build.cs` modules drop off the Modules list, and includes into them count as not found.
+
+## Vendored folders
+
+Folders named exactly `third_party`, `thirdparty`, `ThirdParty`, `3rdparty`, `vendor` or
+`node_modules` (case as written: `THIRDPARTY` and `3rdParty` are read), at any depth, are not
+scanned in any language. The map page says so on one line, in the Unreal Engine section when
+there is one, else after the other sections: `Not scanned: vendored folders (<n> tracked files:
+<the outermost such folders, the first 10>)`. A repository without them gets no such line.
 
 ## Includes
 
@@ -124,22 +143,31 @@ importers (the count `imported by N` leaves them out). When several files match,
   where an out-of-class definition is). A name matching a class and its constructor shows the
   class; `X::X` names the constructor; destructors and operators are named as written
   (`~X`, `X::~X`, `operator==`, `X::operator bool`; spaces after `~` or `operator` are
-  dropped). `callers:` says they are not resolved and points to `calls`.
+  dropped, or kept as one before a word). `callers:` says they are not resolved and points to
+  `calls`; a suggested name with characters other than letters, digits, `_`, `.` and `:` is
+  quoted for the shell, and its grep matches fixed text (`run calls 'operator bool'`, `grep -n
+  -F -w '~X'`).
 - `calls` resolves nothing for C/C++. It prints the definitions, then every whole-word
   occurrence under `possible:`, kind-tagged by its text (`call`, `member call`, `qualified call`,
   `reference`, `macro`, `string`, `other definition`, `delegate binding (AddDynamic)`, `delegate
   binding by name (BindUFunction)`), and the `text:` line names why it is incomplete: overloads,
   templates, macros, virtual dispatch, function pointers and delegates; the count bound to a
   delegate or timer; a `UFUNCTION` may be called by reflection or from Blueprints; lines in `#if
-  0` blocks are not listed. Code outside the repository (the engine, other projects) is never
-  seen. Grep the rest. For a name defined only in C/C++, the `text:` line counts occurrences in
-  files neither Python nor C/C++ as `in other files`, and the `coverage:` line describes C/C++
-  (nothing resolved) instead of Python's static calls.
+  0` blocks are not listed; for an operator, a destructor or a constructor, that its implicit
+  calls (`a == b`, scope exit, `delete`, a declaration) are not seen, also on `possible: none
+  found (...)`. Occurrences that are not calls count as `named without a call at <k> places`.
+  Code outside the repository (the engine, other projects) is never seen. Grep the rest. For a
+  name defined only in C/C++, the `text:` line counts occurrences in files neither Python nor
+  C/C++ as `in other files`, and the `coverage:` line describes C/C++ (nothing resolved)
+  instead of Python's static calls.
 
 ## Known misses
 
-- Speed: C/C++ files are parsed on every action, about 6 to 8 MB of source a second; a
-  repository with 150 MB of C/C++ takes about 25 s per action, nothing is cached.
+- Speed: C/C++ files are parsed on every action, about 6 to 8 MB of source a second on one
+  core; a repository with 150 MB of C/C++ takes about 25 s per action, and every action rescans
+  (nothing is cached). The git pre-commit hook runs a full `build` on most commits that touch
+  source files, and the Claude Code commit check runs a full `check`: on a large repository,
+  time one `build` before offering the hook.
 - Macros are not expanded: a declaration produced by a macro (`DECLARE_CLASS(...)`, X-macros) is
   not seen, and a macro that opens or closes a brace unbalances the file (approximate ranges).
 - A function whose body never closes in the text keeps an unknown end; definitions after it, inside

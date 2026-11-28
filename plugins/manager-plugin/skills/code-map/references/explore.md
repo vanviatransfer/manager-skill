@@ -81,6 +81,8 @@ Then, once per name:
   <name>`;
 - other languages: `callers: not resolved for <language>; grep -n -w <name>`; a Python file that
   does not parse: `callers: not resolved in Python files not parsed; grep -n -w <name>`.
+- a suggested name holding characters other than letters, digits, `_`, `.` and `:` (C++
+  `operator bool`, `~X`) is quoted for the shell, and its grep is `grep -n -F -w '<name>'`.
 
 A range past the end of the file is never printed unsaid: its header adds `(past the end of the
 file: it has <n> lines)`.
@@ -104,7 +106,9 @@ parentheses after the name on that line, in this order: `<k> tracked source file
 only mapped symbols searched; grep -n -w <name>` (for the languages found by line pattern, whose
 map lists only some definitions, e.g. JavaScript and TypeScript exports); and `<k> files in
 languages without symbols: grep them` (tracked files of a language the map lists no symbols for,
-such as shell, SQL, Vue, Svelte, Dart, PowerShell, and `.pyi` stubs: never searched).
+such as shell, SQL, Vue, Svelte, Dart, PowerShell, and `.pyi` stubs: never searched); and `scan
+stopped in <files>, before a line naming it (...)` (C/C++ files whose scan stopped before a line
+holding the name; see `cpp.md`).
 
 ## Budget
 

@@ -50,7 +50,8 @@ Per name, in this order (`calls <name>` first):
   comments and Python files it couldn't parse included; the map's own pages left out), and how
   many of them are on lines printed above. It never says every occurrence or call is listed: a
   static scan can't know that. The reasons it knows of, in this order: `renamed: <names>`;
-  `passed or stored at <k> places, calls through them not followed` (the `reference` entries);
+  `passed or stored at <k> places, calls through them not followed` (the `reference` entries;
+  for a name defined only in C/C++, `named without a call at <k> places`);
   `<k> possible`; `called implicitly (operators, protocols, base classes, frameworks)` (for a
   dunder name; for any method, which a base class, a framework or a protocol such as `keys` for
   `dict(obj)` may call; for `test_*` and `pytest_*` names and anything defined in a

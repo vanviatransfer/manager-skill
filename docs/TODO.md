@@ -2212,14 +2212,55 @@ Why: item 41. The owner will use the map on Unreal Engine game projects and plai
   declarations); includes are resolved once per (folder, form, path) through a path-suffix
   index, the nearest root winning and equally near different files left unresolved; one
   blanking pass with a first-character check, no per-line `#if` recomputation, regex-driven
-  bracket scans. An open-source game engine (8,347 C/C++ files, 154 MB): about 25 s per action, was 2 to 2.5 min;
-  the synthetic 100-module Unreal project 3.4 s, was 73 s. Also: an `=` inside parentheses
-  (a default argument) no longer makes a block an initializer, C++20 `requires` clauses and
-  underscore-led tail macros (`__THROW`, `__wur`) are read, a chain of brace initializers is
-  linear, a definition inside a class body pairs only with its own class, `explore`/`calls`
-  take `~X`, `X::~X` and `operator==`, `calls` on a C/C++-only name uses C/C++ wording, and
-  `<Lib/x.h>` resolves from the repository root when `Lib/` is a top-level header folder.
+  bracket scans. An open-source game engine (8,347 C/C++ files, 154 MB): about 25 s per
+  action, was 2 to 2.5 min; the synthetic 100-module Unreal project 3.4 s, was 73 s. Also: an
+  `=` inside parentheses (a default argument) no longer makes a block an initializer, C++20
+  `requires` clauses and underscore-led tail macros (`__THROW`, `__wur`) are read, a chain of
+  brace initializers is linear, a definition inside a class body pairs only with its own class,
+  `explore`/`calls` take `~X`, `X::~X` and `operator==`, `calls` on a C/C++-only name uses
+  C/C++ wording, and `<Lib/x.h>` resolves from the repository root when `Lib/` is a top-level
+  header folder.
   No on-disk cache: repositories that size stay over 10 s per action (owner's decision).
+- **Review fix round 4.** Includes starting with `..`, and `changed` after a diff that deletes
+  files, no longer try every include root per include (files x modules): a `..` path is looked
+  up by its remaining path ending, then the roots that many folders below the match; deleted
+  paths get their own small path-ending index (not the tracked files plus the deleted ones).
+  A synthetic Unreal project of 200 modules and 12,200 files: `changed` after deleting a header
+  24.5 s -> 3.9 s, same output; 800 modules of `..` includes: 11.8 s -> 0.8 s; scale tests pin
+  both (fastest of 3 runs for every ratio). `thirdparty`, `ThirdParty` and `3rdparty` join
+  `third_party` as skipped folders (exact names, every language, also when walking a folder
+  without git). **Changed on purpose:** a repository with vendored folders gets a `Not scanned:
+  vendored folders (<n> tracked files: <folders>)` line on the map page (in the Unreal Engine
+  section when there is one); in an Unreal project, `ThirdParty` `Build.cs` modules then drop
+  off the Modules list and includes into them count as not found. Without such folders the
+  page is byte-identical. Also: hidden friends (`friend ... f(...) {...}` in a class) are
+  namespace functions paired with a namespace declaration; an upper-case macro call between
+  the return type and the name is not the name; a `\` ending a line inside a comment keeps a
+  `#define` going; `explore` and `calls` name a file whose scan stopped before a line naming
+  the target; `calls` on an operator, destructor or constructor says implicit calls are not
+  seen (also on `possible: none found`); suggested commands quote names with spaces, `~` or
+  brackets and grep them with `-F`; `named without a call` replaces `passed or stored` for
+  C/C++-only names. `references/cpp.md` adds a speed note: time one `build` before offering
+  the pre-commit hook on a large repository.
 - **Known misses.** Macros are not expanded (macro-made declarations, X-macros, a macro opening
   a brace); K&R C definitions; overloads and specialisations are separate entries; compiler
   include paths (CMake, `-I`) are not read; `Build.cs` conditions are not evaluated.
+
+### 46. Code map parse cache (deferred)
+
+Why: every action rescans every C/C++ file, about 6 to 8 MB of source a second on one core.
+
+- **Trigger.** The owner's real project `build` takes more than about 5 s, or the pre-commit
+  hook is used on a large C/C++ repository.
+- **Key.** sha1 of the decoded text plus a parser fingerprint (a hash of `codemap.py`'s bytes);
+  never git blob ids or mtimes.
+- **Contents.** Per file: the symbols before linking, includes, counts, `stopped` and `clean`.
+  `cpp_link` runs fresh on every run. Blanking stays lazy, done only for `calls` and `explore`.
+- **Storage.** Under `git rev-parse --git-common-dir`; nothing outside git (no cache without
+  it). JSON only, fail open (a bad or missing cache is a cold run), atomic replace; a Windows
+  `PermissionError` on replace is ignored.
+- **Tests.** A cold and a warm run give identical output.
+- **Rejected.** Multiprocessing; per-action prefilters (they trip on RPC `_Implementation`
+  linking, class detection and the near-match fallback).
+- **Measured.** In an open-source game engine, its vendored folder is 4,597 of 8,371 C/C++
+  files; with it skipped, `query` goes from 27.3 s to about 10 s.

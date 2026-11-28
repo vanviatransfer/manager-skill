@@ -79,9 +79,11 @@ IMPACT_NAMES = 10  # the files on one `impact` line
 CHARS_PER_TOKEN = 4  # `query --budget`: the token estimate
 
 SKIP_DIRS = {
-    "node_modules", "vendor", "third_party", "dist", ".venv", "venv", "__pycache__", ".git",
-    ".next", ".nuxt", "coverage",
+    "node_modules", "vendor", "third_party", "thirdparty", "ThirdParty", "3rdparty", "dist",
+    ".venv", "venv", "__pycache__", ".git", ".next", ".nuxt", "coverage",
 }
+# Folders of other projects' code kept in the repository: the map page counts what it skipped.
+VENDORED = {"node_modules", "vendor", "third_party", "thirdparty", "ThirdParty", "3rdparty"}
 SKIP_SUFFIXES = (".min.js", ".min.css", ".map", ".lock", ".snap")
 # Files that may hold secrets are never read.
 SENSITIVE = re.compile(r"(^|/)(\.env(\..*)?|\.envrc|id_(rsa|dsa|ecdsa|ed25519)(\.pub)?|\.netrc|"
@@ -190,6 +192,19 @@ def skipped(path, out_rel):
     if any(p in SKIP_DIRS for p in parts[:-1]):
         return True
     return path.endswith(SKIP_SUFFIXES)
+
+
+def vendored_info(tracked):
+    """(tracked files under a `VENDORED` folder, those folders: outermost, sorted)."""
+    folders, count = set(), 0
+    for path in tracked:
+        parts = path.split("/")[:-1]
+        for i, part in enumerate(parts):
+            if part in VENDORED:
+                folders.add("/".join(parts[:i + 1]))
+                count += 1
+                break
+    return count, sorted(folders)
 
 
 def read_text(root, path):
@@ -562,6 +577,10 @@ C_OPERATOR_WORD = re.compile(r"\boperator\b")
 C_WS = re.compile(r"\s+")
 C_ANGLE_INNER = re.compile(r"<[^<>]*>")
 C_PAREN_STOPS = re.compile(r"[<>(={};]")
+C_MACRO_NAME = re.compile(r"[A-Z_][A-Z0-9_]*$")
+C_NAME_PAREN = re.compile(r"\s*([A-Za-z_]\w*)\s*\(")
+C_TAIL_CALLS = {"__declspec", "__attribute__", "noexcept", "throw", "requires", "alignas",
+                "decltype", "__typeof__", "typeof"}
 C_SPLIT_STOPS = re.compile(r"[(<\[{)>\]},]")
 
 
@@ -637,6 +656,16 @@ def c_function(t, end_ch):
         open_ = c_first_paren(t)
         if open_ < 0:
             return None
+        while True:  # `void HB_PRINTF_FUNC(7, 8) name(...)`: a macro call before the name
+            q = C_NAME_BEFORE.search(t, 0, open_)
+            if not q or q.group(1) or not C_MACRO_NAME.match(q.group(2).strip()):
+                break
+            close = c_close(t, open_, "(", ")")
+            after = C_NAME_PAREN.match(t, close + 1) if close >= 0 else None
+            if not after or after.group(1) in C_TAIL_CALLS or C_MACRO_NAME.match(after.group(1)):
+                break  # `G(int a) __declspec(...)`, `F() DEPRECATED(...)`: the name came first
+            t = t[:q.start(2)] + " " * (close + 1 - q.start(2)) + t[close + 1:]
+            open_ = c_first_paren(t)
         t = c_unwrap_name(t, open_)
         open_ = c_first_paren(t)
         q = C_NAME_BEFORE.search(t, 0, open_)
@@ -753,7 +782,7 @@ class CppFile:
                 i += 1
                 continue
             j = i
-            while j < n - 1 and self.code[j].rstrip().endswith("\\"):
+            while j < n - 1 and self.lines[j].rstrip().endswith("\\"):  # also in a comment
                 j += 1
             for k in range(i, j + 1):
                 live_all[k] = live_first[k] = False
@@ -1001,11 +1030,17 @@ class CppFile:
                                     or name.lstrip("~") == class_name):
                 lead = len(t) - len(t.lstrip())
                 kind = "method" if in_class else "function"
+                scope_names, member = names, parent if in_class else None
+                if in_class and re.match(r"friend\b", stripped):  # a hidden friend: not a member
+                    kind, member, scope_names = "function", None, []
+                    for what, ns, _, _ in stack:
+                        if what == "class":
+                            break
+                        scope_names = scope_names + ns
                 sym = self.symbol(name, kind, line(base + lead + offset), start,
                                   line(end) if end >= 0 else None, line(at),
-                                  names + quals + [name], tag=tag, params=params,
-                                  parent=parent if in_class else None,
-                                  display="::".join(quals + [name]))
+                                  scope_names + quals + [name], tag=tag, params=params,
+                                  parent=member, display="::".join(quals + [name]))
                 sym["qualified"] = bool(quals)
                 self.add(sym, found)
             if end < 0:  # its body never closes: kept, its end left unknown
@@ -1170,6 +1205,44 @@ class CppIncludes:
                 self.ends.setdefault("/".join(parts[i:]), []).append(f)
         self.top = {f.split("/")[0] for f in files
                     if "/" in f and f.lower().endswith(C_HEADERS)}
+        self.up, self.gone, self.gends = {}, set(), {}
+
+    def deleted(self, paths):
+        """Paths a diff deleted, for `resolve(..., wide=True)`: their own path-ending index."""
+        self.gone = set(paths) - self.known
+        for f in self.gone:
+            parts = f.split("/")
+            for i in range(len(parts)):
+                self.gends.setdefault("/".join(parts[i:]), []).append(f)
+
+    def roots_under(self, k, p):
+        """The roots whose folder `k` levels up is `p`."""
+        if k not in self.up:
+            self.up[k] = {}
+            for b in self.pool:
+                parts = b.split("/") if b else []
+                if len(parts) >= k:
+                    self.up[k].setdefault("/".join(parts[:len(parts) - k]), []).append(b)
+        return self.up[k].get(p, ())
+
+    def candidates(self, ends, norm, pool):
+        """[(root, file)]: the files of `ends` that `norm` names from a root in `pool`."""
+        parts = norm.split("/")
+        k = 0
+        while k < len(parts) and parts[k] == "..":
+            k += 1
+        rest = "/".join(parts[k:])
+        if not rest:
+            return []
+        found = []
+        for f in ends.get(rest, ()):
+            p = f[:-len(rest) - 1] if f != rest else ""
+            if not k:
+                if p in pool:
+                    found.append((p, f))
+            else:
+                found += [(b, f) for b in self.roots_under(k, p)]
+        return found
 
     def own(self, here):
         if here not in self.owner:
@@ -1179,46 +1252,40 @@ class CppIncludes:
             self.owner[here] = d if d in self.modules else None
         return self.owner[here]
 
-    def resolve(self, path, kind, spec, known=None):
-        """The tracked file `#include <spec>` (`kind` "<") or `"spec"` names, or None; `known`:
-        another set of paths to look in (no cache, no case-insensitive pass)."""
+    def resolve(self, path, kind, spec, wide=False):
+        """The tracked file `#include <spec>` (`kind` "<") or `"spec"` names, or None; `wide`:
+        look among the `deleted` paths too (no cache, no case-insensitive pass)."""
         here = posixpath.dirname(path)
         key = (here, kind, spec)
-        if known is None and key in self.cache:
+        if not wide and key in self.cache:
             return self.cache[key]
-        found = self.lookup(here, kind == "<", spec, known)
-        if known is None:
+        found = self.lookup(here, kind == "<", spec, wide)
+        if not wide:
             self.cache[key] = found
         return found
 
-    def lookup(self, here, angle, spec, known):
+    def lookup(self, here, angle, spec, wide):
         spec = spec.replace("\\", "/").strip()
         if not spec or spec.startswith("/") or re.match(r"^[A-Za-z]:", spec):
             return None
-        among = self.known if known is None else known
         own = self.own(here)
         first = ([] if angle else [here]) + (self.modules[own] if own is not None else [])
         for b in first:
             if b or not angle:
                 c = posixpath.normpath(posixpath.join(b, spec) if b else spec)
-                if c in among:
+                if c in self.known or wide and c in self.gone:
                     return c
         norm = posixpath.normpath(spec)
         pool = self.pool if not angle or (norm.split("/")[0] in self.top and "/" in norm) \
             else self.angle_pool
-        if norm.split("/")[0] == ".." or known is not None:  # rare: try each root
-            cands = [(b, posixpath.normpath(posixpath.join(b, spec) if b else spec))
-                     for b in self.order if b in pool]
-            cands = [(b, c) for b, c in cands if c in among]
-        else:
-            cands = [(f[:-len(norm) - 1] if f != norm else "", f)
-                     for f in self.ends.get(norm, ())]
-            cands = [(b, f) for b, f in cands if b in pool]
+        cands = self.candidates(self.ends, norm, pool)
+        if wide:
+            cands += self.candidates(self.gends, norm, pool)
         if cands:
             near = min(tree_distance(here, b) for b, _ in cands)
             best = {f for b, f in cands if tree_distance(here, b) == near}
             return best.pop() if len(best) == 1 else None
-        if angle or known is not None:
+        if angle or wide:
             return None
         if not self.lends:
             for f in self.files:
@@ -1388,8 +1455,9 @@ def unreal_info(root, files, excluded):
             "excluded": excluded}
 
 
-def cpp_sections(info, unreal):
-    """The map page's C/C++ include counts and Unreal Engine section ([] without either)."""
+def cpp_sections(info, unreal, vendored=(0, [])):
+    """The map page's C/C++ include counts and Unreal Engine section, and the vendored folders
+    not scanned (`vendored_info`; [] without any)."""
     lines = []
     cfiles = [p for p in sorted(info) if info[p]["lang"] in C_LANGS]
     if cfiles:
@@ -1440,9 +1508,18 @@ def cpp_sections(info, unreal):
         if unreal["projects"]:
             lines.append("Not scanned: `%s` of the project and its plugins (%d tracked files)."
                          % ("/`, `".join(UE_GENERATED) + "/", unreal["excluded"]))
+        if vendored[0]:
+            lines.append(vendored_line(vendored))
         lines.append("Binary assets (`.uasset`, `.umap`: %d tracked files) are never read: "
                      "Blueprint and level references to C++ are not seen." % unreal["assets"])
+    elif vendored[0]:
+        lines += ["", vendored_line(vendored)]
     return lines
+
+
+def vendored_line(vendored):
+    return "Not scanned: vendored folders (%d tracked files: %s)." % (
+        vendored[0], short_list(["`%s/`" % f.replace("`", "'") for f in vendored[1]]))
 
 
 def scan(root, out_rel, tracked, gone=()):
@@ -1454,13 +1531,14 @@ def scan(root, out_rel, tracked, gone=()):
     wider, lost = known | set(gone), {}
 
     incs = CppIncludes(files, root) if any(f.lower().endswith(C_EXT) for f in files) else None
+    if incs is not None:
+        incs.deleted(gone)
 
     def targets(path, ext, raw, among):
         if ext == ".py":
             return {resolve_python(path, lvl, mod, among) for lvl, mod in raw}
         if ext in C_EXT:
-            return {incs.resolve(path, kind, spec, None if among is known else among)
-                    for kind, spec in raw}
+            return {incs.resolve(path, kind, spec, among is not known) for kind, spec in raw}
         return {resolve_js(path, spec, among) for _, spec in raw} if ext in JS_EXT else set()
 
     info, cfiles = {}, {}
@@ -1601,7 +1679,7 @@ def header(title, cmd):
     ]
 
 
-def render(info, importers, entries, cmd, out_rel, vault=None, unreal=None):
+def render(info, importers, entries, cmd, out_rel, vault=None, unreal=None, vendored=(0, [])):
     """Return {relative path: text}: the map page, plus group pages if the repo is large."""
     by_dir = {}
     for path in info:
@@ -1632,7 +1710,7 @@ def render(info, importers, entries, cmd, out_rel, vault=None, unreal=None):
         lines += ["", "## Most imported (%s)" % langs, ""]
         lines += ["- `%s` — imported by %d files" % (p, len(importers[p]))
                   for p in ranked[:TOP_IMPORTED]]
-    lines += cpp_sections(info, unreal)
+    lines += cpp_sections(info, unreal, vendored)
     if vault is not None:
         lines += ["", "## Vault", "",
                   "%d pages; %d broken links; %d orphan pages (no page links to them)."
@@ -3024,7 +3102,10 @@ def text_line(found, total, shown, unparsed, capped, unread, other=0, extra=(), 
         line += "; renamed: %s" % ", ".join(sorted(found.renamed))
     stored = sum(1 for _, _, kind in found.possible
                  if kind.split(" (")[0] in ("reference", "attribute reference"))
-    if stored:
+    if stored and cpp:  # C/C++: a type, a qualifier, a pointer or a value taken
+        line += "; named without a call at %d place%s, calls through %s not followed" % (
+            stored, "" if stored == 1 else "s", "it" if stored == 1 else "them")
+    elif stored:
         line += "; passed or stored at %d place%s, calls through %s not followed" % (
             stored, "" if stored == 1 else "s", "it" if stored == 1 else "them")
     if found.possible:
@@ -3058,6 +3139,17 @@ TYPED = {}  # `calls` / `explore` names typed with `::`: {as matched (`A.b`): as
 
 def typed(target):
     return TYPED.get(target, target)
+
+
+def shell_word(name):
+    """A name as a shell word: quoted when it holds more than letters, digits, `_`, `.`, `:`
+    (`'operator bool'`, `'~Widget'`, `'operator[]'`); names never hold a quote."""
+    return "'%s'" % name if re.search(r"[^\w.:]", name) else name
+
+
+def grep_hint(name):
+    """`grep -n -w name`; a name with other characters is matched as fixed text (`-F`)."""
+    return ("grep -n -F -w %s" if re.search(r"\W", name) else "grep -n -w %s") % shell_word(name)
 
 
 def cpp_matches(target, cfiles):
@@ -3095,6 +3187,22 @@ def cpp_note(s):
     elif s["decl"] and s["kind"] != "log category":
         note += " (no definition in the files read)"
     return note
+
+
+def cpp_implicit(target, matches=()):
+    """Why calls to a C++ operator, destructor or constructor go unseen, or "" for other names.
+    """
+    name = re.split(r"\.|::", target)[-1]
+    if re.match(r"operator(?=\W)", name):
+        return ("operators are mostly called implicitly, as in `a == b`, `a[i]` or a "
+                "conversion: those calls are not seen")
+    if name.startswith("~"):
+        return ("destructors run implicitly, at scope exit or on `delete`: those calls are not "
+                "seen")
+    if any(s["qual"][-2:-1] == [s["name"]] for s in matches):
+        return ("constructors run implicitly, on a declaration, `new`, a copy or a "
+                "conversion: those calls are not seen")
+    return ""
 
 
 def cpp_calls(found, target, cfiles):
@@ -3148,10 +3256,11 @@ def cpp_calls(found, target, cfiles):
                         found.possible.add((path, n, kind))
                         bound += bool(binding)
                         break
+    found.cpp_implicit = cpp_implicit(target, matches)
     if not matches and not any(p in cfiles for p, _, _ in found.possible):
         return (), []
     reasons = ["C/C++ not resolved: overloads, templates, macros, virtual dispatch, function "
-               "pointers and delegates"]
+               "pointers and delegates"] + ([found.cpp_implicit] if found.cpp_implicit else [])
     if dead:
         reasons.append("%d line%s in `#if 0` blocks, not listed" % (dead, "" if dead == 1 else "s"))
     if bound:
@@ -3185,6 +3294,7 @@ def calls_lines(root, targets, tracked, out_rel, everything=False, links=0):
         deep |= found.failed
         python_defs = len(found.definitions)
         named, extra = cpp_calls(found, target, cfiles) if cfiles else ((), [])
+        implicit = getattr(found, "cpp_implicit", "")
         cpp_only = bool(extra) and not python_defs  # its definitions are C/C++ ones only
         all_cpp = cpp_only if target == targets[0] else all_cpp and cpp_only
         listed, capped = set(named), False
@@ -3199,7 +3309,8 @@ def calls_lines(root, targets, tracked, out_rel, everything=False, links=0):
                            "occurrences)")
                 continue
             if not items:
-                out.append("%s: none found" % head)
+                out.append("%s: none found%s" % (head, " (%s)" % implicit
+                                                 if implicit and head == "possible" else ""))
                 continue
             out.append("%s:" % head)
             keep = items if everything or len(items) <= CALLS_LIMIT else items[:CALLS_LIMIT]
@@ -3220,7 +3331,12 @@ def calls_lines(root, targets, tracked, out_rel, everything=False, links=0):
                 if not python and not (cpp_only and path in cfiles):
                     other += hits
         out.append(text_line(found, total, shown, len(failed) + len(found.failed), capped,
-                             unread, other, extra, cpp_only))
+                             unread, other, list(extra) + (
+                                 [implicit] if implicit and implicit not in extra else []),
+                             cpp_only))
+        stopped = cpp_stopped_note(cfiles, found.word)
+        if stopped:
+            out.append(stopped)
     failed = failed + [(path, "nested too deeply") for path in sorted(deep)]
     if failed:
         out.append("not parsed: " + ", ".join("%s (%s)" % item for item in sorted(failed)))
@@ -3485,22 +3601,23 @@ def explore_lines(root, targets, tracked, out_rel, budget=EXPLORE_BUDGET):
         if any(e["lang"] == "Python" and not e["note"] for e in entries):
             callers = sorted(found.callers)
             after.append("callers:" if callers else
-                         "callers: none resolved (not proof of none; run calls %s)" % target)
+                         "callers: none resolved (not proof of none; run calls %s)"
+                         % shell_word(target))
             after += [CONTROL.sub("?", "  %s:%d in %s" % c) for c in callers[:EXPLORE_CALLERS]]
             if len(callers) > EXPLORE_CALLERS:
                 after.append("  more: %d; run calls %s" % (len(callers) - EXPLORE_CALLERS,
-                                                          target))
+                                                          shell_word(target)))
             after.append("possible: %d (calls %s lists them)" % (len(found.possible), target))
         for lang in sorted({e["lang"] for e in entries if e["lang"] != "Python"
                             and e["lang"] not in C_LANGS}):
-            after.append("callers: not resolved for %s; grep -n -w %s" % (lang, target.split(
-                ".")[-1]))
+            after.append("callers: not resolved for %s; %s" % (lang, grep_hint(target.split(
+                ".")[-1])))
         if any(e["lang"] in C_LANGS for e in entries):
             after.append("callers: not resolved for C/C++; run calls %s (text occurrences) or "
-                         "grep -n -w %s" % (typed(target), target.split(".")[-1]))
+                         "%s" % (shell_word(typed(target)), grep_hint(target.split(".")[-1])))
         if any(e["note"] and e["lang"] == "Python" for e in entries):
-            after.append("callers: not resolved in Python files not parsed; grep -n -w %s"
-                         % target.split(".")[-1])
+            after.append("callers: not resolved in Python files not parsed; %s"
+                         % grep_hint(target.split(".")[-1]))
         blocks.append((head, entries, many, after))
     left = budget - sum(chars(head) + chars(after) for head, _, _, after in blocks)
     out, cut, shown, inexact = [], [], False, False
@@ -3525,9 +3642,9 @@ def explore_lines(root, targets, tracked, out_rel, budget=EXPLORE_BUDGET):
         rest = cut[EXPLORE_CUTS:]
         if rest and len({(e["path"], e["name"]) for e in rest}) == 1:
             out.append("cut: %d more definitions of %s in %s not listed; read %s, raise "
-                       "--budget or grep -n -w %s" % (
+                       "--budget or %s" % (
                            len(rest), rest[0]["name"], rest[0]["path"], rest[0]["path"],
-                           rest[0]["name"].split(".")[-1]))
+                           grep_hint(re.split(r"\.|::", rest[0]["name"])[-1])))
         elif rest:
             out.append("cut: %d more definitions not listed; qualify the name or raise "
                        "--budget" % len(rest))
@@ -3546,6 +3663,14 @@ def explore_unparsed(unparsed):
 def explore_unread(unread):
     return ("not read: %d tracked source file%s (secrets, vendored or skipped folders, too "
             "large or not text); grep them" % (unread, "" if unread == 1 else "s"))
+
+
+def cpp_stopped_note(cfiles, word):
+    """The C/C++ files whose scan stopped before a line `word` matches, as a note, or ""."""
+    stopped = ["%s (line %d)" % (p, cf.stopped) for p, cf in sorted(cfiles.items())
+               if cf.stopped and any(word.search(x) for x in cf.lines[cf.stopped:])]
+    return ("scan stopped in %s, before a line naming it (a bracket never closes; definitions "
+            "after that line are not read)" % short_list(stopped)) if stopped else ""
 
 
 def explore_near(target, parsed, others, unread=0, bare=0, unparsed=0, mapped=(), cfiles=None):
@@ -3567,11 +3692,15 @@ def explore_near(target, parsed, others, unread=0, bare=0, unparsed=0, mapped=()
     if unparsed:
         notes.append(explore_unparsed(unparsed))
     if mapped:  # e.g. JavaScript: only exported or top-level symbols are mapped
-        notes.append("%s: only mapped symbols searched; grep -n -w %s" % (
-            ", ".join(mapped), target.split(".")[-1]))
+        notes.append("%s: only mapped symbols searched; %s" % (
+            ", ".join(mapped), grep_hint(target.split(".")[-1])))
     if bare:  # C, C++, shell, Vue, stubs...: the map lists no symbols for them
         notes.append("%d file%s in languages without symbols: grep them" % (
             bare, "" if bare == 1 else "s"))
+    stopped = cpp_stopped_note(cfiles or {}, re.compile(r"(?<!\w)%s(?!\w)" % re.escape(
+        re.split(r"\.|::", target)[-1])))
+    if stopped:
+        notes.append(stopped)
     lines = ["explore %s: no definition named %s%s; near matches:%s" % (
         typed(target), typed(target), " (%s)" % "; ".join(notes) if notes else "",
         "" if near else " none found")]
@@ -4243,8 +4372,9 @@ def run_action(argv=None):
     if args.all and args.action != "calls":
         ap.error("--all goes with calls only")
     if args.action in ("calls", "explore"):  # `~ X`, `operator ==`: as the map stores them
-        args.terms = [re.sub(r"\boperator\s+(?=[^\w\s])", "operator", re.sub(r"~\s+", "~", t))
-                      for t in args.terms]
+        args.terms = [re.sub(r"\boperator\s+(?=\w)", "operator ", re.sub(
+            r"\boperator\s+(?=[^\w\s])", "operator", re.sub(r"~\s+", "~", t)))
+            for t in args.terms]
     if args.action == "explore" and (not args.terms or not all(CALLS_NAME.match(t)
                                                                for t in args.terms)):
         ap.error("explore needs NAME... (a function or class, `module.name` or `Class.method`)")
@@ -4458,7 +4588,7 @@ def run_action(argv=None):
         return 0
 
     pages = render(info, importers, entries, cmd, out_rel, vault,
-                   unreal_info(root, files, excluded))
+                   unreal_info(root, files, excluded), vendored_info(tracked))
     stale_extra = sorted(existing - set(pages))
     if args.action == "check":
         bad = []

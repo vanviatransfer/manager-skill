@@ -489,6 +489,66 @@ class CppTest(unittest.TestCase):
         self.assertIn("MyNet.h:11-12 method declaration UMyNet::ServerFire [UFUNCTION Server] "
                       "(bodies: ServerFire_Implementation, ServerFire_Validate)\n", out)
 
+    def test_hidden_friend_is_a_namespace_function(self):
+        h = codemap.CppFile("k.h", "namespace n {\nstruct FKey {\n  int A;\n"
+                                   "  friend unsigned GetTypeHash(const FKey& K) { return K.A; }\n"
+                                   "  bool Same(const FKey& K) const { return true; }\n};\n"
+                                   "unsigned GetTypeHash(const FKey& K);\n}\n")
+        codemap.cpp_link({"k.h": h})
+        got = {("::".join(s["qual"]), s["kind"], s["parent"] is None): len(s.get("declared", ()))
+               for s in h.symbols if s["name"] in ("GetTypeHash", "Same")}
+        self.assertEqual(got, {("n::GetTypeHash", "function", True): 1,
+                               ("n::GetTypeHash", "function declaration", True): 0,
+                               ("n::FKey::Same", "method", False): 0})
+
+    def test_macro_call_before_the_name(self):
+        cf = codemap.CppFile("hb.c", "static inline void HB_PRINTF_FUNC(7, 8)\n"
+                                     "_hb_debug_msg(const char *what, int level)\n{\n}\n"
+                                     "void UE_DEPRECATED(5.1, \"x\") Old(int a);\n")
+        self.assertEqual([(s["name"], s["kind"]) for s in cf.symbols],
+                         [("_hb_debug_msg", "function"), ("Old", "function declaration")])
+
+    def test_comment_inside_a_define_keeps_it_going(self):
+        cf = codemap.CppFile("m.c", "#define BEGIN(x) \\\n  do { /* open a \\\n"
+                                    "  scope */ \\\n    x; \\\n  } while (0)\n"
+                                    "int after_macro(void) { return 1; }\n")
+        self.assertEqual([(s["name"], s["kind"]) for s in cf.symbols],
+                         [("BEGIN", "macro"), ("after_macro", "function")])
+        self.assertTrue(cf.clean)
+
+    def test_stopped_scan_named_by_explore_and_calls(self):
+        write(self.root, "modern/stop.c", "int good(void) { return 1; }\nint broken(void) {\n"
+                                          "  if (x) {\n  return 0;\n}\n"
+                                          "int lost(void) { return good(); }\n")
+        subprocess.run(["git", "-C", self.root, "add", "-A"], check=True)
+        note = ("scan stopped in modern/stop.c (line 2), before a line naming it (a bracket "
+                "never closes; definitions after that line are not read)")
+        self.assertIn("; %s); near matches:" % note, self.run_ok("explore", "lost"))
+        self.assertIn("\n%s\n" % note, self.run_ok("calls", "lost"))
+        self.assertNotIn("scan stopped", self.run_ok("calls", "clib_open"))
+
+    def test_implicit_calls_and_shell_safe_hints(self):
+        write(self.root, "modern/ops.hpp", "struct V {\n  V();\n  ~V();\n"
+                                           "  explicit operator bool() const;\n};\n")
+        write(self.root, "modern/ops.cpp", "#include \"ops.hpp\"\nV::V() {}\nV::~V() {}\n"
+                                           "V::operator bool() const { return true; }\n")
+        subprocess.run(["git", "-C", self.root, "add", "-A"], check=True)
+        for name, why in (("~V", "destructors run implicitly"),
+                          ("operator  bool", "operators are mostly called implicitly"),
+                          ("V::V", "constructors run implicitly")):
+            out = self.run_ok("calls", name)
+            self.assertIn("; %s" % why, out.split("\ntext: ")[1].split("\n")[0])
+            if "\npossible: none found" in out:
+                self.assertIn("\npossible: none found (%s" % why, out)
+        out = self.run_ok("explore", "operator  bool")
+        self.assertIn("modern/ops.cpp:4-4 method V::operator bool", out)
+        self.assertIn("run calls 'operator bool' (text occurrences) or grep -n -F -w "
+                      "'operator bool'\n", out)
+        self.assertIn("run calls '~V' (text occurrences) or grep -n -F -w '~V'\n",
+                      self.run_ok("explore", "~V"))
+        self.assertIn("; named without a call at ", self.run_ok("calls", "V::V"))
+        self.assertNotIn("passed or stored", self.run_ok("calls", "V::V"))
+
     def test_includes_counted_and_resolved(self):
         page = self.page()
         self.assertIn("9 `#include` lines resolved to tracked files (`\"...\"`, and `<...>` under "
@@ -859,6 +919,53 @@ class ResolveTest(unittest.TestCase):
         self.assertIsNone(incs.resolve("Samples/demo.cpp", "<", "Core.h"))
 
 
+class VendoredTest(unittest.TestCase):
+    """Vendored folders (`third_party`, `ThirdParty`, ...) are not scanned; the map page says
+    how many tracked files that leaves out, and where."""
+
+    def build(self, files):
+        tmp = portability.temp_dir()
+        self.addCleanup(tmp.cleanup)
+        for rel, data in files:
+            write(tmp.name, rel, data)
+        subprocess.run(["git", "init", "-q", tmp.name], check=True)
+        subprocess.run(["git", "-C", tmp.name, "add", "-A"], check=True)
+        code, out = run("build", "--root", tmp.name)
+        self.assertEqual(code, 0, out)
+        with open(os.path.join(tmp.name, "docs", "code-map.md"), encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_exact_names_only(self):
+        for path in ("thirdparty/a.c", "src/ThirdParty/a.h", "3rdparty/x/a.c",
+                     "third_party/a.c"):
+            self.assertTrue(codemap.skipped(path, "docs/code-map.md"), path)
+        for path in ("THIRDPARTY/a.c", "Third_Party/a.c", "thirdparty.c", "src/3rdParty/a.c"):
+            self.assertFalse(codemap.skipped(path, "docs/code-map.md"), path)
+
+    def test_unreal_page_line(self):
+        page = self.build((
+            ("Game.uproject", "{}\n"),
+            ("Source/Game/Game.Build.cs", "public class Game : ModuleRules {}\n"),
+            ("Source/Game/Game.cpp", '#include "zlib.h"\nint Run() { return 0; }\n'),
+            ("Source/ThirdParty/zlib/zlib.Build.cs", "public class zlib : ModuleRules {}\n"),
+            ("Source/ThirdParty/zlib/include/zlib.h", "int inflate();\n"),
+            ("thirdparty/a/x.c", "int x;\n"), ("3rdparty/y.c", "int y;\n"),
+            ("lib/vendor/z.c", "int z;\n")))
+        self.assertIn("(0 tracked files).\nNot scanned: vendored folders (5 tracked files: "
+                      "`3rdparty/`, `Source/ThirdParty/`, `lib/vendor/`, `thirdparty/`).\n"
+                      "Binary assets", page)
+        self.assertNotIn("`zlib`", page)  # its module is not listed
+        self.assertIn("1 `\"...\"` includes not found among the tracked files", page)
+
+    def test_other_repo_page_line(self):
+        page = self.build((("app/main.py", "import os\n"),
+                           ("vendor/lib/x.py", "def x():\n    pass\n")))
+        self.assertIn("- `app/main.py`\n\nNot scanned: vendored folders (1 tracked files: "
+                      "`vendor/`).\n\n## `app`", page)
+        page = self.build((("app/main.py", "import os\n"),))
+        self.assertNotIn("vendored", page)
+
+
 class ScaleTest(unittest.TestCase):
     """Linking declarations and definitions and resolving includes stay about linear."""
 
@@ -897,15 +1004,47 @@ class ScaleTest(unittest.TestCase):
         self.assertEqual([d["path"] for d in fire["declared"]], ["Source/M0/Public/A0.h"])
         return elapsed
 
-    def test_classes_scale_linearly(self):
-        small, large = self.timed(250, 10), self.timed(1000, 10)
+    def ratio(self, run, small, large):
+        """The fastest of three runs of `run(*small)` and of `run(*large)`, compared."""
+        small, large = (min(run(*args) for _ in range(3)) for args in (small, large))
         self.assertLess(large, 30.0)
         self.assertLess(large / max(small, 1e-3), 4 * 3, (small, large))
 
+    def test_classes_scale_linearly(self):
+        self.ratio(self.timed, (250, 10), (1000, 10))
+
     def test_many_modules_include_heavy(self):
-        small, large = self.timed(300, 30), self.timed(1200, 120)
-        self.assertLess(large, 30.0)
-        self.assertLess(large / max(small, 1e-3), 4 * 3, (small, large))
+        self.ratio(self.timed, (300, 30), (1200, 120))
+
+    def relative(self, modules, wide):
+        """`"../Public/Base.h"` from every module, and (`wide`) one deleted header asked for
+        from every file, as `changed` does after a diff that deletes it."""
+        files = []
+        for m in range(modules):
+            b = "Source/M%d" % m
+            files += [b + "/M%d.Build.cs" % m, b + "/Public/Base%d.h" % m]
+            files += ["%s/Private/Sub/A%d_%d.cpp" % (b, m, j) for j in range(10)]
+        t = time.perf_counter()
+        incs = codemap.CppIncludes(sorted(files))
+        if wide:
+            incs.deleted(["Source/M0/Public/Gone.h"])
+        hits = 0
+        for f in files:
+            if f.endswith(".cpp"):
+                m = int(f.split("/")[1][1:])
+                spec = "../Public/Base%d.h" % ((m + 1) % modules)
+                hits += incs.resolve(f, '"', spec) is not None
+                if wide:
+                    hits += incs.resolve(f, '"', "Gone.h", True) == "Source/M0/Public/Gone.h"
+        elapsed = time.perf_counter() - t
+        self.assertEqual(hits, 10 * modules * (2 if wide else 1))
+        return elapsed
+
+    def test_parent_relative_includes_many_modules(self):
+        self.ratio(self.relative, (100, False), (400, False))
+
+    def test_deleted_header_many_modules(self):
+        self.ratio(self.relative, (100, True), (400, True))
 
 
 class UnchangedTest(unittest.TestCase):

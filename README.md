@@ -55,6 +55,10 @@ A Claude Code plugin with six skills:
     to read. Live, writes nothing; the implementer brief points to it.
   - **C, C++ and Unreal Engine.** Line-pattern symbols with `UCLASS`/`UFUNCTION` tags, resolved
     `#include "..."`s, `.Build.cs` module dependencies; `calls` lists text occurrences only.
+    Vendored folders (`third_party`, `thirdparty`, `ThirdParty`, `3rdparty`, `vendor`,
+    `node_modules`) are not scanned in any language, and the map page now says so on a `Not
+    scanned: vendored folders (...)` line with the count of tracked files left out (only in a
+    repository that has such folders).
   - **Rules block.** Sessions don't use the map unless told, so the setup PR adds a short marked
     block to `AGENTS.md` and `CLAUDE.md` (`codemap.py rules-hint`; created if missing; when
     `CLAUDE.md` imports `@AGENTS.md`, only a marker line there). It tells every session to read the
