@@ -49,6 +49,9 @@ A Claude Code plugin with six skills:
     parsed as Python, files not parsed or not read), and always a
     coverage line naming what it cannot see. It parses with `ast` on each run and writes
     nothing. It never claims a complete list: the count line always ends "grep the rest".
+  - **`explore <name>`.** A definition's line-numbered source (exact `ast` range for Python,
+    marked approximate for other languages) and its callers, within a character budget; what is
+    cut is listed with ranges to read. Live, writes nothing; the implementer brief points to it.
   - **Rules block.** Sessions don't use the map unless told, so the setup PR adds a short marked
     block to `AGENTS.md` and `CLAUDE.md` (`codemap.py rules-hint`; created if missing; when
     `CLAUDE.md` imports `@AGENTS.md`, only a marker line there). It tells every session to read the
