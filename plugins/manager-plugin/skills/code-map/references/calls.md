@@ -13,8 +13,9 @@ enclosing functions).
 It is live: every run reads the working tree's files (the files the map scans, with the same
 exclusions: untracked, skipped folders, files that may hold secrets, which are never read),
 parses the Python files (`.py`, `.pyw`, and files with no extension whose first line is a
-`python` shebang) with the standard library `ast` of the Python running it, and writes nothing.
-No page, index or `.codemap.json` changes.
+`python` shebang) with the standard library `ast` of the Python running it (a UTF-8 byte order
+mark at the start of a file is stripped first), and writes nothing. No page, index or
+`.codemap.json` changes.
 
 Per name, in this order (`calls <name>` first):
 - `definitions:` each `path:line qualified.name` that matches.
@@ -49,7 +50,8 @@ Per name, in this order (`calls <name>` first):
   comments and Python files it couldn't parse included; the map's own pages left out), and how
   many of them are on lines printed above. It never says every occurrence or call is listed: a
   static scan can't know that. The reasons it knows of, in this order: `renamed: <names>`;
-  `passed or stored at <k> places, calls through them not followed` (the `reference` entries);
+  `passed or stored at <k> places, calls through them not followed` (the `reference` entries;
+  for a name defined only in C/C++, `named without a call at <k> places`);
   `<k> possible`; `called implicitly (operators, protocols, base classes, frameworks)` (for a
   dunder name; for any method, which a base class, a framework or a protocol such as `keys` for
   `dict(obj)` may call; for `test_*` and `pytest_*` names and anything defined in a
@@ -81,6 +83,21 @@ function's signature or behaviour, also grep for the name and those. An empty se
 `none found`. It never says a function has no callers: an empty `callers:` means none was
 resolved, not that none exists.
 
+**C and C++** (`cpp.md`). Nothing is resolved. `definitions:` adds each matching C or C++
+definition, `path:line Class::name (C++ method) [UFUNCTION BlueprintCallable] (declared
+<path>:<line>)` (a declaration with no definition in the files read says so); `callers:` (when no
+Python caller is found) is `not resolved for C/C++ (possible: lists its text occurrences)`;
+`possible:` lists each whole-word occurrence in C and C++ code outside comments and `#if 0` blocks,
+kind-tagged by its text: `call`, `member call` (after `.` or `->`), `qualified call` (after `::`),
+`reference`, `macro` (a preprocessor line), `string`, `other definition`, `delegate binding
+(<macro>)` on a line binding a delegate or timer (`AddDynamic`, `BindUObject`, `SetTimer`, ...) and
+`delegate binding by name (BindUFunction)` for the name in a string there. The `text:` line adds,
+after `decorated`: `C/C++ not resolved: overloads, templates, macros, virtual dispatch, function
+pointers and delegates`; how many lines in `#if 0` blocks were not listed; `bound to a delegate or
+timer at <k> places (called through it)`; and, for a `UFUNCTION`, `may be called by reflection or
+from Blueprints (assets are not read)`. Engine code and other projects outside the repository are
+never seen; the `coverage:` line is unchanged.
+
 **Cap.** Each section of a name shows at most 40 lines, then `… <k> more (rerun with --all)`.
 The `text:`, `not parsed:` and `coverage:` lines are never cut. `--budget` is `query` only.
 
@@ -98,4 +115,5 @@ The `text:`, `not parsed:` and `coverage:` lines are never cut. `--budget` is `q
 - a module is found by the map's import rules (the same as for importers) only; `sys.path`
   changes and installed packages are not followed.
 
-Output is sorted by path, then line, so the same tree gives the same answer.
+Output is sorted by path, then line, so the same tree gives the same answer. Output into a pipe
+that closes early (`calls x | head`) ends quietly with exit 0, as for every action.

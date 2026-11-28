@@ -15,9 +15,10 @@ targeted `grep` instead of exploring. It contains:
 - files come from `git ls-files` (outside a git repository, from the folder tree; symlinks and
   tracked third-party or output folders such as `node_modules`, `vendor`, `third_party`, `dist`,
   `coverage` and `.venv` are skipped);
-- symbols are top-level definitions from line patterns, the same on every Python version
-  (approximate); none are listed for tests;
-- imports are local and parsed only for Python, JavaScript and TypeScript;
+- symbols are top-level definitions from line patterns (approximate, the same on every Python
+  version); none for tests;
+- imports are local, parsed for Python, JavaScript, TypeScript and C/C++ (C, C++ or Unreal:
+  read `references/cpp.md` first);
 - files must be tracked: if `git ls-files` fails in a repository (e.g. Windows "dubious
   ownership"), it stops with an error instead of guessing;
 - files that may hold secrets (`.env`, keys, `secrets` or `credentials` paths) are never read;
@@ -34,8 +35,7 @@ goes, or a `build` refused over the layout: read `references/layout.md` first.
 ## Command
 
 Resolve once per session:
-- **Script:** `${CLAUDE_SKILL_DIR}/scripts/codemap.py`. Quote it; it may contain spaces on
-  Windows.
+- **Script:** `${CLAUDE_SKILL_DIR}/scripts/codemap.py`. Quote it: it may contain spaces.
 - **Python:** the first of `python3`, `python` and `py -3` whose `--version` exits 0 and prints
   `Python 3.8` or later. On Windows, `python3` may be a store stub that fails this check.
 
@@ -47,13 +47,12 @@ No Python → read `references/python-install.md` first (the install offer).
 - `<cmd> build`: writes the map. Above 150 source files it adds one page per directory group,
   splitting directories with more than 150 files by subdirectory (files directly in one folder stay
   together; a page lists at most 800 files, then points to `query`), and above 150 vault pages a
-  separate vault-pages page. It deletes its earlier pages that are now gone. It touches no
-  other file except `.codemap.json` on the first run, and it
-  refuses (exit 2, nothing written) to overwrite a file it didn't write, including a hand-written
-  page in the map's page folder.
+  separate vault-pages page. It deletes its own pages that are now gone. It touches no
+  other file except `.codemap.json` on the first run, and it refuses (exit 2, nothing written)
+  to overwrite a file it didn't write, including a hand-written page in the map's page folder.
 - `<cmd> check`: exit 0 if the map matches the repository, 1 if it is stale, 2 if the layout is
   invalid (e.g. a hand-written file in the map's page folder) or git fails. It writes
-  nothing, so it is safe on a shared checkout. It also prints broken vault links as warnings.
+  nothing, so it is safe on a shared checkout. It also warns of broken vault links.
   `check --quiet`: the same full check and exit codes, one short line or nothing.
 - `<cmd> query <term>`: definitions whose names contain the term (`file:line`), matching paths,
   the files that import them, the vault pages that mention them, and vault pages whose path or
@@ -138,4 +137,4 @@ question. With the map set up, it gives implementers and reviewers `Code map: <c
   plan-only PR), reads the diff without the map pages, runs `changed` for pointers (never a
   filter), and uses `mentions` plus a grep for renamed or removed names and paths to find the
   vault pages to check;
-- a merge conflict in map pages is resolved by running `build` again, never by hand.
+- a merge conflict in map pages: run `build` again, never edit by hand.

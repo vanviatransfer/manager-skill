@@ -2008,7 +2008,7 @@ the staleness idea (item 37) is dropped.
   call (as `tools()` does) instead of crashing; `calls` counts as a code-map action.
 - **Tests.** `skills/code-map/scripts/test_calls.py`.
 
-### 41. Code map: C and C++ support (owner, noted, not built)
+### 41. Code map: C and C++ support (owner; built in item 45, plugin 0.9.27)
 
 The owner wants C and C++ covered later, for Unreal Engine game projects (Blender's Python is
 already covered). Today `.c`, `.h`, `.cpp`, `.cc` and `.hpp` files get only a language label: no
@@ -2142,3 +2142,125 @@ in its simpler, name-based form; item 38's question form and the paid benchmark 
   eval suites, any ceiling.
 - **Next step.** Measure again with `usage.py --tools` on a run after this lands: read
   characters carried and re-reads per implementer, and how often agents call `explore`.
+
+### 45. Code map C/C++ and Unreal Engine (plugin 0.9.27)
+
+Why: item 41. The owner will use the map on Unreal Engine game projects and plain C/C++, where
+`.c .h .cpp .cc .cxx .hpp .hxx .hh .inl` files had only a language label.
+
+- **Symbols.** Line patterns over text with comments, strings and characters blanked, no
+  compiler: functions (definitions and declarations, kind-tagged), classes, structs, unions,
+  enums, namespaces (nested and `a::b`), `typedef`/`using`, `#define` macros, class members for
+  `explore`; `template<>`, specifiers, attributes, out-of-class `Ret Class::Method`, signatures
+  up to 40 lines; `#if 0` skipped, the first `#if` branch when all branches unbalance the braces.
+  A declaration and its definition are one symbol with both locations.
+- **Unreal.** `UCLASS`/`USTRUCT`/`UENUM`/`UINTERFACE`/`UFUNCTION`/`UPROPERTY`/`UDELEGATE` tags
+  (compact, on the page and in `query`, `explore` and `calls`; Blueprint-visible members listed),
+  `*_API` and `GENERATED_BODY()` skipped, `DECLARE_*DELEGATE*` types and log categories as
+  symbols. A **Unreal Engine** page section: `.uproject`/`.uplugin`, each `*.Build.cs` module's
+  public and private dependencies as written; with a `.uproject`, `Binaries/`, `Intermediate/`,
+  `Saved/`, `DerivedDataCache/` and `.vs/` (plugins too) are not scanned; `.uasset`/`.umap`
+  never read, and the page says Blueprint and level references are not seen.
+- **Includes.** `#include "..."` resolved relative to the file, then module `Public/`,
+  `Private/`, `Classes/` roots, then `include`/`src`-style folders; importers, `impact`,
+  `changed` and "Most imported" use them. `<...>`, unresolved and computed includes are counted
+  and named on a **C and C++ includes** page section; `query` says how many of a file's includes
+  were not followed.
+- **`explore`.** Brace-matched exact ranges, approximate when a file's braces don't balance;
+  class members with ranges and where out-of-class definitions are; a definition shows its
+  declaration's location. **`calls`.** Nothing resolved: definitions, every whole-word occurrence
+  as `possible` (kind-tagged: call, member or qualified call, delegate binding, by name, string,
+  macro), and the reasons on the `text:` line (overloads, templates, macros, virtual dispatch,
+  function pointers and delegates, `#if 0` lines, delegate bindings, `UFUNCTION` reflection and
+  Blueprints). `references/cpp.md`; tests in `scripts/test_cpp.py`.
+- **Follow-ups from item 44.** `explore` prints the closing working-tree line only when source
+  was printed; `explore.md` says only tracked files are searched, counts the head line in the
+  budget and words the class signature rule plainly; `calls` strips a UTF-8 byte order mark
+  before parsing, so such Python files are no longer `not parsed` (the only change to `calls`
+  output for Python: files with a BOM); every action exits quietly on a closed pipe.
+- **Unchanged.** Python, JavaScript and TypeScript output is byte-identical to 0.9.26 (a test
+  pins it); the "Most imported" heading changes only when a C/C++ file is ranked. Code-map
+  `SKILL.md`: 9,499 -> 9,498 characters of 9,500 (reworded). No ceiling raised.
+- **Review fix round.** An unclassified brace block no longer continues the declaration before
+  it (only `= {...}` and `x{...}` initializers do), so one miss never hides the next
+  definitions: trailing return types with `::` (`-> std::string`), nested `noexcept(...)`,
+  `decltype(auto)`, a parenthesised name, a function returning a function pointer, `>` in a
+  template argument's parentheses, `EXPORT_MACRO template <...>`, a multi-line macro call before
+  a declaration, and a 40-line head counted after leading macro lines. On fmt, `auto f(` lines
+  missed: 254 of 1,117 before, 21 after (local classes in function bodies, explicit
+  instantiations, a `{` in a trailing return type, a macro body). Also: `*_RetVal_*` delegate
+  names; `X_Implementation` / `X_Validate` paired with the `UFUNCTION` `X`; `= default` /
+  `= delete` members (never paired with a definition); conversion operators as members;
+  `<...>` includes followed under the project's include folders (`impact` names `<...>`
+  includes of the same file name it cannot follow); Python `SyntaxWarning`s from parsing
+  repository files are silenced in `calls` and `explore`.
+- **Review fix round 2.** Tails after a parameter list match each macro word whole (`\b`), so
+  runs of `ABSL_...` or `ENGINE_DEPRECATED(...)` words no longer backtrack exponentially
+  (`__attribute__((...))` and `__declspec(...)` accepted; template brackets matched three levels
+  deep without overlap); timing tests pin it. Names hold no line breaks (multi-line template
+  arguments are taken off before qualifying). Unreal include roots add the module folder, its
+  parent and the `Build.cs` `PublicIncludePaths` / `PrivateIncludePaths` literals; an unresolved
+  include whose path ends exactly one tracked file's path is a `possibly imported by` note on
+  `impact` and `query` (never an importer), and the page counts such includes apart from
+  engine, system and generated headers. A declaration pairs only with definitions as qualified
+  or more, the nearest scope first, overloads by parameter count; an RPC declaration names its
+  bodies. When braces don't balance, the scan that read further is kept; a stopped scan is
+  marked on the page and in `explore` (`scan stopped at line N`). C++ names are echoed as typed
+  (`A::b`).
+- **Review fix round 3 (scaling).** Declaration pairing indexes declarations by name and
+  enclosing scope and classes by last name part (was definitions x classes and x same-name
+  declarations); includes are resolved once per (folder, form, path) through a path-suffix
+  index, the nearest root winning and equally near different files left unresolved; one
+  blanking pass with a first-character check, no per-line `#if` recomputation, regex-driven
+  bracket scans. An open-source game engine (8,347 C/C++ files, 154 MB): about 25 s per
+  action, was 2 to 2.5 min; the synthetic 100-module Unreal project 3.4 s, was 73 s. Also: an
+  `=` inside parentheses (a default argument) no longer makes a block an initializer, C++20
+  `requires` clauses and underscore-led tail macros (`__THROW`, `__wur`) are read, a chain of
+  brace initializers is linear, a definition inside a class body pairs only with its own class,
+  `explore`/`calls` take `~X`, `X::~X` and `operator==`, `calls` on a C/C++-only name uses
+  C/C++ wording, and `<Lib/x.h>` resolves from the repository root when `Lib/` is a top-level
+  header folder.
+  No on-disk cache: repositories that size stay over 10 s per action (owner's decision).
+- **Review fix round 4.** Includes starting with `..`, and `changed` after a diff that deletes
+  files, no longer try every include root per include (files x modules): a `..` path is looked
+  up by its remaining path ending, then the roots that many folders below the match; deleted
+  paths get their own small path-ending index (not the tracked files plus the deleted ones).
+  A synthetic Unreal project of 200 modules and 12,200 files: `changed` after deleting a header
+  24.5 s -> 3.9 s, same output; 800 modules of `..` includes: 11.8 s -> 0.8 s; scale tests pin
+  both (fastest of 3 runs for every ratio). `thirdparty`, `ThirdParty` and `3rdparty` join
+  `third_party` as skipped folders (exact names, every language, also when walking a folder
+  without git). **Changed on purpose:** a repository with vendored folders gets a `Not scanned:
+  vendored folders (<n> tracked files: <folders>)` line on the map page (in the Unreal Engine
+  section when there is one); in an Unreal project, `ThirdParty` `Build.cs` modules then drop
+  off the Modules list and includes into them count as not found. Without such folders the
+  page is byte-identical. Also: hidden friends (`friend ... f(...) {...}` in a class) are
+  namespace functions paired with a namespace declaration; an upper-case macro call between
+  the return type and the name is not the name; a `\` ending a line inside a comment keeps a
+  `#define` going; `explore` and `calls` name a file whose scan stopped before a line naming
+  the target; `calls` on an operator, destructor or constructor says implicit calls are not
+  seen (also on `possible: none found`); suggested commands quote names with spaces, `~` or
+  brackets and grep them with `-F`; `named without a call` replaces `passed or stored` for
+  C/C++-only names. `references/cpp.md` adds a speed note: time one `build` before offering
+  the pre-commit hook on a large repository.
+- **Known misses.** Macros are not expanded (macro-made declarations, X-macros, a macro opening
+  a brace); K&R C definitions; overloads and specialisations are separate entries; compiler
+  include paths (CMake, `-I`) are not read; `Build.cs` conditions are not evaluated.
+
+### 46. Code map parse cache (deferred)
+
+Why: every action rescans every C/C++ file, about 6 to 8 MB of source a second on one core.
+
+- **Trigger.** The owner's real project `build` takes more than about 5 s, or the pre-commit
+  hook is used on a large C/C++ repository.
+- **Key.** sha1 of the decoded text plus a parser fingerprint (a hash of `codemap.py`'s bytes);
+  never git blob ids or mtimes.
+- **Contents.** Per file: the symbols before linking, includes, counts, `stopped` and `clean`.
+  `cpp_link` runs fresh on every run. Blanking stays lazy, done only for `calls` and `explore`.
+- **Storage.** Under `git rev-parse --git-common-dir`; nothing outside git (no cache without
+  it). JSON only, fail open (a bad or missing cache is a cold run), atomic replace; a Windows
+  `PermissionError` on replace is ignored.
+- **Tests.** A cold and a warm run give identical output.
+- **Rejected.** Multiprocessing; per-action prefilters (they trip on RPC `_Implementation`
+  linking, class detection and the near-match fallback).
+- **Measured.** In an open-source game engine, its vendored folder is 4,597 of 8,371 C/C++
+  files; with it skipped, `query` goes from 27.3 s to about 10 s.
