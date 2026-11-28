@@ -57,8 +57,8 @@ A Claude Code plugin with six skills:
     `#include "..."`s, `.Build.cs` module dependencies; `calls` lists text occurrences only.
     Vendored folders (`third_party`, `thirdparty`, `ThirdParty`, `3rdparty`, `vendor`,
     `node_modules`) are not scanned in any language, and the map page now says so on a `Not
-    scanned: vendored folders (...)` line with the count of tracked files left out (only in a
-    repository that has such folders).
+    scanned: vendored folders (...)` line with the count of tracked files left out (outside git,
+    the files on disk; only in a repository that has such folders).
   - **Rules block.** Sessions don't use the map unless told, so the setup PR adds a short marked
     block to `AGENTS.md` and `CLAUDE.md` (`codemap.py rules-hint`; created if missing; when
     `CLAUDE.md` imports `@AGENTS.md`, only a marker line there). It tells every session to read the
@@ -178,6 +178,7 @@ gives what it spent after its last edit passed a test command. All heuristics ar
 script's docstring; none prints inputs or paths. Since 0.9.28 a Bash edit (`sed -i`, a redirect or
 heredoc into a file, a Python write) counts as an edit, and the `--prefix` share is the first
 request times the requests over the input (an upper bound, at most 100; the line had no consumer).
+Since 0.9.29 a Bash call is its own green only when its test runs after its edit.
 
 Two things learn from the record:
 

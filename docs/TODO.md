@@ -2065,6 +2065,20 @@ changing effort.
   now counts as a change (a heuristic, see the docstring). And the `--prefix` share understated
   the prefix, which is re-sent with every request: it is now min(100, first x requests / total),
   an upper bound.
+- **Follow-ups in 0.9.29** (review notes on `--after-green`). A target written through a
+  shell variable is judged after the call's own earlier assignments (`S=/tmp/x; cat >
+  "$S/a.py"`, `export S=...`); one still holding an unassigned `$VAR` counts as written.
+  `${TMPDIR:-...}` and Windows temp folders (`C:\Temp\`, `...\AppData\Local\Temp\`) are temp.
+  `perl` counts only with `-i` in an option cluster before its script (`-Mstrict -ne`,
+  `-MList::Util=sum` are no change); `sudo`'s option values are skipped (`sudo -u user sed
+  -i`); `gsed` is `sed`; a leading `> f.py` and `exec > f.py` write. A Bash call is its own
+  green only when a test runs after its last change in it (a test run is never that change).
+  On this repository's own transcripts (119 agents): output without flags and every line but
+  `after green` byte-identical with each flag; 13 `after green` lines changed: 10 because a
+  write through a variable pointed into a temp folder (an earlier change, or none, is now the
+  last), 3 because the call's test ran before its last change or only in a here-document body.
+  Left as documented: the whole-text Python rule; `bash -c`, `find -exec`, `git checkout` /
+  `git restore` and `rm` are not seen.
 
 ### 43. Small wording and follow-ups (plugin 0.9.25)
 
@@ -2251,6 +2265,20 @@ Why: item 41. The owner will use the map on Unreal Engine game projects and plai
 - **Known misses.** Macros are not expanded (macro-made declarations, X-macros, a macro opening
   a brace); K&R C definitions; overloads and specialisations are separate entries; compiler
   include paths (CMake, `-I`) are not read; `Build.cs` conditions are not evaluated.
+- **Follow-ups in 0.9.29** (review notes). An asm label after the parameters (`__asm__("x")`,
+  `__asm(...)`, `asm(...)`) and a SAL annotation (`_Requires_lock_held_(cs)`, `_In_`, any
+  `_Upper..._`) are tails, so an all-caps name before them (`MD5`, `DOIT`) stays the name;
+  `inline friend`, `constexpr friend` (specifiers in any order) are hidden friends; `calls` on
+  an operator does not match where the next character continues the operator token
+  (`operator=` not in `operator==`, `operator<` not in `operator<<`; `operator==<T>` still
+  matches); a vendored folder inside another skipped folder (`dist/vendor/`) is not listed or
+  counted; outside git the `Not scanned: vendored folders` line now appears, its files counted
+  on disk without reading them (a 50,000-file folder: about 0.03 s). Checked on 12 real C/C++
+  repositories and two synthetic Unreal projects: symbol dumps identical except 7 hidden
+  friends that were members; map pages identical except one page where three files list those
+  friends; `calls` output changed only for `operator=` / `operator==`. Python, JavaScript and
+  TypeScript pages and actions byte-identical (this repository, two TypeScript libraries and a
+  Python one).
 
 ### 46. Code map parse cache (deferred)
 

@@ -18,8 +18,9 @@ Recognised at file and namespace level, kind-tagged (`query` prints the kind):
   `using namespace a;` an unqualified definition stays unpaired), the nearest scope first, then
   the same number of parameters (an overload with another count is not taken unless it is the
   only candidate), then the same file; a `friend` function defined in a class body (a hidden
-  friend, `friend bool operator==(...) {...}`) is a function of the enclosing namespace, not a
-  member, and pairs with a namespace-level declaration;
+  friend, `friend bool operator==(...) {...}`, also after `inline`, `constexpr`, `consteval` or
+  `static` in any order) is a function of the enclosing namespace, not a member, and pairs
+  with a namespace-level declaration;
 - `class`, `struct`, `union`, `enum`, `enum class`, `namespace` (nested, and `namespace a::b`),
   `typedef` (also `typedef struct {...} Name;` and function pointer types), `using X = ...`;
 - `#define` macros, object-like and function-like (not include guards);
@@ -33,7 +34,8 @@ Recognised at file and namespace level, kind-tagged (`query` prints the kind):
   parentheses (`enable_if_t<(sizeof(T) > 4)>`), and tail words after the parameter list:
   `const`, `noexcept(...)`, `override`, upper-case macros (`ENGINE_DEPRECATED(...)`) and
   underscore-led ones (`__THROW`, `__wur`, `_NOEXCEPT`, `__nonnull((1))`,
-  `__attribute__((...))`); a lower-case macro without a leading underscore (`const_fn`) leaves
+  `__attribute__((...))`, SAL annotations such as `_Requires_lock_held_(cs)`), asm labels
+  (`__asm__("x")`, `asm("x")`); a lower-case macro without a leading underscore (`const_fn`) leaves
   the function unclassified;
 - out-of-class definitions `Ret Class::Method(...)`: a `method` of `Class` when that class is
   known, with the declaration's location;
@@ -103,7 +105,9 @@ Folders named exactly `third_party`, `thirdparty`, `ThirdParty`, `3rdparty`, `ve
 `node_modules` (case as written: `THIRDPARTY` and `3rdParty` are read), at any depth, are not
 scanned in any language. The map page says so on one line, in the Unreal Engine section when
 there is one, else after the other sections: `Not scanned: vendored folders (<n> tracked files:
-<the outermost such folders, the first 10>)`. A repository without them gets no such line.
+<the outermost such folders, the first 10>)`. One inside another skipped folder (`dist/vendor/`,
+`.venv/.../vendor/`) is neither listed nor counted. Outside git the files on disk under them are
+counted (never read). A repository without them gets no such line.
 
 ## Includes
 
@@ -150,7 +154,9 @@ importers (the count `imported by N` leaves them out). When several files match,
 - `calls` resolves nothing for C/C++. It prints the definitions, then every whole-word
   occurrence under `possible:`, kind-tagged by its text (`call`, `member call`, `qualified call`,
   `reference`, `macro`, `string`, `other definition`, `delegate binding (AddDynamic)`, `delegate
-  binding by name (BindUFunction)`), and the `text:` line names why it is incomplete: overloads,
+  binding by name (BindUFunction)`; an operator's name is not matched where the next character
+  continues the operator: `operator=` is not found in `operator==`, nor `operator<` in
+  `operator<<`), and the `text:` line names why it is incomplete: overloads,
   templates, macros, virtual dispatch, function pointers and delegates; the count bound to a
   delegate or timer; a `UFUNCTION` may be called by reflection or from Blueprints; lines in `#if
   0` blocks are not listed; for an operator, a destructor or a constructor, that its implicit

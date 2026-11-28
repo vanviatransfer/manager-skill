@@ -1138,6 +1138,45 @@ class MeasureTest(Fixture):
                         "py -c \"open('r.md', mode='wb')\""):
             self.assertTrue(usage.bash_change(command), command)
 
+    def test_variables_temp_forms_perl_sudo_and_redirects(self):
+        """Plugin 0.9.29: what the 0.9.28 rules judged wrongly."""
+        for command in ("S=/tmp/x; cat > \"$S/a.py\"", "export S=/tmp/x && cat > $S/a.py",
+                        "A=/tmp; B=$A/y; echo x > \"${B}/z.py\"",
+                        "echo x > ${TMPDIR:-/tmp}/a.py", "echo x > ${TMP-/tmp}/a.py",
+                        "echo x > 'C:\\Temp\\a.py'", "echo x > 'c:/tmp/a.py'",
+                        "echo x > \"C:\\Users\\u\\AppData\\Local\\Temp\\a.py\"",
+                        "cp a.py /c/Users/u/appdata/local/TEMP/a.py",
+                        "perl -Mstrict -ne 'print' f", "perl -MList::Util=sum -lane 'print' f",
+                        "perl -e 'print' -- -i", "perl script.pl -i",
+                        "sudo -u user grep -i x f"):
+            self.assertFalse(usage.bash_change(command), command)
+        for command in ("S=src; cat > $S/a.py", "cat > \"$S/a.py\"",
+                        "D=$(mktemp -d); cat > $D/a.py", "S=/tmp cat > $S/a.py",
+                        "S=/tmp; S=src; echo x > $S/a.py", "perl -pi -e s/a/b/ f",
+                        "perl -i.bak -pe s/a/b/ f", "perl -w -i -pe s/a/b/ f",
+                        "perl -e 'x' -i f", "sudo -u user sed -i s/a/b/ f",
+                        "sudo -g staff -- sed -i s/a/b/ f", "gsed -i s/a/b/ f", "> f.py",
+                        "exec > f.py", "cd /r && >> a.py"):
+            self.assertTrue(usage.bash_change(command), command)
+
+    def test_its_own_green_only_with_the_test_after_the_change(self):
+        for n, (command, own) in enumerate((
+                ("sed -i s/a/b/ a.py && pytest", True),
+                ("pytest && sed -i s/a/b/ a.py", False),
+                ("sed -i s/pytest/x/ a.py", False),
+                ("sed -i s/a/b/ a.py; pytest > t.log 2>&1; echo $?", True),
+                ("pytest -q; sed -i s/a/b/ a.py; echo > b.py && pytest -q", True),
+                ("sed -i s/a/b/ a.py && pytest -q && echo > b.py", False),
+                ("python3 - <<'EOF'\nopen('a.py', 'w')\nEOF\npython3 -m pytest -q", True),
+                ("pytest -q; python3 -c \"open('a.py', 'w')\"", False),
+                ("sed -i s/a/b/ a.py; pytest -q > results.txt", True),
+                ("pytest -q > results.txt; sed -i s/a/b/ a.py", False))):
+            name = "o%d" % n
+            out = self.green(other(0), ask(1, "q1", 100, 10, ("c1", "Bash", {"command": command})),
+                             reply(2, "c1", "0"), ask(3, "q2", 200, 20), name=name)
+            self.assertEqual(out, ["after green | %s | %s" % (
+                name, "1 of 2 | 1 | 0 | 20 | 200" if own else "none")], command)
+
     def errors(self, *groups, name="m1", extra=()):
         return self.out(*groups, flag="--streaks", kind="errors", name=name, extra=extra)
 
