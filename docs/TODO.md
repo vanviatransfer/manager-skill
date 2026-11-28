@@ -2181,6 +2181,19 @@ Why: item 41. The owner will use the map on Unreal Engine game projects and plai
 - **Unchanged.** Python, JavaScript and TypeScript output is byte-identical to 0.9.26 (a test
   pins it); the "Most imported" heading changes only when a C/C++ file is ranked. Code-map
   `SKILL.md`: 9,499 -> 9,498 characters of 9,500 (reworded). No ceiling raised.
+- **Review fix round.** An unclassified brace block no longer continues the declaration before
+  it (only `= {...}` and `x{...}` initializers do), so one miss never hides the next
+  definitions: trailing return types with `::` (`-> std::string`), nested `noexcept(...)`,
+  `decltype(auto)`, a parenthesised name, a function returning a function pointer, `>` in a
+  template argument's parentheses, `EXPORT_MACRO template <...>`, a multi-line macro call before
+  a declaration, and a 40-line head counted after leading macro lines. On fmt, `auto f(` lines
+  missed: 254 of 1,117 before, 21 after (local classes in function bodies, explicit
+  instantiations, a `{` in a trailing return type, a macro body). Also: `*_RetVal_*` delegate
+  names; `X_Implementation` / `X_Validate` paired with the `UFUNCTION` `X`; `= default` /
+  `= delete` members (never paired with a definition); conversion operators as members;
+  `<...>` includes followed under the project's include folders (`impact` names `<...>`
+  includes of the same file name it cannot follow); Python `SyntaxWarning`s from parsing
+  repository files are silenced in `calls` and `explore`.
 - **Known misses.** Macros are not expanded (macro-made declarations, X-macros, a macro opening
   a brace); K&R C definitions; overloads and specialisations are separate entries; compiler
   include paths (CMake, `-I`) are not read; `Build.cs` conditions are not evaluated.

@@ -19,12 +19,24 @@ Recognised at file and namespace level, kind-tagged (`query` prints the kind):
   `typedef` (also `typedef struct {...} Name;` and function pointer types), `using X = ...`;
 - `#define` macros, object-like and function-like (not include guards);
 - class members, for `explore`'s member lists: methods (declared or defined in the body),
-  constructors, destructors, operators, and Unreal `UPROPERTY` fields;
+  constructors, destructors, operators (conversion operators too), and Unreal `UPROPERTY`
+  fields; `X() = default;` and `X(const X&) = delete;` are `defaulted` / `deleted` members,
+  never paired with a definition elsewhere;
+- signatures: trailing return types (`auto f() -> std::string`), `decltype(auto)`, nested
+  `noexcept(noexcept(...))`, a parenthesised name (`int (max)(int, int)`), a function returning a
+  function pointer (`void (*get_cb(void))(int)`), and `>` inside a template argument's
+  parentheses (`enable_if_t<(sizeof(T) > 4)>`);
 - out-of-class definitions `Ret Class::Method(...)`: a `method` of `Class` when that class is
   known, with the declaration's location;
 - prefixes skipped before a declaration: `template <...>`, `inline`, `static`, `constexpr`,
   `virtual`, `explicit`, `extern "C"`, `[[attributes]]`, `__declspec(...)`, `__attribute__((...))`,
-  and a line holding only an upper-case macro call.
+  an upper-case macro before a keyword or type (`MYLIB_EXPORT template <...> class X`,
+  `class MYLIB_EXPORT X`, `MYLIB_PUBLIC(int) f()`), and an upper-case macro call alone on its
+  line or lines (`DISABLE_WARNINGS_PUSH_(...)`).
+
+A brace block the patterns cannot classify is skipped on its own: the next declaration starts
+after it, so one miss does not hide the definitions that follow (only `= {...}` and `x{...}`
+initializers continue the declaration they belong to).
 
 Multi-line signatures are read up to 40 lines; a longer head is not classified. `#if 0` blocks
 are skipped. Other `#if`/`#ifdef` branches are all read; when that leaves the braces unbalanced
@@ -43,7 +55,12 @@ declaration; macros, then namespaces last) and the Unreal members that Blueprint
 - `class MYGAME_API AMyActor : public AActor`: any `[A-Z0-9_]+_API` macro is skipped;
   `GENERATED_BODY()` and `GENERATED_UCLASS_BODY()` too.
 - `DECLARE_*DELEGATE*` and `DECLARE_*EVENT*` (dynamic, multicast and sparse): the delegate type
-  is a symbol (`FOnHit`, kind `dynamic multicast delegate`).
+  is a symbol (`FOnHit`, kind `dynamic multicast delegate`; for `*_RetVal_*` and events, the
+  second argument).
+- RPCs and native events: a definition `X_Implementation` or `X_Validate` with no declaration of
+  its own pairs with the `UFUNCTION` declaration `X` (`Server`, `Client`, `NetMulticast`,
+  `BlueprintNativeEvent`, `WithValidation`), so `explore X` and `calls X` show them, with the
+  tag and the declaration's location.
 - Log categories: `DECLARE_LOG_CATEGORY_EXTERN(LogMyGame, ...)` and `DEFINE_LOG_CATEGORY(...)`.
 - On the map page, members tagged `UFUNCTION`, and `UPROPERTY` with a `Blueprint` specifier,
   are listed after their class (`AMyActor::Fire [UFUNCTION BlueprintCallable]`).
@@ -61,14 +78,19 @@ declaration; macros, then namespaces last) and the Unreal members that Blueprint
 `#include "..."` is resolved to a tracked file: relative to the including file, then the include
 roots: in an Unreal project its own module's `Public/`, `Private/` and `Classes/`, then every other
 module's; then the repository root and every folder named `include`, `inc`, `src` or `Source`
-(shallowest first); last, a single tracked file matching ignoring case. Resolved includes are
-imports: `query` paths, the page's "Most imported", `impact` and `changed` use them.
+(shallowest first); last, a single tracked file matching ignoring case. `#include <...>` is
+followed only under those roots other than the repository root (`<fmt/core.h>` to
+`include/fmt/core.h`; a project header of the same name as a system one, such as a tracked
+`include/string.h`, is then taken for `<string.h>`). Resolved includes are imports: `query`
+paths, the page's "Most imported", `impact` and `changed` use them.
 
-Counted, never followed, and named on the page's **C and C++ includes** section: `<...>`
+Counted, never followed, and named on the page's **C and C++ includes** section: other `<...>`
 includes, `"..."` includes not found among the tracked files (engine headers such as
 `CoreMinimal.h`, system and generated headers, `*.generated.h`), and computed ones
 (`#include MACRO`). `query` adds `<k> of its includes not followed` to a path. Compiler include
-paths (`-I`, CMake, `.vcxproj`) are not read, so a header found only through them is unresolved.
+paths (`-I`, CMake, `.vcxproj`) are not read, so a header found only through them is unresolved;
+`impact` on a header says `not followed: <...> includes of a <name>` with the files whose
+unresolved `<...>` include ends in its file name, since they may include it.
 
 ## `explore` and `calls`
 
@@ -97,3 +119,7 @@ paths (`-I`, CMake, `.vcxproj`) are not read, so a header found only through the
   call uses is not known.
 - Variables and fields are not symbols (except Unreal `UPROPERTY` fields and log categories).
 - A K&R-style C definition (`int f(a, b) int a; int b; {...}`) is not seen.
+- A `{` in a trailing return type (`-> decltype(f(T{}))`) ends the signature early: that
+  function is unclassified (skipped, the next one still seen).
+- Classes, structs and functions defined inside a function body are not symbols.
+- An RPC body pairs by name only; overloads of `X` are not told apart.

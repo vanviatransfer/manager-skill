@@ -103,6 +103,68 @@ GEO_CPP = (
     "    return sum;\n"                                      # 17
     "}\n")                                                   # 18
 
+USE_CPP = (
+    "#include <geo/shapes.h>\n"     # under modern/include: followed
+    "#include <geo.hpp>\n"          # modern/geo.hpp is not under an include folder: not followed
+    "#include <cstdio>\n"
+    "int use() { return area(); }\n")
+
+NET_H = (
+    "#pragma once\n"                                                         # 1
+    "#include \"CoreMinimal.h\"\n"                                           # 2
+    "#include \"MyNet.generated.h\"\n"                                       # 3
+    "DECLARE_DELEGATE_RetVal_OneParam(bool, FCanFire, int32);\n"             # 4
+    "DECLARE_DYNAMIC_DELEGATE_RetVal(int32, FGetAmmo);\n"                    # 5
+    "UCLASS()\n"                                                             # 6
+    "class MYGAME_API UMyNet : public UObject\n"                             # 7
+    "{\n"                                                                    # 8
+    "\tGENERATED_BODY()\n"                                                   # 9
+    "public:\n"                                                              # 10
+    "\tUFUNCTION(Server, Reliable, WithValidation)\n"                        # 11
+    "\tvoid ServerFire(int32 Shots);\n"                                      # 12
+    "\tUFUNCTION(BlueprintNativeEvent)\n"                                    # 13
+    "\tvoid OnReady();\n"                                                    # 14
+    "\tUMyNet() = default;\n"                                                # 15
+    "\tUMyNet(const UMyNet&) = delete;\n"                                    # 16
+    "\toperator bool() const { return true; }\n"                             # 17
+    "};\n")                                                                  # 18
+
+NET_CPP = (
+    "#include \"MyNet.h\"\n"                                                 # 1
+    "void UMyNet::ServerFire_Implementation(int32 Shots) {}\n"               # 2
+    "bool UMyNet::ServerFire_Validate(int32 Shots) { return Shots > 0; }\n"  # 3
+    "void UMyNet::OnReady_Implementation() {}\n"                             # 4
+    "UMyNet::UMyNet(const UMyNet& Other) {}\n")                              # 5
+
+CASCADE = (  # each line once made the lines after it vanish
+    "auto name() -> std::string { return {}; }\n"                                    # 1
+    "int after1() { return 1; }\n"                                                   # 2
+    "auto loc() const -> const std::locale& { return l; }\n"                         # 3
+    "int after2() { return 2; }\n"                                                   # 4
+    "template <class T> auto get(T t) -> decltype(std::declval<T>()) { return t; }\n"  # 5
+    "struct Cfg { int v; };\n"                                                       # 6
+    "template <class T> void swap2(T& a) noexcept(noexcept(T(a))) { }\n"             # 7
+    "int after3() { return 3; }\n"                                                   # 8
+    "int *(pick)(void) { return 0; }\n"                                              # 9
+    "int after4() { return 4; }\n"                                                   # 10
+    "template <typename T, typename = std::enable_if_t<(sizeof(T) > 4)>>\n"          # 11
+    "void big(T t) {}\n"                                                             # 12
+    "int after5() { return 5; }\n"                                                   # 13
+    "MYLIB_EXPORT template <typename T> class Box { T v; };\n"                       # 14
+    "int after6() { return 6; }\n"                                                   # 15
+    "void (*get_cb(void))(int) { return 0; }\n"                                      # 16
+    "int after7() { return 7; }\n"                                                   # 17
+    "decltype(auto) ref(Foo& f) { return f.x; }\n"                                   # 18
+    "SOME_MACRO(x) weird thing() junk { }\n"                                         # 19
+    "int after8() { return 8; }\n"                                                   # 20
+    "class K {\n"                                                                    # 21
+    " public:\n"                                                                     # 22
+    "  auto size() const -> std::size_t { return 0; }\n"                             # 23
+    "  void reset() {}\n"                                                            # 24
+    "  operator bool() const { return true; }\n"                                     # 25
+    "  int count() const { return 1; }\n"                                            # 26
+    "};\n")                                                                          # 27
+
 BUILD_CS = (
     "using UnrealBuildTool;\n"
     "\n"
@@ -260,6 +322,9 @@ def make_fixture(root):
             ("Source/MyGame/Private/MyActor.cpp", ACTOR_CPP),
             ("Source/MyGame/Public/MyTypes.h", TYPES_H),
             ("Source/MyGame/Private/MyGame.cpp", GAME_CPP),
+            ("Source/MyGame/Public/MyNet.h", NET_H), ("Source/MyGame/Private/MyNet.cpp", NET_CPP),
+            ("modern/use.cpp", USE_CPP),
+            ("modern/include/geo/shapes.h", "#pragma once\nint area();\n"),
             ("Plugins/MyTools/MyTools.uplugin", '{"FileVersion": 3}\n'),
             ("Plugins/MyTools/Source/MyTools/MyTools.Build.cs",
              BUILD_CS.replace("MyGame", "MyTools").replace('"MyTools" });', '"Core" });')),
@@ -334,7 +399,7 @@ class CppTest(unittest.TestCase):
             ("geo::detail::Holder", "struct", 5, 4, 5), ("geo", "namespace", 7, 7, 23),
             ("geo::Kind", "enum class", 8, 8, 8), ("geo::Shape", "class", 9, 9, 20),
             ("geo::Shape::Shape", "method", 12, 12, 12),
-            ("geo::Shape::~Shape", "method declaration", 13, 13, 13),
+            ("geo::Shape::~Shape", "defaulted method", 13, 13, 13),
             ("geo::Shape::area", "method declaration", 14, 14, 14),
             ("geo::Shape::scale", "method declaration", 16, 15, 17),
             ("geo::ShapeList", "using", 21, 21, 21), ("geo::twice", "function", 22, 22, 22),
@@ -349,11 +414,12 @@ class CppTest(unittest.TestCase):
 
     def test_includes_counted_and_resolved(self):
         page = self.page()
-        self.assertIn("7 `#include \"...\"` lines resolved to tracked files. Not followed, only "
-                      "counted: 3 `<...>` includes, 11 `\"...\"` includes not found among the "
+        self.assertIn("9 `#include` lines resolved to tracked files (`\"...\"`, and `<...>` under "
+                      "the project's include folders). Not followed, only counted: 5 `<...>` "
+                      "includes not found there, 13 `\"...\"` includes not found among the "
                       "tracked files (engine, system or generated headers), 0 computed "
-                      "(`#include MACRO`). Not found most often: `*.generated.h` (3), "
-                      "`CoreMinimal.h` (3)", page)
+                      "(`#include MACRO`). Not found most often: `*.generated.h` (4), "
+                      "`CoreMinimal.h` (4)", page)
         self.assertIn("- `Plugins/MyTools/Source/MyTools/Public/ToolLib.h` — imported by 2 files",
                       page)  # from its own module and, through the module roots, from MyGame
         self.assertIn("## Most imported (Python, JavaScript and TypeScript local imports, C and "
@@ -361,6 +427,54 @@ class CppTest(unittest.TestCase):
         out = self.run_ok("query", "MyActor.h")
         self.assertIn("  Source/MyGame/Public/MyActor.h (imported by 1 local files; 3 of its "
                       "includes not followed)\n    <- Source/MyGame/Private/MyActor.cpp\n", out)
+
+    def test_angle_includes(self):
+        out = self.run_ok("impact", "modern/include/geo/shapes.h")
+        self.assertIn("  imported by: modern/use.cpp\n", out)
+        out = self.run_ok("impact", "modern/geo.hpp")
+        self.assertIn("  imported by: modern/geo.cpp\n", out)
+        self.assertIn("  not followed: `<...>` includes of a `geo.hpp` not under the include "
+                      "folders: modern/use.cpp\n", out)
+
+    def test_cascade_triggers_hide_nothing(self):
+        cf = codemap.CppFile("c.cpp", CASCADE)
+        self.assertTrue(cf.clean)
+        got = {"::".join(s["qual"]): s["line"] for s in cf.symbols}
+        for name, n in (("name", 1), ("after1", 2), ("loc", 3), ("after2", 4), ("get", 5),
+                        ("Cfg", 6), ("swap2", 7), ("after3", 8), ("pick", 9), ("after4", 10),
+                        ("big", 12), ("after5", 13), ("Box", 14), ("after6", 15),
+                        ("get_cb", 16), ("after7", 17), ("ref", 18), ("after8", 20),
+                        ("K", 21), ("K::size", 23), ("K::reset", 24), ("K::operator bool", 25),
+                        ("K::count", 26)):
+            self.assertEqual(got.get(name), n, (name, got))
+        k = [s for s in cf.symbols if s["name"] == "K"][0]
+        e = codemap.cpp_entry(cf, k)
+        self.assertEqual([m["name"] for m in e["members"]],
+                         ["K::size", "K::reset", "K::operator bool", "K::count"])
+        self.assertEqual([(s["start"], s["end"]) for s in cf.symbols if s["name"] == "big"],
+                         [(11, 12)])
+
+    def test_unreal_rpc_retval_and_special_members(self):
+        with open(os.path.join(self.root, "Source/MyGame/Public/MyNet.h"), encoding="utf-8") as fh:
+            cf = codemap.CppFile("Source/MyGame/Public/MyNet.h", fh.read())
+        kinds = {"::".join(s["qual"]): s["kind"] for s in cf.symbols}
+        self.assertEqual(kinds["FCanFire"], "delegate")
+        self.assertEqual(kinds["FGetAmmo"], "dynamic delegate")
+        self.assertNotIn("bool", kinds)
+        self.assertEqual(kinds["UMyNet::UMyNet"], "deleted method")
+        self.assertEqual(kinds["UMyNet::operator bool"], "method")
+        out = self.run_ok("explore", "ServerFire")
+        self.assertIn("explore ServerFire: 3 definitions in 2 files\n", out)
+        self.assertIn("Source/MyGame/Private/MyNet.cpp:2-2 method "
+                      "UMyNet::ServerFire_Implementation [UFUNCTION Server] (declared Source/MyGame/Public/MyNet.h:12)", out)
+        self.assertIn("Source/MyGame/Private/MyNet.cpp:3-3 method UMyNet::ServerFire_Validate", out)
+        out = self.run_ok("explore", "OnReady")
+        self.assertIn("MyNet.cpp:4-4 method UMyNet::OnReady_Implementation [UFUNCTION "
+                      "BlueprintNativeEvent]", out)
+        out = self.run_ok("explore", "UMyNet::UMyNet")  # not paired with `= delete`
+        self.assertIn("Source/MyGame/Private/MyNet.cpp:5-5 method UMyNet::UMyNet\n", out)
+        self.assertIn("Source/MyGame/Public/MyNet.h:16-16 deleted method UMyNet::UMyNet\n", out)
+        self.assertNotIn("no definition", out)
 
     def test_impact(self):
         out = self.run_ok("impact", "Source/MyGame/Public/MyTypes.h")
@@ -528,6 +642,22 @@ class UnchangedTest(unittest.TestCase):
         got = "".join(out)
         self.assertNotIn("C/C++", got)
         self.assertEqual(hashlib.sha256(got.encode("utf-8")).hexdigest(), GOLDEN_SHA256, got)
+
+
+class WarningTest(unittest.TestCase):
+    def test_python_syntax_warnings_silenced(self):
+        tmp = portability.temp_dir()
+        self.addCleanup(tmp.cleanup)
+        write(tmp.name, "pkg/esc.py", 'import re\n\n\ndef digits(s):\n'
+                                      '    return re.findall("\\d+", s) is not 1\n')
+        subprocess.run(["git", "init", "-q", tmp.name], check=True)
+        subprocess.run(["git", "-C", tmp.name, "add", "-A"], check=True)
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "codemap.py")
+        for action in (["calls", "digits"], ["explore", "digits"]):
+            p = subprocess.run([sys.executable, "-W", "default", script] + action
+                               + ["--root", tmp.name], capture_output=True, text=True)
+            self.assertEqual((p.returncode, p.stderr), (0, ""), action)
+            self.assertIn("pkg/esc.py:4", p.stdout)
 
 
 class PipeTest(unittest.TestCase):
