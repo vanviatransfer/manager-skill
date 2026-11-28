@@ -1005,10 +1005,10 @@ class MeasureTest(Fixture):
                   other(10), request(11, "q2", 2, 1000, 998, 5),
                   other(20), request(21, "q3", 0, 2000, 0, 5))
         self.assertEqual(self.out(*groups, flag="--prefix", kind="prefix"),
-                         ["prefix | m1 | 1000 | 5000 | 20.0"])
+                         ["prefix | m1 | 1000 | 5000 | 60.0"])  # 1,000 x 3 / 5,000
         self.assertEqual(self.out(*groups, flag="--prefix", kind="prefix",
                                   extra=("--since", stamp(5))),
-                         ["prefix | m1 | 2000 | 4000 | 50.0"])
+                         ["prefix | m1 | 2000 | 4000 | 100.0"])  # 2,000 x 2 / 4,000
         self.assertEqual(self.out(other(0), flag="--prefix", kind="prefix", name="m2"),
                          ["prefix | m2 | none"])
         self.assertEqual(lines(SESSION, "zz", "--prefix")[1],
@@ -1017,6 +1017,18 @@ class MeasureTest(Fixture):
         line = lines(SESSION, "a1", "--prefix")
         fields = [int(v) for v in line[0].split(" | ")[5:9]]
         self.assertEqual(line[1].split(" | ")[3], str(sum(fields)))
+
+    def test_prefix_share_is_capped(self):
+        """Plugin 0.9.28: the first request's input times the requests, at most 100."""
+        groups = (other(0), request(1, "q1", 1000, 0, 0, 5), other(10),
+                  request(11, "q2", 100, 0, 0, 5))  # 1,000 x 2 / 1,100: over 100
+        self.assertEqual(self.out(*groups, flag="--prefix", kind="prefix"),
+                         ["prefix | m1 | 1000 | 1100 | 100.0"])
+        self.assertEqual(self.out(other(0), request(1, "q1", 300, 0, 0, 5), other(10),
+                                  request(11, "q2", 600, 0, 0, 5), other(20),
+                                  request(21, "q3", 900, 0, 0, 5),
+                                  flag="--prefix", kind="prefix", name="m2"),
+                         ["prefix | m2 | 300 | 1800 | 50.0"])
 
     def green(self, *groups, name="m1", extra=()):
         return self.out(*groups, flag="--after-green", kind="after green", name=name,
@@ -1073,6 +1085,59 @@ class MeasureTest(Fixture):
         for command in ("make", "npm install", "echo test", "cat pytest.ini.bak"):
             self.assertFalse(usage.TESTS.search(command), command)
 
+    def test_a_bash_change_counts(self):
+        """Plugin 0.9.28: green, then `sed -i`, then green: the second green is the one."""
+        out = self.green(
+            other(0), ask(1, "q1", 100, 10, ("e1", "Edit", {"file_path": "/s/a.py"})),
+            reply(2, "e1", "ok"), ask(3, "q2", 200, 20, self.TEST), reply(4, "t1", "OK"),
+            ask(5, "q3", 300, 30, ("s1", "Bash", {"command": "sed -i 's/a/b/' /s/a.py"})),
+            reply(6, "s1", ""),
+            ask(7, "q4", 400, 40, ("t2", "Bash", {"command": "pytest -q"})),
+            reply(8, "t2", "ok"), ask(9, "q5", 500, 50))
+        self.assertEqual(out, ["after green | m1 | 4 of 5 | 1 | 0 | 50 | 500"])
+
+    def test_bash_changes_without_an_edit_tool(self):
+        """A Bash change alone has a green; a failed one is no change."""
+        for n, command in enumerate((
+                "python3 -c \"open('src/a.py', 'w').write('x')\"",
+                "python3 - <<'EOF'\nfrom pathlib import Path\nPath('a.py').write_text('x')\nEOF",
+                "cat > src/a.py <<'EOF'\nprint(1)\nEOF", "cd /r && perl -pi -e 's/a/b/' a.c",
+                "git apply /tmp/p.diff", "ls | tee -a notes.md")):
+            name = "w%d" % n
+            out = self.green(other(0), ask(1, "q1", 100, 10, ("c1", "Bash", {"command": command})),
+                             reply(2, "c1", ""), ask(3, "q2", 200, 20, self.TEST),
+                             reply(4, "t1", "OK"), ask(5, "q3", 300, 30), name=name)
+            self.assertEqual(out, ["after green | %s | 2 of 3 | 1 | 0 | 30 | 300" % name],
+                             command)
+        failed = (other(0), ask(1, "q1", 100, 10, ("c1", "Bash", {"command": "sed -i x a.py"})),
+                  reply(2, "c1", "sed: no such file", error=True),
+                  ask(3, "q2", 200, 20, self.TEST), reply(4, "t1", "OK"))
+        self.assertEqual(self.green(*failed, name="f1"), ["after green | f1 | none"])
+        both = ("c1", "Bash", {"command": "sed -i s/a/b/ a.py && python3 -m unittest"})
+        self.assertEqual(self.green(other(0), ask(1, "q1", 100, 10, both), reply(2, "c1", "OK"),
+                                    ask(3, "q2", 200, 20), name="f2"),
+                         ["after green | f2 | 1 of 2 | 1 | 0 | 20 | 200"])  # its own green
+
+    def test_what_is_no_bash_change(self):
+        for command in ("python3 run.py > /tmp/x.log 2>&1; echo $?", "make > build.log",
+                        "make test > /dev/null 2>&1", "pytest -q >out.out",
+                        "echo 'a > b.py'", "grep -n \"x > y\" a.py", "git commit -m 'a > b'",
+                        "git add -A && git commit -m x && git push -u origin b",
+                        "git rebase origin/main", "git apply --check p.diff",
+                        "cat <<'EOF'\nsed -i x f\necho a > b.py\nEOF", "sed -n 1p a.py",
+                        "cat > /tmp/w/brief.md <<'EOF'\nx\nEOF", "echo x > $TMPDIR/a.py",
+                        "python3 -c \"print(open('a.py').read())\"", "cp a.py /tmp/a.py",
+                        "ls 2>/dev/null | tee /dev/stderr", "cat f >&2", "patch --dry-run -p1"):
+            self.assertFalse(usage.bash_change(command), command)
+        for command in ("sed -i s/a/b/ f", "sed -ni 1p f", "sed -i.bak s/a/b/ f",
+                        "sed --in-place s/a/b/ f", "ls; sed -i s/a/b/ f", "echo x >> a.py",
+                        "echo x>a.py", "echo x &> a.py", "cat f >&a.py", "A=1 sed -i x f",
+                        "timeout 9 sed -i x f", "find . -name '*.py' | xargs sed -i s/a/b/",
+                        "patch -p1 < /tmp/p.diff", "mv /tmp/a.py src/a.py", "cp -t src a.py",
+                        "python3 -c \"open('r.md', 'a').write('x')\"",
+                        "py -c \"open('r.md', mode='wb')\""):
+            self.assertTrue(usage.bash_change(command), command)
+
     def errors(self, *groups, name="m1", extra=()):
         return self.out(*groups, flag="--streaks", kind="errors", name=name, extra=extra)
 
@@ -1114,12 +1179,12 @@ class MeasureTest(Fixture):
             "streaks | m1 | 0 | 0 | none", "errors | m1 | 2 | 1 | 1 | 3",
             "tools | m1 | Edit | 3 | 10 | 2 | 32", "tools | m1 | Bash | 1 | 2 | 0 | 2",
             "reads | m1 | 0 | 0 | 0 | 0 | 0", "map | m1 | 0 | 0 | 0",
-            "prefix | m1 | 100 | 1500 | 6.7", "after green | m1 | 4 of 5 | 1 | 0 | 50 | 500"])
+            "prefix | m1 | 100 | 1500 | 33.3", "after green | m1 | 4 of 5 | 1 | 0 | 50 | 500"])
         self.assertEqual(lines(SESSION, "m1", *flags, "--since", stamp(3))[1:], [
             "streaks | m1 | 0 | 0 | none", "errors | m1 | 1 | 1 | 0 | 0",
             "tools | m1 | Edit | 2 | 6 | 1 | 16", "tools | m1 | Bash | 1 | 2 | 0 | 2",
             "reads | m1 | 0 | 0 | 0 | 0 | 0", "map | m1 | 0 | 0 | 0",
-            "prefix | m1 | 200 | 1400 | 14.3", "after green | m1 | 3 of 4 | 1 | 0 | 50 | 500"])
+            "prefix | m1 | 200 | 1400 | 57.1", "after green | m1 | 3 of 4 | 1 | 0 | 50 | 500"])
 
     def test_unknown_transcript_all_flags(self):
         self.assertEqual(lines(SESSION, "zz", "--streaks", "--tools", "--prefix",

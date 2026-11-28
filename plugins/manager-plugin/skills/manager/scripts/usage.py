@@ -121,7 +121,12 @@ With `--prefix`, each agent's lines end with (off by default):
 - input tokens: a request's input + cache read + cache writes. The first request counted
   approximates the fixed prefix (system prompt, tool schemas, the brief), which every later
   request sends again; it also holds the first prompt's own text, so it is an upper bound of
-  the prefix. share: first / total, one decimal. `none` for an agent without a request.
+  the prefix. share: the most of the input the fixed prefix can account for, as it is sent
+  again with every request: min(100, first x requests / total), one decimal. An upper bound:
+  the first request also holds the first prompt, and compaction (a later request may send less)
+  and the cache (a re-sent prefix is mostly a cheaper cache read) are ignored. `none` for an
+  agent without a request. (Plugin 0.9.28 changed share from first / total, which understated
+  the prefix; the line is opt-in and had no consumer.)
 
 With `--after-green`, after them (off by default):
 
@@ -129,8 +134,9 @@ With `--after-green`, after them (off by default):
   output tokens after | input tokens after
 
 - What an agent spent after its last change already passed validation. The last change: the
-  last Edit, MultiEdit, Write or NotebookEdit call whose result is no error (a change made by
-  Bash, `sed -i` or a redirection, is not seen). Green: the first later Bash call that ran a
+  last Edit, MultiEdit, Write or NotebookEdit call, or Bash call that changes a file (below),
+  whose result is no error. Green: the first later Bash call (or that Bash call itself:
+  `sed -i ... && pytest`) that ran a
   test or validation command and did not error: its command has the word `unittest`, `pytest`
   or `ctest` (not before a `.`: `pytest.ini`), or `npm test`, `npm run test`, `yarn test`,
   `pnpm test`, `go test`, `cargo test`, `mvn test`, `gradle test`, `make test` or `make
@@ -140,6 +146,24 @@ With `--after-green`, after them (off by default):
 - k: the requests up to the one that made that call, of the agent's n; after: the requests,
   tool calls and tokens (input as for `--prefix`) after the call, the request that read its
   result included. `none` when there is no change or no green call after the last one.
+- A Bash change (since plugin 0.9.28; before, Bash edits were not seen): the command, split
+  into simple commands at unquoted `;`, `|`, `&`, `&&`, `||`, parentheses and newlines (quotes
+  respected; here-document bodies are skipped), has one that runs `sed` with `-i` (`-ni`,
+  `-i.bak`) or `--in-place`, or `perl` with `-i` (`-pi`); writes standard output to a file
+  (`>`, `>>`, `>|`, `&>`, `1>`, `>&f`; `2>` and `>&2` do not), or `tee` (`-a`) into one,
+  the target written; runs `python`, `python3`, `python3.N` or `py` while the whole command
+  text (a `-c` string or a here-document body included) has `open(` with a `w`, `a`, `x` or
+  `r+` mode string, `write_text(` or `write_bytes(`; runs `git apply` (not `--check`, `--stat`)
+  or `patch` (not `--dry-run`); or runs `mv` or `cp` with two or more operands onto a target
+  (the last operand, or `-t`'s value). A target counts unless it is under `/dev/`, ends in
+  `.log` or `.out`, or is under a temp folder (`/tmp`, `/var/tmp`, `$TMPDIR`, `$TMP`, `%TEMP%`,
+  `%TMP%`): a heredoc into a source file (`cat > a.py <<EOF`) is a change, one into
+  `/tmp/x` is not. The command words are judged after leading assignments, `timeout`, `env`,
+  `sudo`, `nohup`, `command`, `exec` and `xargs` (and their option words). `git commit`, `git
+  add`, `git push`, `git rebase` and any other command are no change. A heuristic: it
+  over-counts (a Python write of a report file, a copy into the repository of what is not a
+  source) and under-counts (a script file that writes, `bash -c '...'`, `find -exec sed -i`,
+  `git checkout`, `rm`).
 
 The order after each `usage` line: `streaks`, `errors`, the `tools` lines, `reads`, `map`,
 `prefix`, `after green`, each only with its flag. `--since` bounds them all; each is
@@ -502,6 +526,101 @@ def bash_read(command):
         "n" in flag for flag in flags))
 
 
+HEREDOC = re.compile(r"<<(?!<)-?\s*([\"']?)([A-Za-z0-9_.-]+)\1")
+WRITES = re.compile(r"\bopen\([^)]*?[\"'](?:[wax]|r\+)[bt+]*[\"']|\bwrite_(?:text|bytes)\(")
+PYTHON = re.compile(r"(?:python[0-9.]*|py)(?:\.exe)?$")
+TEMP = ("/tmp", "/var/tmp", "$TMPDIR", "${TMPDIR", "$TMP", "${TMP", "%TEMP%", "%TMP%")
+WRAPPERS = ("env", "sudo", "nohup", "command", "exec", "xargs")  # run the next word's command
+ENDS = (";", "|", "&", "&&", "||", "|&", ";;", "(", ")", "\n")  # end a simple command
+
+
+def bodiless(command):
+    """The command without its here-documents' bodies (the lines after a `<<WORD` line, up to
+    the one that is WORD)."""
+    kept, until = [], []
+    for line in command.split("\n"):
+        if until:
+            if line.lstrip("\t") == until[0]:
+                until.pop(0)
+            continue
+        kept.append(line)
+        until = [found[1] for found in HEREDOC.findall(line)]
+    return "\n".join(kept)
+
+
+def simple(command):
+    """The command's simple commands: its tokens (as `tokens`), split at `ENDS`, each without
+    its leading assignments, `timeout` and `WRAPPERS`."""
+    found, current = [], []
+    for token in tokens(bodiless(command)) + [";"]:
+        if token in ENDS or (operator(token) and not token.startswith(("<", ">", "&>"))):
+            run = first("", current)
+            while run and os.path.basename(run[0]) in WRAPPERS:
+                run = first("", run[1:])
+                while run and run[0].startswith("-"):
+                    run = run[1:]
+            if run:
+                found.append(run)
+            current = []
+        else:
+            current.append(token)
+    return found
+
+
+def written(target):
+    """True for a target a write is a change of: not under `/dev/`, not a `.log` or `.out`
+    file, not under a temp folder."""
+    if not target or operator(target) or target.startswith("/dev/"):
+        return False
+    if target.endswith((".log", ".out")):
+        return False
+    return not any(target == t or target.startswith((t + "/", t + "\\", t + "}"))
+                   or (t.startswith("%") and target.startswith(t)) for t in TEMP)
+
+
+def bash_change(command):
+    """True for a Bash command that changes a file (see `--after-green`)."""
+    for found in simple(command):
+        name = os.path.basename(found[0])
+        own = found[1:]
+        flags = [w[1:] for w in own if w.startswith("-") and not w.startswith("--")]
+        for at, token in enumerate(own):
+            if not operator(token) or not token.startswith((">", "&>")):
+                continue
+            before = own[at - 1] if at else ""
+            target = own[at + 1] if at + 1 < len(own) else ""
+            if token.startswith(">") and before.isdigit() and before != "1":
+                continue  # another descriptor: `2>/dev/null`, `2>&1`
+            if token == ">&" and (target.isdigit() or target == "-"):
+                continue  # a duplication: `>&2`
+            if written(target):
+                return True
+        if name in ("sed", "perl") and (any("i" in f for f in flags) or (
+                name == "sed" and any(w.startswith("--in-place") for w in own))):
+            return True
+        if name == "tee" and any(written(w) for w in own if not w.startswith("-")):
+            return True
+        if PYTHON.match(name) and WRITES.search(command):
+            return True
+        if name == "git":
+            rest = list(own)
+            while rest and rest[0].startswith("-"):
+                rest = rest[2 if rest[0] in ("-C", "-c") else 1:]
+            if rest[:1] == ["apply"] and not {"--check", "--stat", "--numstat"} & set(rest):
+                return True
+        if name == "patch" and "--dry-run" not in own:
+            return True
+        if name in ("mv", "cp"):
+            operands = [w for w in own if not w.startswith("-") and not operator(w)]
+            if "-t" in own and own.index("-t") + 1 < len(own):
+                target = own[own.index("-t") + 1]
+            else:
+                target = operands[-1] if len(operands) >= 2 else ""
+            if written(target):
+                return True
+    return False
+
+
 def mapped(command):
     """None for a command that does not run `codemap.py`, else whether it runs a query."""
     found = words(command)
@@ -715,7 +834,8 @@ def prefix_line(agent, events):
     if not prompts:
         return " | ".join(["prefix", tag(agent), "none"])
     total = sum(prompts)
-    share = "%.1f" % (100.0 * prompts[0] / total) if total else "unknown"
+    share = "%.1f" % min(100.0, 100.0 * prompts[0] * len(prompts) / total) if total \
+        else "unknown"
     return " | ".join(["prefix", tag(agent), str(prompts[0]), str(total), share])
 
 
@@ -735,16 +855,23 @@ def green(event, result):
     return bool(TESTS.search(command)) and not result["error"]
 
 
+def changes(event):
+    """True for a call that changes a file: an edit tool's, or a Bash change."""
+    command = event["input"].get("command")
+    return event["name"] in EDITS or (event["name"] == "Bash" and isinstance(command, str)
+                                      and bash_change(command))
+
+
 def after_green_line(agent, events):
     if events is None:
         return " | ".join(["after green", tag(agent), "unknown"])
     results = {e["id"]: e for e in events if e["kind"] == "result"}
     _, before = counted(events)
     edited = max((at for at, e in enumerate(events) if e["kind"] == "call"
-                  and e["name"] in EDITS and not results.get(e["id"], {}).get("error")),
+                  and changes(e) and not results.get(e["id"], {}).get("error")),
                  default=None)
-    found = None if edited is None else next(
-        (at for at in range(edited + 1, len(events)) if events[at]["kind"] == "call"
+    found = None if edited is None else next(  # a Bash change can be its own green
+        (at for at in range(edited, len(events)) if events[at]["kind"] == "call"
          and green(events[at], results.get(events[at]["id"]))), None)
     if found is None:
         return " | ".join(["after green", tag(agent), "none"])

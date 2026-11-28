@@ -2059,6 +2059,12 @@ changing effort.
   ids are recorded. After the first real measurement, the owner decides which one or two lines
   are worth adding to the run record and the retro comparison; that would be a separate change
   to `run-record.md`, which this change does not touch.
+- **Fixed in 0.9.28.** A real-run check found `--after-green` wrong: the two agents with the
+  most requests after green were still editing source through Bash (`sed -i`, Python writing
+  files, heredocs), which were not counted as edits. A successful Bash call that changes a file
+  now counts as a change (a heuristic, see the docstring). And the `--prefix` share understated
+  the prefix, which is re-sent with every request: it is now min(100, first x requests / total),
+  an upper bound.
 
 ### 43. Small wording and follow-ups (plugin 0.9.25)
 
